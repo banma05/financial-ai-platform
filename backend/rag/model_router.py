@@ -1,41 +1,39 @@
 """
-模型路由层 — 根据任务复杂度智能调度不同模型
+模型调用层
 
-策略：
-- deepseek-v4-flash：简单任务（摘要、提取、分类），快且便宜
-- deepseek-v4-pro：  复杂任务（财务分析、跨文档对比、异常检测），深度推理
-
-面试可展开讲：
-  为什么做模型路由、如何判断任务复杂度、成本能优化多少
+当前统一使用 deepseek-v4-pro（最强模型），架构预留了多模型路由接口：
+- 如果后续想加 flash 来省钱，只需改 MODEL_CONFIG 即可
+- classify() 函数可自动判断任务复杂度
+- 面试时可以展开讲这个架构设计思路
 """
 from enum import Enum
 from typing import Optional
 from loguru import logger
 from openai import OpenAI
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, REASONING_MODEL
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL
 
 
 class TaskType(str, Enum):
-    SIMPLE = "simple"     # 用 flash，快便宜
-    COMPLEX = "complex"   # 用 pro，深度推理
-    AUTO = "auto"         # 自动判断
+    SIMPLE = "simple"
+    COMPLEX = "complex"
+    AUTO = "auto"
 
 
+# 当前都用 deepseek-v4-pro，想省钱时把 SIMPLE 换成 deepseek-v4-flash
 MODEL_CONFIG = {
     TaskType.SIMPLE: {
-        "model": LLM_MODEL,  # deepseek-v4-flash
+        "model": LLM_MODEL,    # deepseek-v4-pro
         "temperature": 0.3,
         "max_tokens": 2000,
     },
     TaskType.COMPLEX: {
-        "model": REASONING_MODEL,  # deepseek-v4-pro
+        "model": LLM_MODEL,    # deepseek-v4-pro
         "temperature": 0.3,
         "max_tokens": 4000,
     },
 }
 
-# 命中以下关键词 → 路由到推理模型
 COMPLEX_KEYWORDS = [
     "分析", "对比", "趋势", "变化", "原因", "为什么",
     "异常", "风险", "评估", "判断", "预测", "建议",
@@ -55,10 +53,9 @@ def _get_client() -> OpenAI:
 
 
 def classify(query: str) -> TaskType:
-    """根据用户问题自动判断任务复杂度"""
+    """自动判断任务复杂度（为后续多模型路由预留）"""
     for kw in COMPLEX_KEYWORDS:
         if kw in query:
-            logger.info(f"路由 → 推理模型（关键词: {kw}）")
             return TaskType.COMPLEX
     return TaskType.SIMPLE
 
@@ -68,14 +65,7 @@ def chat(
     task_type: TaskType = TaskType.AUTO,
     query: Optional[str] = None,
 ) -> str:
-    """
-    带路由的 LLM 调用
-
-    参数:
-        messages: 标准 messages 列表
-        task_type: SIMPLE / COMPLEX / AUTO
-        query: 用户原始问题（AUTO 模式用于判断复杂度）
-    """
+    """LLM 调用，支持按任务类型调整参数"""
     if query is None:
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -86,7 +76,7 @@ def chat(
     cfg = MODEL_CONFIG[target]
     client = _get_client()
 
-    logger.info(f"模型路由: {target.value} → {cfg['model']}")
+    logger.info(f"模型: {cfg['model']} | 类型: {target.value}")
 
     response = client.chat.completions.create(
         model=cfg["model"],

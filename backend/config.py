@@ -14,11 +14,16 @@ ROOT_DIR = Path(__file__).parent.parent.resolve()
 # ============ DeepSeek API 配置 ============
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")           # 快速模型
-REASONING_MODEL = os.getenv("REASONING_MODEL", "deepseek-v4-pro")  # 推理模型
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-pro")
+
+# ============ HuggingFace 镜像 ============
+HF_ENDPOINT = os.getenv("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ.setdefault("HF_ENDPOINT", HF_ENDPOINT)
 
 # ============ Embedding 模型 ============
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+# 本地模型路径（优先使用，已通过 ModelScope 下载）
+LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH", str(ROOT_DIR / "data" / "models" / "BAAI" / "bge-small-zh-v1___5"))
 
 # ============ ChromaDB ============
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db"))
