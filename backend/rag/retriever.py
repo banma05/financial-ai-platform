@@ -1,19 +1,22 @@
 """
-RAG 检索管道 — 完整流程：混合检索 → Prompt → LLM → 返回
+RAG 检索管道 — 四步口诀完整版
+
+一、语义动态切分（semantic_splitter）
+二、Query 处理：短句扩写 + 余弦校验（query_processor）
+三、混合检索：BM25 + 语义 + LambdaMART 统一打分（hybrid_search）
+四、指标拆解：上下文召回率 + 忠实度（evaluator）
 """
 import time
-from typing import List
+from typing import List, Optional
 from loguru import logger
 
 from config import RETRIEVAL_TOP_K
+from .query_processor import process_query
 from .hybrid_search import hybrid_search
 from .model_router import chat as routed_chat
 
 
 def build_prompt(query: str, sources: List[dict]) -> str:
-    """
-    构建 RAG 提示词 - 把检索到的文档 + 用户问题拼成 prompt
-    """
     context_parts = []
     for i, s in enumerate(sources, start=1):
         context_parts.append(
@@ -21,7 +24,7 @@ def build_prompt(query: str, sources: List[dict]) -> str:
         )
     context = "\n\n".join(context_parts)
 
-    prompt = f"""你是一个专业的财务分析助手。请基于以下参考文档回答用户的问题。
+    return f"""你是一个专业的财务分析助手。请基于以下参考文档回答用户的问题。
 
 要求：
 1. 严格基于参考文档的内容回答，不要编造信息
@@ -36,30 +39,29 @@ def build_prompt(query: str, sources: List[dict]) -> str:
 {query}
 
 ## 回答"""
-    return prompt
 
 
 def rag_query(
     query: str,
     top_k: int = RETRIEVAL_TOP_K,
+    eval_facts: Optional[List[str]] = None,
 ) -> dict:
     """
-    执行一次完整的 RAG 查询
+    四步口诀完整 RAG 流程
 
-    流程：检索 → 构建 prompt → 调用 LLM → 返回结果
-
-    参数:
-        query: 用户问题
-        top_k: 检索文档数
-
-    返回:
-        {"answer": "...", "sources": [...], "processing_time": 0.5}
+    流程：Query 处理 → 混合检索 → 构建 prompt → LLM → 评测
     """
     start_time = time.time()
+    original_query = query
 
-    # 第一步：混合检索（BM25 + 语义 + RRF 融合 + Reranker 精排）
-    sources = hybrid_search(query, top_k=top_k)
-    logger.info(f"混合检索完成，返回 {len(sources)} 个文档块")
+    # 第二步：Query 处理（短句扩写 + 余弦校验 <0.8 废弃）
+    processed_query = process_query(query)
+    if processed_query != original_query:
+        logger.info(f"Query processed: '{original_query[:30]}...' -> '{processed_query[:30]}...'")
+
+    # 第三步：混合检索（向量 + BM25 + LambdaMART 统一打分）
+    sources = hybrid_search(processed_query, top_k=top_k)
+    logger.info(f"Retrieved {len(sources)} chunks")
 
     if not sources:
         return {
@@ -68,29 +70,40 @@ def rag_query(
             "processing_time": round(time.time() - start_time, 2),
         }
 
-    # 第二步：构建提示词
-    prompt = build_prompt(query, sources)
-
-    # 第三步：模型路由 — 自动判断任务复杂度，选择合适的模型
+    # 构建 Prompt + LLM 生成
+    prompt = build_prompt(processed_query, sources)
     messages = [
         {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
         {"role": "user", "content": prompt},
     ]
-    answer = routed_chat(messages, query=query)
+    answer = routed_chat(messages, query=processed_query)
     processing_time = round(time.time() - start_time, 2)
 
-    logger.info(f"RAG 查询完成，耗时 {processing_time}s")
+    logger.info(f"RAG query done in {processing_time}s")
 
-    return {
+    result = {
         "answer": answer,
         "sources": [
             {
                 "content": s["content"][:200] + "..." if len(s["content"]) > 200 else s["content"],
                 "source": s["source"],
                 "page": s["page"],
-                "score": s["score"],
+                "score": s.get("rerank_score", s.get("rrf_score", s.get("score", 0))),
             }
             for s in sources
         ],
         "processing_time": processing_time,
+        "processed_query": processed_query if processed_query != original_query else None,
     }
+
+    # 第四步：评测
+    if eval_facts:
+        from .evaluator import full_evaluation
+        result["evaluation"] = full_evaluation(
+            query=original_query,
+            answer=answer,
+            retrieved_chunks=sources,
+            reference_facts=eval_facts,
+        )
+
+    return result

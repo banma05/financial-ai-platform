@@ -3,7 +3,7 @@ from .splitter import split_documents
 from .vector_store import add_documents, search_similar, get_document_list, reset_database
 from .retriever import rag_query
 from .model_router import chat as routed_chat, classify as classify_task
-from .hybrid_search import hybrid_search, bm25_search, semantic_search, rerank
+from .hybrid_search import hybrid_search, bm25_search, semantic_search, lambda_mart_rerank
 
 __all__ = [
     "load_document",
@@ -18,5 +18,5 @@ __all__ = [
     "hybrid_search",
     "bm25_search",
     "semantic_search",
-    "rerank",
+    "lambda_mart_rerank",
 ]
