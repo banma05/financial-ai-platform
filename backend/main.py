@@ -1,0 +1,46 @@
+"""
+智能财务分析平台 - FastAPI 入口
+"""
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
+
+from api.rag import router as rag_router
+
+app = FastAPI(
+    title="智能财务分析平台",
+    description="基于 RAG 的智能财务报告知识库问答系统",
+    version="0.1.0",
+)
+
+# CORS 配置（允许前端跨域访问）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册路由
+app.include_router(rag_router)
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "智能财务分析平台 API",
+        "version": "0.1.0",
+        "docs": "/docs",
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("启动智能财务分析平台...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

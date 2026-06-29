@@ -1,0 +1,38 @@
+"""
+智能财务分析平台 - 全局配置
+"""
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
+
+# 项目根目录
+ROOT_DIR = Path(__file__).parent.parent.resolve()
+
+# ============ DeepSeek API 配置 ============
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+
+# ============ Embedding 模型 ============
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+
+# ============ ChromaDB ============
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db"))
+
+# ============ 文件上传 ============
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(ROOT_DIR / "data" / "documents")))
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+
+# 确保目录存在
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+Path(CHROMA_PERSIST_DIR).mkdir(parents=True, exist_ok=True)
+
+# ============ 分块参数 ============
+CHUNK_SIZE = 800          # 每个文本块的大小（字符数）
+CHUNK_OVERLAP = 150       # 块之间的重叠（保证语义连贯）
+
+# ============ 检索参数 ============
+RETRIEVAL_TOP_K = 5       # 检索返回的最相关文档数
