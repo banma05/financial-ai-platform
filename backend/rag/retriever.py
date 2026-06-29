@@ -1,27 +1,14 @@
 """
 RAG 检索管道 - 完整的检索增强生成流程
+支持模型路由：简单问题用 flash，复杂分析用 pro
 """
 import time
 from typing import List
 from loguru import logger
-from openai import OpenAI
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, RETRIEVAL_TOP_K
+from config import RETRIEVAL_TOP_K
 from .vector_store import search_similar
-
-# DeepSeek 客户端（兼容 OpenAI 格式）
-_client = None
-
-
-def _get_llm():
-    """获取 LLM 客户端（懒加载）"""
-    global _client
-    if _client is None:
-        _client = OpenAI(
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
-        )
-    return _client
+from .model_router import chat as routed_chat
 
 
 def build_prompt(query: str, sources: List[dict]) -> str:
@@ -85,19 +72,12 @@ def rag_query(
     # 第二步：构建提示词
     prompt = build_prompt(query, sources)
 
-    # 第三步：调用 LLM 生成回答
-    client = _get_llm()
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[
-            {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,    # 低温度，保证回答准确、一致
-        max_tokens=2000,
-    )
-
-    answer = response.choices[0].message.content
+    # 第三步：模型路由 — 自动判断任务复杂度，选择合适的模型
+    messages = [
+        {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
+        {"role": "user", "content": prompt},
+    ]
+    answer = routed_chat(messages, query=query)
     processing_time = round(time.time() - start_time, 2)
 
     logger.info(f"RAG 查询完成，耗时 {processing_time}s")

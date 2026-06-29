@@ -14,7 +14,8 @@ ROOT_DIR = Path(__file__).parent.parent.resolve()
 # ============ DeepSeek API 配置 ============
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")           # 快速模型
+REASONING_MODEL = os.getenv("REASONING_MODEL", "deepseek-v4-pro")  # 推理模型
 
 # ============ Embedding 模型 ============
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
