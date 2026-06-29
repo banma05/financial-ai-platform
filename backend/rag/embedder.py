@@ -1,12 +1,10 @@
 """
 向量化模块 - 将文本转为向量
-使用本地 BGE 模型（免费，不需要调 API）
-已通过 ModelScope 下载到本地，无需联网
+使用本地 BGE 模型（免费），所有缓存指向 D 盘
 """
-import os
 from pathlib import Path
 from langchain_huggingface import HuggingFaceEmbeddings
-from config import EMBEDDING_MODEL, LOCAL_MODEL_PATH
+from config import EMBEDDING_MODEL, LOCAL_MODEL_PATH, HF_HOME
 
 _embedding_model = None
 

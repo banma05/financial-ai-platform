@@ -132,7 +132,7 @@ def _get_lambda_mart():
         import os
         local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
         model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
-        _reranker = CrossEncoder(model_name)
+        _reranker = CrossEncoder(model_name, cache_folder="D:/Python312/huggingface-cache")
         logger.info(f"LambdaMART（Cross-Encoder）已加载: {model_name}")
     return _reranker
 
