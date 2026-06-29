@@ -14,6 +14,7 @@ from models.schemas import (
     DocumentUploadResponse,
 )
 from rag import load_document, split_documents, add_documents, rag_query, get_document_list
+from rag.semantic_splitter import semantic_chunk_per_page
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 
@@ -56,7 +57,8 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"文档解析失败: {str(e)}")
 
     # 5. 文本分块
-    chunks = split_documents(pages)
+    # 语义动态切分（每页内做语义边界检测，保留页码溯源）
+    chunks = semantic_chunk_per_page(pages)
     if not chunks:
         os.remove(file_path)
         raise HTTPException(status_code=400, detail="文档内容为空，无法处理")

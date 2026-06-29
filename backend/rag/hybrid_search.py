@@ -169,44 +169,45 @@ def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> Li
 def hybrid_search(
     query: str,
     top_k: int = 5,
+    force_rerank: bool = False,
 ) -> List[dict]:
     """
     混合检索完整流程（带策略路由）
 
-    简单 query：仅语义检索 → 直接返回
-    复杂 query：BM25 + 语义 → RRF 融合 → LambdaMART 统一打分 → 返回
+    simple → BM25 + 语义 → RRF 融合（快，~1s）
+    complex → BM25 + 语义 → RRF → LambdaMART（准，+12s）
 
     参数:
-        query: 用户问题（建议先经过 query_processor 处理）
+        query: 用户问题
         top_k: 最终返回文档数
+        force_rerank: 强制启用 LambdaMART
 
     返回:
         [{"content": "...", "source": "...", "page": 1, "score": 0.95}, ...]
     """
     strategy = route_query(query)
 
-    if strategy == "simple":
-        # 简单问题：直接向量检索，省时
-        results = semantic_search(query, top_k=top_k)
-        logger.info(f"简单检索完成: 语义 Top-{len(results)}")
-        return results
-
-    # 复杂问题：完整混合检索流程
-    logger.info("BM25 + 语义并行召回...")
+    # 并行召回
     bm25_results = bm25_search(query, top_k=10)
     semantic_results = semantic_search(query, top_k=10)
 
     # RRF 融合
     fused = reciprocal_rank_fusion(bm25_results, semantic_results)
 
-    # LambdaMART 统一打分
-    if len(fused) > top_k:
+    # 决定是否 LambdaMART 精排
+    use_rerank = force_rerank or (strategy == "complex" and len(fused) > top_k)
+
+    if use_rerank:
         final = lambda_mart_rerank(query, fused, top_k=top_k)
+        logger.info(
+            f"混合检索(重排): BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
+            f" → RRF {len(fused)} → LambdaMART {len(final)}"
+        )
     else:
         final = fused[:top_k]
+        logger.info(
+            f"混合检索(快速): BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
+            f" → RRF {len(fused)} → Top-{len(final)}"
+        )
 
-    logger.info(
-        f"混合检索完成: BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
-        f" → RRF {len(fused)} → LambdaMART {len(final)}"
-    )
     return final
