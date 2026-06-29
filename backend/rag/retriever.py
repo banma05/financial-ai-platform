@@ -1,13 +1,12 @@
 """
-RAG 检索管道 - 完整的检索增强生成流程
-支持模型路由：简单问题用 flash，复杂分析用 pro
+RAG 检索管道 — 完整流程：混合检索 → Prompt → LLM → 返回
 """
 import time
 from typing import List
 from loguru import logger
 
 from config import RETRIEVAL_TOP_K
-from .vector_store import search_similar
+from .hybrid_search import hybrid_search
 from .model_router import chat as routed_chat
 
 
@@ -58,9 +57,9 @@ def rag_query(
     """
     start_time = time.time()
 
-    # 第一步：检索相关文档
-    sources = search_similar(query, top_k=top_k)
-    logger.info(f"检索到 {len(sources)} 个相关文档块")
+    # 第一步：混合检索（BM25 + 语义 + RRF 融合 + Reranker 精排）
+    sources = hybrid_search(query, top_k=top_k)
+    logger.info(f"混合检索完成，返回 {len(sources)} 个文档块")
 
     if not sources:
         return {
