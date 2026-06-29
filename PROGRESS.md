@@ -1,0 +1,77 @@
+# 项目进度存档
+
+> 📅 最后更新：2026-06-29
+> 🎯 目标：完成智能财务分析平台，用于大模型应用开发求职
+
+---
+
+## 当前状态
+
+| 模块 | 进度 | 说明 |
+|------|------|------|
+| RAG 文档加载 | ✅ 完成 | 支持 PDF/Word/MD/TXT |
+| RAG 文本分块 | ✅ 完成 | 财务文档专用分块策略 |
+| RAG 向量化 | ✅ 完成 | BGE 本地模型，免费 |
+| RAG 向量存储 | ✅ 完成 | ChromaDB |
+| RAG 检索 + 问答 | ✅ 完成 | 已接入 DeepSeek |
+| 模型路由 | ✅ 完成 | flash 简单任务 / pro 复杂分析 |
+| FastAPI 后端 | ✅ 完成 | 3 个接口已就绪 |
+| Streamlit 前端 | ✅ 完成 | 上传 + 问答界面 |
+| Docker 部署 | ⏳ 未开始 | 后期再做 |
+| 文档表格解析 | ⏳ 未开始 | 财务 PDF 表格结构化提取 |
+| Agent 模块 | ⏳ 未开始 | 第二阶段开发 |
+| MCP 集成 | ⏳ 未开始 | 第三阶段 |
+| 评测体系 | ⏳ 未开始 | 检索召回率量化 |
+
+---
+
+## 技术栈
+
+- Python 3.12（D:\Python312）
+- FastAPI + Streamlit
+- LangChain 1.x + ChromaDB
+- DeepSeek v4（flash 快速 / pro 推理）
+- BGE 中文 Embedding（本地免费）
+
+---
+
+## 关键决策记录
+
+1. **API Key 安全**：`.env` 在 `.gitignore` 中，不会被推送
+2. **模型选择**：使用最新模型名 deepseek-v4-flash / deepseek-v4-pro
+3. **Embedding**：使用本地 BGE 模型而非 API，零成本
+4. **向量库**：选 ChromaDB 而非 Milvus，轻量级免运维
+5. **分块参数**：chunk_size=800, overlap=150
+
+---
+
+## 下一步待办
+
+### 优先级 1（本周）
+- [ ] 下载 2-3 份真实上市公司年报 PDF
+- [ ] 跑通完整流程：上传 → 问答 → 验证
+- [ ] 记录 bad case，优化检索策略
+
+### 优先级 2（后续）
+- [ ] 财务 PDF 表格结构化解析
+- [ ] 混合检索（关键词 + 语义）
+- [ ] 重排序（Reranker）接入
+- [ ] 批量化测试集构建
+
+### 优先级 3（Agent 阶段）
+- [ ] 数据分析 Agent 模块
+- [ ] MCP Server 开发
+- [ ] Docker 容器化
+
+---
+
+## 启动方式
+
+```bash
+# 终端 1：后端
+cd D:\实战项目\financial-ai-platform
+python backend\main.py
+
+# 终端 2：前端
+streamlit run frontend\app.py
+```
