@@ -4,7 +4,7 @@
 当前统一使用 deepseek-v4-pro（最强模型），架构预留了多模型路由接口：
 - 如果后续想加 flash 来省钱，只需改 MODEL_CONFIG 即可
 - classify() 函数可自动判断任务复杂度
-- 面试时可以展开讲这个架构设计思路
+- 架构预留了多模型切换能力
 """
 from enum import Enum
 from typing import Optional

@@ -142,8 +142,8 @@ def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> Li
     LambdaMART 统一打分：将 BM25 召回 + 语义召回的候选集
     用 Cross-Encoder 统一重新打分，消除双路检索的分数尺度差异
 
-    面试要点：为什么不用 RRF 直接用？RRF 只看排名不看内容，
-    LambdaMART 把 query 和 doc 拼在一起深度打分，更准
+    设计思路：RRF 只看排名不看内容，
+    LambdaMART（Cross-Encoder）把 query 和 doc 拼在一起深度打分，更准
     """
     if not candidates:
         return []

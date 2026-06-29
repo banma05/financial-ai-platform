@@ -5,7 +5,7 @@ RAG 评测 — LLM-as-Judge 双标拆解
 1. 上下文召回率（Context Recall）：答案信息是否在检索的文档块中
 2. 忠实度（Faithfulness）：回答是否基于文档，有没有瞎编
 
-面试要点：
+使用指南：
 - 召回率低 → 问题在切分/检索 → 优化 pipeline
 - 忠实度低 → 问题在生成/Prompt → 加强校验
 """
