@@ -18,13 +18,20 @@ from .entity_router import resolve_document_filter
 
 # ============ 策略路由 ============
 
-# 复杂 query 关键词（触发完整混合检索 + 重排序）
+# 简单 query 模式（极短 + 无财务术语，才走快速模式）
+SIMPLE_PATTERNS = ["你好", "帮助", "文档列表", "有哪些文件"]
+
+
+# 复杂 query 关键词（触发 LambdaMART 重排序）
 COMPLEX_PATTERNS = [
     "分析", "对比", "趋势", "变化", "原因", "为什么",
     "异常", "风险", "评估", "判断", "预测", "建议",
     "关联", "影响", "差异", "波动",
     "指标", "比率", "毛利率", "净利率", "ROE", "ROA",
     "同比", "环比", "财务", "审计", "合规",
+    # 数值查询类（用户问了具体数字 → 需要精确检索）
+    "多少", "增长", "下降", "上升", "减少", "增加",
+    "分配", "方案", "目标", "措施", "计划",
 ]
 
 
@@ -32,15 +39,28 @@ def route_query(query: str) -> str:
     """
     策略路由：判断问题复杂度，决定检索策略
 
-    simple → 仅向量检索（快，省计算）
-    complex → 完整混合检索 + 重排序（准，多花 1-2s）
+    默认 complex（混合检索 + LambdaMART 重排）——因为财务 query 大多需要精确数字
+    仅极短问候类 query 走 simple（快，省计算）
     """
+    # 先检查是否是明显的简单 query
+    for pattern in SIMPLE_PATTERNS:
+        if pattern in query:
+            logger.info(f"检索路由: simple → 快速模式")
+            return "simple"
+
+    # 默认复杂——财务 query 对精度要求高
     for pattern in COMPLEX_PATTERNS:
         if pattern in query:
             logger.info(f"检索路由: complex（命中 '{pattern}'）→ 混合检索 + 重排序")
             return "complex"
-    logger.info(f"检索路由: simple → 仅向量检索")
-    return "simple"
+
+    # 短 query (<8字) 且无复杂关键词 → simple
+    if len(query) < 8:
+        logger.info(f"检索路由: simple（短 query {len(query)}字）→ 快速模式")
+        return "simple"
+
+    logger.info(f"检索路由: complex（默认财务 query）→ 混合检索 + 重排序")
+    return "complex"
 
 
 # ============ BM25 关键词检索 ============
@@ -190,7 +210,7 @@ def hybrid_search(
     top_k: int = 5,
     force_rerank: bool = False,
     filter_sources: Optional[List[str]] = None,
-    enable_entity_routing: bool = True,
+    enable_entity_routing: bool = False,
 ) -> List[dict]:
     """
     混合检索完整流程（带策略路由 + 实体路由）
