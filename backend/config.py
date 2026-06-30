@@ -50,5 +50,21 @@ Path(CHROMA_PERSIST_DIR).mkdir(parents=True, exist_ok=True)
 CHUNK_SIZE = 800          # 每个文本块的大小（字符数）
 CHUNK_OVERLAP = 150       # 块之间的重叠（保证语义连贯）
 
+# 语义切分参数
+SEMANTIC_THRESHOLD_MODE = os.getenv("SEMANTIC_THRESHOLD_MODE", "mean-0.5std")
+# 可选值: "mean-1std"（激进，块多）、"mean-0.5std"（默认）、"mean"（保守，块少）
+# 对应 sigma_multiplier: 1.0 / 0.5 / 0.0
+SEMANTIC_MIN_CHUNK_SIZE = int(os.getenv("SEMANTIC_MIN_CHUNK_SIZE", "200"))
+SEMANTIC_MAX_CHUNK_SIZE = int(os.getenv("SEMANTIC_MAX_CHUNK_SIZE", "1200"))
+SEMANTIC_OVERLAP_RATIO = float(os.getenv("SEMANTIC_OVERLAP_RATIO", "0.15"))
+
+# ============ Query 处理参数 ============
+QUERY_SHORT_THRESHOLD = int(os.getenv("QUERY_SHORT_THRESHOLD", "15"))
+# 短 query 阈值（字符数），低于此值触发 LLM 扩写
+QUERY_MIN_SIMILARITY = float(os.getenv("QUERY_MIN_SIMILARITY", "0.8"))
+# 扩写后与原文余弦相似度最低阈值，低于此值废弃扩写，使用原文
+# 调低（如 0.7）→ 更多扩写被接受（可能有噪声）
+# 调高（如 0.85）→ 更多扩写被拒绝（可能丢失信息）
+
 # ============ 检索参数 ============
 RETRIEVAL_TOP_K = 5       # 检索返回的最相关文档数

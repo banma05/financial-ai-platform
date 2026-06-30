@@ -14,12 +14,13 @@ from typing import Optional
 from loguru import logger
 
 from .model_router import chat as llm_chat, TaskType
+from config import QUERY_SHORT_THRESHOLD, QUERY_MIN_SIMILARITY
 
-# 需要扩写的短 query 阈值（字符数）
-SHORT_QUERY_THRESHOLD = 15
+# 需要扩写的短 query 阈值（字符数）— 从 config 读取，可在 .env 覆盖
+SHORT_QUERY_THRESHOLD = QUERY_SHORT_THRESHOLD
 
-# 余弦相似度最低阈值（低于此值废弃扩写）
-MIN_SIMILARITY = 0.8
+# 余弦相似度最低阈值（低于此值废弃扩写）— 从 config 读取，可在 .env 覆盖
+MIN_SIMILARITY = QUERY_MIN_SIMILARITY
 
 
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:

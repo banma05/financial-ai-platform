@@ -1,11 +1,12 @@
 
 # 项目进度存档
 
-> 📅 最后更新：2026-06-30 00:10
+> 📅 最后更新：2026-06-30 15:35
 > 🎯 目标：完成智能财务分析平台，具备企业级 RAG 能力
 > ✅ 里程碑1：RAG Pipeline 验证
 > ✅ 里程碑2：Embedding 升级 + 混合检索
 > ✅ 里程碑3：四步口诀完整实现（语义切分 + Query处理 + LambdaMART + 评测）
+> ✅ 里程碑4：RAG 全面完善（jieba分词 + 标准测试集 + 评测体系 + 参数实验 + 可配置化）
 
 ---
 
@@ -14,16 +15,17 @@
 | 模块 | 进度 | 完善度 | 说明 |
 |------|------|--------|------|
 | RAG 文档加载 | ✅ | 🟢 85% | PDF/Word/MD/TXT，表格仍是纯文本 |
-| RAG 语义切分 | ✅ | 🟡 70% | 逐页语义+15%重叠，阈值未做对比调优 |
+| RAG 语义切分 | ✅ | 🟢 85% | 逐页语义+可配置阈值，sigma_mul 可调 |
 | RAG 向量化 | ✅ | 🟢 90% | bge-base-zh-v1.5 768维，未对比其他模型 |
-| RAG 向量存储 | ✅ | 🟢 80% | ChromaDB，BM25分词未上jieba |
-| RAG Query 处理 | ✅ | 🟡 60% | 扩写阈值15字、余弦0.8 均为经验值 |
-| RAG 混合检索 | ✅ | 🟡 65% | BM25+语义+RRF，分词粗糙 |
-| RAG LambdaMART | ✅ | 🔴 40% | Cross-Encoder替代，无真实LambdaMART训练 |
+| RAG 向量存储 | ✅ | 🟢 90% | ChromaDB，BM25已上 jieba 分词 |
+| RAG Query 处理 | ✅ | 🟢 80% | 扩写+余弦校验，阈值已可通过 config 配置 |
+| RAG 混合检索 | ✅ | 🟢 85% | BM25(jieba)+语义+RRF+LambdaMART，分词准确 |
+| RAG LambdaMART | ✅ | 🟡 50% | Cross-Encoder替代，架构预留真实LambdaMART接口 |
 | RAG 策略路由 | ✅ | 🟢 80% | 关键词匹配路由，够用 |
 | RAG 检索+问答 | ✅ | 🟢 85% | deepseek-v4-pro，准确率高 |
-| RAG 评测 | ✅ | 🔴 30% | LLM-as-Judge可跑，无标准测试集 |
-| FastAPI 后端 | ✅ | 🟢 80% | 3接口，缺鉴权/限流/重试 |
+| RAG 评测 | ✅ | 🟢 80% | 20题标准测试集 + recall@k/MRR/NDCG + 批量评测 |
+| RAG 参数实验 | ✅ | 🟢 90% | 4组对比实验脚本（chunk/overlap/阈值/query）|
+| FastAPI 后端 | ✅ | 🟢 85% | 5接口（含评测），缺鉴权/限流/重试 |
 | Streamlit 前端 | ✅ | 🟡 50% | 能上传问答，缺流式输出/错误兜底 |
 | Docker 部署 | ⏳ | — | 后期 |
 | 表格结构化 | ⏳ | — | PDF表格→结构化数据 |
@@ -42,6 +44,40 @@
 
 ---
 
+## 2026-06-30 本次完善内容
+
+### 1. BM25 jieba 分词 ✅
+- 新建 `backend/rag/jieba_tokenizer.py`：封装 jieba + 138 个财务术语词典
+- `hybrid_search.py` 中 BM25 从 `list()` 改为 `jieba.lcut()` + `jieba.lcut_for_search()`
+- `requirements.txt` 添加 `jieba>=0.42`
+
+### 2. 标准测试集 ✅
+- 新建 `data/test_questions.json`：20 道财务问答
+- 覆盖 6 类：数值查询(5) / 趋势分析(4) / 对比分析(3) / 定义解释(3) / 风险分析(2) / 综合推理(3)
+- 难度分布：easy(5) / medium(10) / hard(5)
+
+### 3. 评测体系升级 ✅
+- `evaluator.py` 新增：`recall_at_k()`, `precision_at_k()`, `mrr()`, `ndcg_at_k()`, `evaluate_retrieval()`, `batch_evaluate()`, `save_report()`, `get_latest_report()`
+- 支持按难度/类别分组统计
+
+### 4. 参数对比实验脚本 ✅
+- 新建 `backend/rag/experiments.py`
+- 4 组实验：chunk_size / overlap / 语义阈值 / Query 余弦阈值
+- 每项输出对比表格 + 推荐值
+- CLI 入口：`python -m backend.rag.experiments [experiment_name]`
+
+### 5. 参数可配置化 ✅
+- `config.py` 新增：`SEMANTIC_THRESHOLD_MODE`, `SEMANTIC_MIN/MAX_CHUNK_SIZE`, `SEMANTIC_OVERLAP_RATIO`, `QUERY_SHORT_THRESHOLD`, `QUERY_MIN_SIMILARITY`
+- `semantic_splitter.py` 从 config 读取，支持 `sigma_mul` 参数
+- `query_processor.py` 从 config 读取阈值
+
+### 6. API 评测接口 ✅
+- 新增 `POST /api/v1/rag/evaluate`：运行批量评测
+- 新增 `GET /api/v1/rag/eval-report`：获取最近评测报告
+- `schemas.py` 新增 `EvalRequest`, `EvalReportResponse` 等模型
+
+---
+
 ## 关键决策记录
 
 1. **API Key 安全**：`.env` 在 `.gitignore` 中，不会被推送
@@ -49,21 +85,25 @@
 3. **Embedding**：使用本地 BGE 模型而非 API，零成本
 4. **向量库**：选 ChromaDB 而非 Milvus，轻量级免运维
 5. **分块参数**：chunk_size=800, overlap=150
+6. **BM25 分词**：jieba 精确模式 + 138 个财务术语词典，替换原按字符切词
+7. **评测体系**：20 题标准测试集 + recall@k/MRR/NDCG 三维检索指标 + LLM-as-Judge 生成指标
+8. **参数实验**：4 组对比实验脚本，可在重建索引后自动找到最优参数
 
 ---
 
 ## 下一步待办（按优先级）
 
-### 优先级 1：参数对比实验（明天先做）
-- [ ] **chunk_size 对比**：200-1200 / 300-800 / 500-1000，10题测召回率
-- [ ] **overlap 对比**：10% / 15% / 20%，同上
-- [ ] **语义阈值对比**：均值-1σ / 均值-0.5σ / 均值（当前 -0.5σ）
-- [ ] **Query余弦阈值**：0.7 / 0.8 / 0.85，测扩写噪声率
+### 优先级 1：运行参数对比实验（立即）
+- [ ] **跑 chunk_size 实验**：`python -m backend.rag.experiments chunk_size`
+- [ ] **跑 overlap 实验**：`python -m backend.rag.experiments overlap`
+- [ ] **跑语义阈值实验**：`python -m backend.rag.experiments semantic`
+- [ ] **跑 Query 阈值实验**：`python -m backend.rag.experiments query`
+- [ ] **根据实验结果更新 .env 最优参数**
 
-### 优先级 2：检索质量优化
-- [ ] **BM25 上 jieba 分词**：替换按字符切词，精度预期 +10-20%
+### 优先级 2：评测基线建立
+- [ ] **跑完整评测**：`curl -X POST http://localhost:8000/api/v1/rag/evaluate`
+- [ ] **记录基线指标**（R@5 / MRR / NDCG@5）到 PROGRESS.md
 - [ ] **多份年报测试**：再下载 2-3 份年报，验证跨文档检索
-- [ ] **构造标准测试集**：20 题 + 人工标注答案页码，可复现评测
 
 ### 优先级 3：工程完善
 - [ ] PDF 表格结构化提取
