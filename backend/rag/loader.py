@@ -7,23 +7,76 @@ from loguru import logger
 import pymupdf  # fitz
 
 
+def _table_to_markdown(pymupdf_table) -> str:
+    """
+    将 PyMuPDF Table 对象转为 Markdown 表格字符串
+    LLM 对 Markdown 表格的理解能力远超展平纯文本
+    """
+    try:
+        md = pymupdf_table.to_markdown()
+        # 清理：替换 <br> 为空格（PyMuPDF 用 <br> 表示单元格内换行）
+        md = md.replace("<br>", " ")
+        return md
+    except Exception:
+        # 降级：手动构建
+        data = pymupdf_table.extract()
+        if not data:
+            return ""
+        lines = []
+        for i, row in enumerate(data):
+            cells = [str(c).replace("\n", " ").strip() if c else "" for c in row]
+            lines.append("| " + " | ".join(cells) + " |")
+            if i == 0:  # 表头分隔行
+                lines.append("|" + "|".join(["---"] * len(cells)) + "|")
+        return "\n".join(lines)
+
+
 def load_pdf(file_path: str) -> List[dict]:
     """
-    加载 PDF 文件，按页提取文本
-    返回: [{"text": "...", "page": 1, "source": "xxx.pdf"}, ...]
+    加载 PDF 文件，按页提取文本 + 结构化表格
+
+    返回: [{
+        "text": "段落文本...",
+        "tables": [{"markdown": "...", "rows": 5, "cols": 3}, ...],
+        "page": 1,
+        "source": "xxx.pdf"
+    }, ...]
     """
     docs = []
+    total_tables = 0
     try:
         doc = pymupdf.open(file_path)
         for page_num, page in enumerate(doc, start=1):
             text = page.get_text()
-            if text.strip():
+            tables = []
+
+            # 检测页面中的表格
+            try:
+                found = page.find_tables()
+                for t in found.tables:
+                    md = _table_to_markdown(t)
+                    if md.strip():
+                        tables.append({
+                            "markdown": md,
+                            "rows": t.row_count,
+                            "cols": t.col_count,
+                        })
+                total_tables += len(tables)
+            except Exception as e:
+                logger.debug(f"表格检测失败 P{page_num}: {e}")
+
+            # 保留非空页面（有文本或有表格）
+            if text.strip() or tables:
                 docs.append({
                     "text": text.strip(),
+                    "tables": tables,
                     "page": page_num,
                     "source": Path(file_path).name,
                 })
-        logger.info(f"PDF 加载完成: {file_path} -> {len(docs)} 页")
+
+        logger.info(
+            f"PDF 加载完成: {file_path} -> {len(docs)} 页, {total_tables} 张表格"
+        )
     except Exception as e:
         logger.error(f"PDF 加载失败: {e}")
         raise
@@ -43,6 +96,7 @@ def load_docx(file_path: str) -> List[dict]:
         if full_text:
             docs.append({
                 "text": "\n".join(full_text),
+                "tables": [],
                 "page": 1,
                 "source": Path(file_path).name,
             })
@@ -62,6 +116,7 @@ def load_markdown(file_path: str) -> List[dict]:
         if text.strip():
             docs.append({
                 "text": text.strip(),
+                "tables": [],
                 "page": 1,
                 "source": Path(file_path).name,
             })
@@ -81,6 +136,7 @@ def load_txt(file_path: str) -> List[dict]:
         if text.strip():
             docs.append({
                 "text": text.strip(),
+                "tables": [],
                 "page": 1,
                 "source": Path(file_path).name,
             })
@@ -91,6 +147,7 @@ def load_txt(file_path: str) -> List[dict]:
         if text.strip():
             docs.append({
                 "text": text.strip(),
+                "tables": [],
                 "page": 1,
                 "source": Path(file_path).name,
             })

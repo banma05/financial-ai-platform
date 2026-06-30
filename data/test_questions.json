@@ -3,7 +3,7 @@
     "name": "财务分析标准测试集",
     "version": "1.0",
     "created": "2026-06-30",
-    "total_questions": 20,
+    "total_questions": 23,
     "based_on_documents": ["测试财报摘要.md（贵州茅台2024年报摘要）", "比亚迪2024年报.PDF"],
     "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析等类别"
   },
@@ -187,6 +187,36 @@
       "expected_keywords": ["658.73亿元", "-98.54亿元", "-475.42亿元", "现金流", "健康", "分红"],
       "ideal_pages": [1],
       "min_recall": 3
+    },
+    {
+      "id": "Q21",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年经营活动产生的现金流量净额是多少元？",
+      "expected_keywords": ["92,463,692,168", "924.64亿", "经营活动", "现金流量净额", "38.85"],
+      "ideal_pages": [5],
+      "min_recall": 2,
+      "source": "PDF表格-现金流量表"
+    },
+    {
+      "id": "Q22",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年末的总资产是多少？相比2023年末增长了多少？",
+      "expected_keywords": ["298,944,579,918", "272,699,660,092", "9.62%", "总资产"],
+      "ideal_pages": [5],
+      "min_recall": 2,
+      "source": "PDF表格-资产负债表"
+    },
+    {
+      "id": "Q23",
+      "category": "对比分析",
+      "difficulty": "hard",
+      "query": "比亚迪2024年的研发费用和研发投入占营业收入的比例是多少？",
+      "expected_keywords": ["研发费用", "研发投入", "营业收入", "%"],
+      "ideal_pages": [30, 31],
+      "min_recall": 2,
+      "source": "PDF表格-比亚迪费用表"
     }
   ]
 }
