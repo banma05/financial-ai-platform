@@ -1,7 +1,6 @@
 """
 向量数据库模块 - ChromaDB 管理
 """
-import shutil
 from pathlib import Path
 from typing import List, Optional
 from loguru import logger
@@ -113,9 +112,16 @@ def get_document_list() -> List[dict]:
 def reset_database():
     """清空向量数据库（用于开发调试时重置）"""
     global _chroma_store
-    _chroma_store = None
-    persist_path = Path(CHROMA_PERSIST_DIR)
-    if persist_path.exists():
-        shutil.rmtree(persist_path)
-        persist_path.mkdir(parents=True, exist_ok=True)
+    # 用 ChromaDB 自己的 API 删除 collection，不要手动删文件
+    # 否则会破坏 ChromaDB 的 SQLite 元数据导致 tenant 错误
+    if _chroma_store is not None:
+        try:
+            _chroma_store.delete_collection()
+        except Exception:
+            pass
+        _chroma_store = None
+    import gc
+    gc.collect()
+    # 重新创建 collection（触发懒加载）
+    _get_chroma()
     logger.warning("向量数据库已重置")
