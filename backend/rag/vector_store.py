@@ -42,7 +42,7 @@ def add_documents(chunks: List[dict]) -> int:
         return 0
 
     texts = [c["content"] for c in chunks]
-    metadatas = [{"source": c["source"], "page": c["page"]} for c in chunks]
+    metadatas = [{"source": c["source"], "page": c["page"], "chunk_type": c.get("chunk_type", "text")} for c in chunks]
     ids = [f"{c['source']}_p{c['page']}_{i}" for i, c in enumerate(chunks)]
 
     chroma = _get_chroma()

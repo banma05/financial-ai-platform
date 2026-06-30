@@ -54,17 +54,18 @@ def semantic_chunk_per_page(
     sigma_mul: float = None,
 ) -> List[dict]:
     """
-    在每页内做语义动态切分，保留页码信息
+    在每页内做语义动态切分，保留页码信息。
+    表格独立成 chunk，不参与语义切分（保持完整性）。
 
     参数:
-        pages: [{"text": "...", "page": 1, "source": "xxx.pdf"}, ...]
+        pages: [{"text": "...", "tables": [...], "page": 1, "source": "xxx.pdf"}, ...]
         min_chunk_size: 最小块大小（默认从 config 读取）
         max_chunk_size: 最大块大小（默认从 config 读取）
         overlap_ratio: 上下文重叠比例 10%-20%（默认从 config 读取）
         sigma_mul: 语义阈值 sigma 倍率（默认从 config 读取：1.0/0.5/0.0）
 
     返回:
-        [{"content": "...", "source": "xxx.pdf", "page": 1}, ...]
+        [{"content": "...", "source": "xxx.pdf", "page": 1, "chunk_type": "text|table"}, ...]
     """
     from .embedder import get_embedding_model
 
@@ -83,7 +84,17 @@ def semantic_chunk_per_page(
     overlap_size = int(max_chunk_size * overlap_ratio)
 
     for page in pages:
-        text = page["text"]
+        text = page.get("text", "")
+
+        # —— 大表格注入：真正的财务报表（≥4行×3列）以 Markdown 形式
+        #     附加到页面文本，参与语义切分。小表格（目录、公司信息等）跳过。
+        big_tables = [
+            t["markdown"] for t in page.get("tables", [])
+            if t.get("rows", 0) >= 4 and t.get("cols", 0) >= 3
+        ]
+        if big_tables:
+            text = text.strip() + "\n\n" + "\n\n".join(big_tables) if text.strip() else "\n\n".join(big_tables)
+
         sentences = _split_sentences(text)
 
         # 短页不切
@@ -93,6 +104,7 @@ def semantic_chunk_per_page(
                     "content": text.strip(),
                     "source": page["source"],
                     "page": page["page"],
+                    "chunk_type": "text",
                 })
             continue
 
@@ -109,6 +121,7 @@ def semantic_chunk_per_page(
                         "content": chunk.strip(),
                         "source": page["source"],
                         "page": page["page"],
+                        "chunk_type": "text",
                     })
             continue
 
@@ -136,6 +149,7 @@ def semantic_chunk_per_page(
                         "content": current.strip(),
                         "source": page["source"],
                         "page": page["page"],
+                        "chunk_type": "text",
                     })
                 # 重叠窗口
                 if overlap_size > 0 and len(current) > overlap_size:
@@ -150,10 +164,14 @@ def semantic_chunk_per_page(
                 "content": current.strip(),
                 "source": page["source"],
                 "page": page["page"],
+                "chunk_type": "text",
             })
 
+    table_chunks = sum(1 for c in all_chunks if c.get("chunk_type") == "table")
+    text_chunks = len(all_chunks) - table_chunks
     logger.info(
         f"语义切分: {len(pages)}页 → {len(all_chunks)}块 "
-        f"(重叠={overlap_ratio:.0%}, sigma_mul={sigma_mul}, 模式={SEMANTIC_THRESHOLD_MODE})"
+        f"(文本{text_chunks} + 表格{table_chunks}, "
+        f"重叠={overlap_ratio:.0%}, sigma_mul={sigma_mul}, 模式={SEMANTIC_THRESHOLD_MODE})"
     )
     return all_chunks
