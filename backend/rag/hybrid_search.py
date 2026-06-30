@@ -13,7 +13,7 @@ from rank_bm25 import BM25Okapi
 from .embedder import get_embedding_model
 from .vector_store import _get_chroma
 from .jieba_tokenizer import tokenize, tokenize_docs, tokenize_for_search
-from .entity_router import resolve_document_filter
+from .entity_router import resolve_document_filter, get_entity_boost_sources
 
 
 # ============ 策略路由 ============
@@ -81,14 +81,27 @@ def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]]
         return []
     tokenized_query = tokenize_for_search(query)
     scores = bm25.get_scores(tokenized_query)
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
 
-    results = []
-    for i, score in ranked:
+    # —— 实体加权：query 中提到的公司，其文档的 BM25 分数 ×1.5 ——
+    boost_sources = get_entity_boost_sources(query)
+    ENTITY_BOOST_FACTOR = 1.5
+
+    ranked = []
+    for i, score in enumerate(scores):
         source = metas[i].get("source", "")
         # 文档过滤
         if filter_sources and source not in filter_sources:
             continue
+        # 实体加权
+        if boost_sources and source in boost_sources:
+            score = score * ENTITY_BOOST_FACTOR
+        ranked.append((i, score))
+
+    ranked.sort(key=lambda x: x[1], reverse=True)
+
+    results = []
+    for i, score in ranked:
+        source = metas[i].get("source", "")
         results.append({
             "content": docs[i],
             "source": source,
@@ -97,6 +110,9 @@ def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]]
         })
         if len(results) >= top_k:
             break
+
+    if boost_sources:
+        logger.info(f"BM25 实体加权: {boost_sources} ×{ENTITY_BOOST_FACTOR}")
 
     return results
 
