@@ -92,3 +92,38 @@ def get_all_document_names() -> List[str]:
     for info in COMPANY_REGISTRY.values():
         docs.extend(info["documents"])
     return docs
+
+
+def detect_entity_from_filename(filename: str) -> Optional[str]:
+    """
+    根据文件名反向查找所属公司实体
+
+    例如："贵州茅台2024年年报.pdf" → "贵州茅台"
+          "比亚迪2024年年报.PDF" → "比亚迪"
+    用于文档加载时自动标记 chunk 的 entity 元数据。
+    """
+    for company_name, info in COMPANY_REGISTRY.items():
+        for doc_name in info["documents"]:
+            if doc_name in filename or filename in doc_name:
+                return company_name
+        # 也检查别名是否出现在文件名中
+        for alias in info["aliases"]:
+            if alias in filename:
+                return company_name
+    return None
+
+
+def get_entity_boost_sources(query: str) -> List[str]:
+    """
+    获取 query 中命中的实体对应的文档列表，用于 BM25 加权。
+
+    返回: 应该获得 BM25 加分的文档 source 名列表
+    """
+    companies = detect_company_entities(query)
+    if not companies:
+        return []
+
+    boost_sources = []
+    for company in companies:
+        boost_sources.extend(COMPANY_REGISTRY[company]["documents"])
+    return boost_sources

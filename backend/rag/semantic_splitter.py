@@ -15,6 +15,7 @@ from config import (
     SEMANTIC_MAX_CHUNK_SIZE,
     SEMANTIC_OVERLAP_RATIO,
 )
+from .entity_router import detect_entity_from_filename
 
 # 阈值模式 → sigma 倍率映射
 _THRESHOLD_SIGMA_MAP = {
@@ -169,9 +170,20 @@ def semantic_chunk_per_page(
 
     table_chunks = sum(1 for c in all_chunks if c.get("chunk_type") == "table")
     text_chunks = len(all_chunks) - table_chunks
+    # —— 实体元数据预索引：根据文件名自动标记所属公司 ——
+    entity_cache = {}
+    for chunk in all_chunks:
+        source = chunk.get("source", "")
+        if source not in entity_cache:
+            entity_cache[source] = detect_entity_from_filename(source)
+        entity = entity_cache[source]
+        if entity:
+            chunk["entity"] = entity
+
     logger.info(
         f"语义切分: {len(pages)}页 → {len(all_chunks)}块 "
         f"(文本{text_chunks} + 表格{table_chunks}, "
+        f"实体标记{len(entity_cache)}文档, "
         f"重叠={overlap_ratio:.0%}, sigma_mul={sigma_mul}, 模式={SEMANTIC_THRESHOLD_MODE})"
     )
     return all_chunks
