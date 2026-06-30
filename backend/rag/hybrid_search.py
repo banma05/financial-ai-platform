@@ -6,13 +6,14 @@
 - LambdaMART 统一打分维度（Cross-Encoder 实现，架构预留 LambdaMART）
 - 策略路由分流：简单问题直接向量检索，复杂问题才重排序
 """
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from loguru import logger
 from rank_bm25 import BM25Okapi
 
 from .embedder import get_embedding_model
 from .vector_store import _get_chroma
 from .jieba_tokenizer import tokenize, tokenize_docs, tokenize_for_search
+from .entity_router import resolve_document_filter
 
 
 # ============ 策略路由 ============
@@ -54,26 +55,43 @@ def _build_bm25_index():
     return bm25, data["documents"], data["metadatas"]
 
 
-def bm25_search(query: str, top_k: int = 10) -> List[dict]:
+def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]] = None) -> List[dict]:
     bm25, docs, metas = _build_bm25_index()
     if bm25 is None:
         return []
     tokenized_query = tokenize_for_search(query)
     scores = bm25.get_scores(tokenized_query)
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
-    return [
-        {
+    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+
+    results = []
+    for i, score in ranked:
+        source = metas[i].get("source", "")
+        # 文档过滤
+        if filter_sources and source not in filter_sources:
+            continue
+        results.append({
             "content": docs[i],
-            "source": metas[i].get("source", ""),
+            "source": source,
             "page": metas[i].get("page", 1),
             "score": float(score),
-        }
-        for i, score in ranked
-    ]
+        })
+        if len(results) >= top_k:
+            break
+
+    return results
 
 
-def semantic_search(query: str, top_k: int = 10) -> List[dict]:
+def semantic_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]] = None) -> List[dict]:
     from .vector_store import search_similar
+    # 语义检索：如果指定了 filter_sources，逐个文档搜索再合并
+    if filter_sources:
+        all_results = []
+        for source in filter_sources:
+            results = search_similar(query, top_k=top_k, filter_source=source)
+            all_results.extend(results)
+        # 按分数降序排列
+        all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return all_results[:top_k]
     return search_similar(query, top_k=top_k)
 
 
@@ -171,9 +189,11 @@ def hybrid_search(
     query: str,
     top_k: int = 5,
     force_rerank: bool = False,
+    filter_sources: Optional[List[str]] = None,
+    enable_entity_routing: bool = True,
 ) -> List[dict]:
     """
-    混合检索完整流程（带策略路由）
+    混合检索完整流程（带策略路由 + 实体路由）
 
     simple → BM25 + 语义 → RRF 融合（快，~1s）
     complex → BM25 + 语义 → RRF → LambdaMART（准，+12s）
@@ -182,15 +202,27 @@ def hybrid_search(
         query: 用户问题
         top_k: 最终返回文档数
         force_rerank: 强制启用 LambdaMART
+        filter_sources: 限定搜索的文档名列表（None=全部）
+        enable_entity_routing: 启用实体识别+自动文档过滤
 
     返回:
         [{"content": "...", "source": "...", "page": 1, "score": 0.95}, ...]
     """
+    # 实体路由：自动检测公司名 → 限定文档
+    applied_filter = filter_sources
+    if enable_entity_routing and filter_sources is None:
+        applied_filter = resolve_document_filter(query)
+
     strategy = route_query(query)
 
-    # 并行召回
-    bm25_results = bm25_search(query, top_k=10)
-    semantic_results = semantic_search(query, top_k=10)
+    # 实体路由命中时，强制走重排序（搜索空间已缩小，重排性价比高）
+    if applied_filter and strategy == "simple":
+        strategy = "complex"
+        logger.info(f"实体路由命中 → 自动升级为 complex（启用重排序）")
+
+    # 并行召回（带文档过滤）
+    bm25_results = bm25_search(query, top_k=10, filter_sources=applied_filter)
+    semantic_results = semantic_search(query, top_k=10, filter_sources=applied_filter)
 
     # RRF 融合
     fused = reciprocal_rank_fusion(bm25_results, semantic_results)
@@ -200,14 +232,16 @@ def hybrid_search(
 
     if use_rerank:
         final = lambda_mart_rerank(query, fused, top_k=top_k)
+        filter_info = f"（过滤: {applied_filter}）" if applied_filter else ""
         logger.info(
-            f"混合检索(重排): BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
+            f"混合检索(重排){filter_info}: BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
             f" → RRF {len(fused)} → LambdaMART {len(final)}"
         )
     else:
         final = fused[:top_k]
+        filter_info = f"（过滤: {applied_filter}）" if applied_filter else ""
         logger.info(
-            f"混合检索(快速): BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
+            f"混合检索(快速){filter_info}: BM25 {len(bm25_results)} + 语义 {len(semantic_results)}"
             f" → RRF {len(fused)} → Top-{len(final)}"
         )
 

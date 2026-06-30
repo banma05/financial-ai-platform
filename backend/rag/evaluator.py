@@ -156,6 +156,28 @@ def full_evaluation(
 
 # ============ 检索指标（无需 LLM）============
 
+def _normalize_text(text: str) -> str:
+    """
+    财务文本归一化：
+    1. 去空白符（中文财务文档中空格不统一）
+    2. 去数字千分位逗号（"1,741.44亿" → "1741.44亿"）
+    3. 全角数字转半角（"１２３" → "123"）
+    """
+    import re
+    text = re.sub(r'\s+', '', text)
+    # 去掉数字中的千分位逗号：保留 "1,741.44" → "1741.44"，但不过度匹配
+    text = re.sub(r'(\d),(\d)', r'\1\2', text)
+    # 全角数字 → 半角
+    full_to_half = str.maketrans('０１２３４５６７８９．％', '0123456789.%')
+    text = text.translate(full_to_half)
+    return text
+
+
+def _keyword_in_text(kw: str, text: str) -> bool:
+    """检查关键词是否在文本中（忽略空白符差异）"""
+    return _normalize_text(kw) in _normalize_text(text)
+
+
 def recall_at_k(
     query: str,
     expected_keywords: List[str],
@@ -176,7 +198,7 @@ def recall_at_k(
     matched = []
     missed = []
     for kw in expected_keywords:
-        if kw in combined_text:
+        if _keyword_in_text(kw, combined_text):
             matched.append(kw)
         else:
             missed.append(kw)
@@ -204,7 +226,7 @@ def precision_at_k(
     top_k = retrieved_chunks[:k]
     hit_count = 0
     for chunk in top_k:
-        if any(kw in chunk["content"] for kw in expected_keywords):
+        if any(_keyword_in_text(kw, chunk["content"]) for kw in expected_keywords):
             hit_count += 1
 
     precision = hit_count / k if k > 0 else 0.0
@@ -228,7 +250,7 @@ def mrr(
         return {"mrr": 0.0, "first_rank": None}
 
     for rank, chunk in enumerate(retrieved_chunks, start=1):
-        if any(kw in chunk["content"] for kw in expected_keywords):
+        if any(_keyword_in_text(kw, chunk["content"]) for kw in expected_keywords):
             return {"mrr": round(1.0 / rank, 4), "first_rank": rank}
 
     return {"mrr": 0.0, "first_rank": None}
@@ -256,7 +278,7 @@ def ndcg_at_k(
         relevance = 0
         content = chunk["content"]
         # 简单二值相关度：命中的关键词越多得分越高
-        relevance = sum(1 for kw in expected_keywords if kw in content)
+        relevance = sum(1 for kw in expected_keywords if _keyword_in_text(kw, content))
         if relevance > 0:
             dcg += relevance / math.log2(i + 1)
 

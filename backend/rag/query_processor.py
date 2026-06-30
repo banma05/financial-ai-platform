@@ -1,20 +1,87 @@
 """
-Query 处理器 — 短句扩写 + 余弦相似度校验
+Query 处理器 — 短句扩写 + 财务术语展开 + 余弦相似度校验
 
 流程：
-1. 判断 Query 是否需要扩写（短于阈值才扩）
-2. LLM 扩写（保留原意，补充上下文）
-3. 余弦相似度校验：扩写后与原文相似度 < 0.8 → 废弃扩写，用原文
-4. 杜绝扩写引入的噪声/幻觉
+1. 财务术语展开：缩写→全文（如"归母净利润"→"归属于母公司股东的净利润"）
+2. 判断 Query 是否需要扩写（短于阈值才扩）
+3. LLM 扩写（保留原意，补充上下文）
+4. 余弦相似度校验：扩写后与原文相似度 < 0.8 → 废弃扩写，用原文
+5. 杜绝扩写引入的噪声/幻觉
 
-设计要点：余弦兜底可将扩写噪声率从 ~20% 降到 < 5%
+设计要点：
+- 术语展开用词典匹配，零延迟、零幻觉
+- 余弦兜底可将扩写噪声率从 ~20% 降到 < 5%
 """
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict
 from loguru import logger
 
 from .model_router import chat as llm_chat, TaskType
 from config import QUERY_SHORT_THRESHOLD, QUERY_MIN_SIMILARITY
+
+# ============ 财务术语缩写 → 全文展开 ============
+# 年报中这些术语几乎总是用全称，用户的缩写会导致 BM25 和语义匹配失效
+FINANCIAL_TERM_MAP: Dict[str, str] = {
+    # 利润相关（注意：不包含"净利""毛利"等短子串，它们会误匹配到"净利润""毛利率"内部）
+    "归母净利润": "归属于母公司股东的净利润",
+    "归母净利": "归属于母公司股东的净利润",
+    "扣非净利润": "扣除非经常性损益的净利润",
+    "扣非净利": "扣除非经常性损益的净利润",
+    # 现金流
+    "经营现金流": "经营活动产生的现金流量净额",
+    "投资现金流": "投资活动产生的现金流量净额",
+    "筹资现金流": "筹资活动产生的现金流量净额",
+    # 英文缩写
+    "ROE": "净资产收益率",
+    "ROA": "总资产收益率",
+    "EPS": "基本每股收益",
+    "EBITDA": "息税折旧摊销前利润",
+    # 常用缩写
+    "营收": "营业收入",
+    "资产负债率": "资产负债率",
+    "每股收益": "基本每股收益",
+}
+
+
+def expand_financial_terms(query: str) -> str:
+    """
+    财务术语缩写展开：将用户的缩写替换为年报中的全称
+
+    策略：保留原文，追加全称。
+    例如："归母净利润是多少" → "归母净利润(归属于母公司股东的净利润)是多少"
+
+    实现要点：
+    - 按缩写长度降序处理，长词优先
+    - 在原始 query 中检测缩写，在独立结果上替换（防止短词污染长词替换结果）
+    - 已被长词覆盖的短词不再重复展开
+    """
+    expanded = query
+    replaced_positions = set()  # 已被替换覆盖的字符位置
+
+    # 按缩写长度降序：先长后短
+    sorted_terms = sorted(FINANCIAL_TERM_MAP.items(), key=lambda x: len(x[0]), reverse=True)
+
+    for abbr, full in sorted_terms:
+        if abbr == full:
+            continue
+
+        # 在原 query 中查找缩写
+        idx = query.find(abbr)
+        if idx == -1:
+            continue
+
+        # 检查该位置是否已被更长的缩写覆盖
+        positions = set(range(idx, idx + len(abbr)))
+        if positions & replaced_positions:
+            continue
+
+        # 标记位置，执行替换
+        replaced_positions |= positions
+        expanded = expanded.replace(abbr, f"{abbr}({full})", 1)
+
+    if expanded != query:
+        logger.info(f"术语展开: '{query[:60]}...' → '{expanded[:80]}...'")
+    return expanded
 
 # 需要扩写的短 query 阈值（字符数）— 从 config 读取，可在 .env 覆盖
 SHORT_QUERY_THRESHOLD = QUERY_SHORT_THRESHOLD
@@ -103,7 +170,7 @@ def validate_expansion(original: str, expanded: str) -> str:
 
 def process_query(query: str) -> str:
     """
-    完整 Query 处理流程：扩写 → 校验 → 输出
+    完整 Query 处理流程：术语展开 → 扩写 → 校验 → 输出
 
     参数:
         query: 原始用户问题
@@ -115,6 +182,9 @@ def process_query(query: str) -> str:
         return query
 
     query = query.strip()
+
+    # 0. 财务术语缩写展开（零延迟、零幻觉）
+    query = expand_financial_terms(query)
 
     # 1. 短句扩写
     expanded = expand_query(query)
