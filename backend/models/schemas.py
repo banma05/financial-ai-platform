@@ -46,3 +46,52 @@ class DocumentListResponse(BaseModel):
     """文档列表响应"""
     documents: List[DocumentInfo]
     total: int
+
+
+class EvalRequest(BaseModel):
+    """评测请求"""
+    test_set_path: str = Field(default="", description="测试集 JSON 路径，留空则用默认")
+    top_k: int = Field(default=5, description="检索文档数")
+    use_llm_judge: bool = Field(default=False, description="是否启用 LLM-as-Judge（耗时更长）")
+
+
+class EvalSummary(BaseModel):
+    """评测汇总指标"""
+    avg_recall_at_1: float = 0.0
+    avg_recall_at_3: float = 0.0
+    avg_recall_at_5: float = 0.0
+    avg_mrr: float = 0.0
+    avg_ndcg_at_5: float = 0.0
+    num_questions: int = 0
+    total_time_s: float = 0.0
+
+
+class EvalDetail(BaseModel):
+    """单题评测详情"""
+    question_id: str
+    query: str
+    category: str
+    difficulty: str
+    recall_at_1: float
+    recall_at_3: float
+    recall_at_5: float
+    mrr: float
+    ndcg_at_5: float
+    time_s: float
+    chunks_found: int
+
+
+class EvalGroupStats(BaseModel):
+    """分组统计"""
+    count: int
+    avg_recall_at_5: float
+    avg_mrr: float
+
+
+class EvalReportResponse(BaseModel):
+    """评测报告响应"""
+    summary: EvalSummary
+    by_difficulty: dict = {}
+    by_category: dict = {}
+    details: List[EvalDetail] = []
+    llm_judge_results: Optional[dict] = None

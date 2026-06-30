@@ -1,0 +1,192 @@
+{
+  "meta": {
+    "name": "财务分析标准测试集",
+    "version": "1.0",
+    "created": "2026-06-30",
+    "total_questions": 20,
+    "based_on_documents": ["测试财报摘要.md（贵州茅台2024年报摘要）", "比亚迪2024年报.PDF"],
+    "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析等类别"
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "贵州茅台2024年的营业总收入是多少？",
+      "expected_keywords": ["1,741.44亿元", "1741.44亿", "营业总收入"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q02",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "2024年贵州茅台的归属于母公司股东的净利润是多少？",
+      "expected_keywords": ["862.28亿元", "归母净利润", "862.28"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q03",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "贵州茅台2024年的基本每股收益是多少？",
+      "expected_keywords": ["68.64", "元/股", "基本每股收益"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q04",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "茅台2024年的销售毛利率是多少？",
+      "expected_keywords": ["91.80%", "销售毛利率", "91.80"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q05",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年末的货币资金有多少？资产负债率是多少？",
+      "expected_keywords": ["765.17亿元", "12.55%", "货币资金", "资产负债率"],
+      "ideal_pages": [1],
+      "min_recall": 2
+    },
+    {
+      "id": "Q06",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年的营业收入相比2023年增长了多少？",
+      "expected_keywords": ["15.71%", "同比增长", "1,709.90亿元", "1,476.94亿元"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q07",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "茅台2024年经营活动现金流净额的变化情况如何？",
+      "expected_keywords": ["658.73亿元", "24.72%", "528.18亿元", "经营活动现金流"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q08",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年的ROE相比2023年有什么变化？",
+      "expected_keywords": ["33.77%", "33.31%", "净资产收益率", "ROE"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q09",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "茅台2024年的资产负债率比2023年下降了多少个百分点？",
+      "expected_keywords": ["2.67", "个百分点", "12.55%", "15.22%", "资产负债率"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q10",
+      "category": "对比分析",
+      "difficulty": "medium",
+      "query": "贵州茅台直销渠道和批发代理渠道2024年的收入分别是多少？哪个占比更高？",
+      "expected_keywords": ["748.15亿元", "961.75亿元", "43.77%", "56.23%", "批发代理"],
+      "ideal_pages": [1],
+      "min_recall": 2
+    },
+    {
+      "id": "Q11",
+      "category": "对比分析",
+      "difficulty": "medium",
+      "query": "茅台酒和系列酒2024年各自的营业收入和增速是多少？",
+      "expected_keywords": ["1,459.20亿元", "221.57亿元", "15.28%", "19.24%", "茅台酒", "系列酒"],
+      "ideal_pages": [1],
+      "min_recall": 2
+    },
+    {
+      "id": "Q12",
+      "category": "对比分析",
+      "difficulty": "hard",
+      "query": "贵州茅台2024年各项费用（销售、管理、研发）分别增长了多少？原因是什么？",
+      "expected_keywords": ["销售费用", "51.49亿元", "管理费用", "63.27亿元", "研发费用", "15.67亿元", "广告", "人员薪酬", "数字化转型"],
+      "ideal_pages": [1],
+      "min_recall": 3
+    },
+    {
+      "id": "Q13",
+      "category": "定义解释",
+      "difficulty": "easy",
+      "query": "贵州茅台的主营业务是什么？",
+      "expected_keywords": ["茅台酒", "系列酒", "生产与销售"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q14",
+      "category": "定义解释",
+      "difficulty": "medium",
+      "query": "贵州茅台2024年的利润分配方案是怎样的？",
+      "expected_keywords": ["每10股派发", "276.00元", "346.71亿元", "现金红利"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q15",
+      "category": "定义解释",
+      "difficulty": "hard",
+      "query": "为什么贵州茅台2024年筹资活动现金流净额为负？这意味着什么？",
+      "expected_keywords": ["-475.42亿元", "现金分红", "筹资活动", "负"],
+      "ideal_pages": [1],
+      "min_recall": 1
+    },
+    {
+      "id": "Q16",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "query": "贵州茅台面临的主要经营风险有哪些？",
+      "expected_keywords": ["宏观经济", "行业竞争", "原材料价格", "食品安全", "环保政策", "品牌价值"],
+      "ideal_pages": [1],
+      "min_recall": 3
+    },
+    {
+      "id": "Q17",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "query": "贵州茅台2025年的经营目标和主要措施是什么？",
+      "expected_keywords": ["增长约15%", "技改项目", "系列酒", "i茅台", "国际化", "数字化转型"],
+      "ideal_pages": [1],
+      "min_recall": 3
+    },
+    {
+      "id": "Q18",
+      "category": "综合分析",
+      "difficulty": "hard",
+      "query": "综合分析贵州茅台2024年的盈利能力：毛利率、净利率、ROE各是多少？与2023年相比有什么趋势？",
+      "expected_keywords": ["91.80%", "50.56%", "33.77%", "盈利能力", "增长"],
+      "ideal_pages": [1],
+      "min_recall": 3
+    },
+    {
+      "id": "Q19",
+      "category": "跨文档检索",
+      "difficulty": "hard",
+      "query": "对比贵州茅台和比亚迪2024年的财务表现，两家公司的盈利能力和增长情况有何异同？",
+      "expected_keywords": ["茅台", "比亚迪", "毛利率", "营业收入", "净利润", "对比"],
+      "ideal_pages": [1, 2],
+      "min_recall": 4
+    },
+    {
+      "id": "Q20",
+      "category": "综合推理",
+      "difficulty": "hard",
+      "query": "从现金流角度来看，贵州茅台2024年的经营、投资、筹资三大现金流各是什么状态？公司的现金流健康吗？",
+      "expected_keywords": ["658.73亿元", "-98.54亿元", "-475.42亿元", "现金流", "健康", "分红"],
+      "ideal_pages": [1],
+      "min_recall": 3
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from rank_bm25 import BM25Okapi
 
 from .embedder import get_embedding_model
 from .vector_store import _get_chroma
+from .jieba_tokenizer import tokenize, tokenize_docs, tokenize_for_search
 
 
 # ============ 策略路由 ============
@@ -48,7 +49,7 @@ def _build_bm25_index():
     data = chroma.get()
     if not data["documents"]:
         return None, [], []
-    tokenized = [list(doc) for doc in data["documents"]]
+    tokenized = tokenize_docs(data["documents"])
     bm25 = BM25Okapi(tokenized)
     return bm25, data["documents"], data["metadatas"]
 
@@ -57,7 +58,7 @@ def bm25_search(query: str, top_k: int = 10) -> List[dict]:
     bm25, docs, metas = _build_bm25_index()
     if bm25 is None:
         return []
-    tokenized_query = list(query)
+    tokenized_query = tokenize_for_search(query)
     scores = bm25.get_scores(tokenized_query)
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
     return [

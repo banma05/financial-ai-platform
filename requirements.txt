@@ -27,6 +27,9 @@ sentence-transformers>=5.0.0
 # 前端
 streamlit>=1.40.0
 
+# 中文分词（BM25 检索）
+jieba>=0.42
+
 # 工具
 python-dotenv>=1.0.0
 pydantic>=2.10.0

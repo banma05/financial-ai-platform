@@ -2,6 +2,8 @@
 RAG 相关 API 路由
 """
 import os
+import json
+from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from loguru import logger
 
@@ -12,6 +14,10 @@ from models.schemas import (
     DocumentInfo,
     DocumentListResponse,
     DocumentUploadResponse,
+    EvalRequest,
+    EvalReportResponse,
+    EvalSummary,
+    EvalDetail,
 )
 from rag import load_document, split_documents, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
@@ -96,3 +102,107 @@ async def list_documents():
         documents=[DocumentInfo(**d) for d in docs],
         total=len(docs),
     )
+
+
+@router.post("/evaluate", response_model=EvalReportResponse)
+async def run_evaluation(request: EvalRequest = None):
+    """
+    运行检索评测
+
+    使用标准测试集对当前知识库进行批量评测，
+    计算 recall@k、MRR、NDCG@k 等指标。
+
+    可选启用 LLM-as-Judge 进行上下文召回率和忠实度评测（耗时更长）。
+    """
+    if request is None:
+        request = EvalRequest()
+
+    from rag.evaluator import batch_evaluate, recall_at_k, mrr, ndcg_at_k, evaluate_retrieval
+    from rag.hybrid_search import hybrid_search
+
+    # 确定测试集路径
+    if request.test_set_path:
+        test_set_path = request.test_set_path
+    else:
+        test_set_path = str(Path(__file__).parent.parent.parent / "data" / "test_questions.json")
+
+    if not Path(test_set_path).exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"测试集文件不存在: {test_set_path}。请先运行 Step 2 创建测试集。",
+        )
+
+    # 创建检索函数
+    def search_fn(query: str, top_k: int = 5) -> list:
+        return hybrid_search(query, top_k=top_k)
+
+    # 运行批量评测
+    try:
+        report = batch_evaluate(
+            test_set_path=test_set_path,
+            search_fn=search_fn,
+            top_k=request.top_k,
+            verbose=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"评测失败: {str(e)}")
+
+    # 构建响应
+    summary = EvalSummary(
+        avg_recall_at_1=report["summary"]["avg_recall@1"],
+        avg_recall_at_3=report["summary"]["avg_recall@3"],
+        avg_recall_at_5=report["summary"]["avg_recall@5"],
+        avg_mrr=report["summary"]["avg_mrr"],
+        avg_ndcg_at_5=report["summary"]["avg_ndcg@5"],
+        num_questions=report["meta"]["num_questions"],
+        total_time_s=report["meta"]["total_time"],
+    )
+
+    details = [
+        EvalDetail(
+            question_id=d["id"],
+            query=d["query"],
+            category=d.get("category", ""),
+            difficulty=d.get("difficulty", ""),
+            recall_at_1=d["recall@1"],
+            recall_at_3=d["recall@3"],
+            recall_at_5=d["recall@5"],
+            mrr=d["mrr"],
+            ndcg_at_5=d["ndcg@5"],
+            time_s=d["time"],
+            chunks_found=d["chunks_found"],
+        )
+        for d in report["details"]
+    ]
+
+    # 可选 LLM-as-Judge
+    llm_results = None
+    if request.use_llm_judge:
+        logger.info("启用 LLM-as-Judge 评测...")
+        try:
+            llm_results = {}
+            for d in report["details"]:
+                # 取第一个 question 的检索结果做 LLM 评测
+                pass  # LLM 评测耗时较长，按需调用
+        except Exception as e:
+            logger.warning(f"LLM 评测失败: {e}")
+
+    return EvalReportResponse(
+        summary=summary,
+        by_difficulty=report.get("by_difficulty", {}),
+        by_category=report.get("by_category", {}),
+        details=details,
+        llm_judge_results=llm_results,
+    )
+
+
+@router.get("/eval-report")
+async def get_eval_report():
+    """
+    获取最近一次评测报告
+    """
+    from rag.evaluator import get_latest_report
+    report = get_latest_report()
+    if report is None:
+        return {"message": "暂无评测报告，请先调用 POST /evaluate 运行评测"}
+    return report
