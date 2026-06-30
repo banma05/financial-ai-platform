@@ -132,9 +132,11 @@ async def run_evaluation(request: EvalRequest = None):
             detail=f"测试集文件不存在: {test_set_path}。请先运行 Step 2 创建测试集。",
         )
 
-    # 创建检索函数
+    # 创建检索函数（含 Query 预处理：术语展开 + 扩写校验）
     def search_fn(query: str, top_k: int = 5) -> list:
-        return hybrid_search(query, top_k=top_k)
+        from rag.query_processor import process_query
+        processed = process_query(query)
+        return hybrid_search(processed, top_k=top_k)
 
     # 运行批量评测
     try:
