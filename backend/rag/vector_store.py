@@ -56,6 +56,11 @@ def add_documents(chunks: List[dict]) -> int:
     chroma = _get_chroma()
     chroma.add_texts(texts=texts, metadatas=metadatas, ids=ids)
     logger.info(f"向量库新增 {len(chunks)} 个文本块")
+
+    # 文档变更 → 使 BM25 缓存失效
+    from .hybrid_search import _invalidate_bm25_cache
+    _invalidate_bm25_cache()
+
     return len(chunks)
 
 
