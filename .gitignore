@@ -3,6 +3,8 @@ data/chroma_db/
 data/documents/*
 !data/documents/.gitkeep
 data/models/
+data/*.db
+backend/data/
 __pycache__/
 *.pyc
 .venv/

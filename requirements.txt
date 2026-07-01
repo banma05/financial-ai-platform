@@ -35,3 +35,6 @@ python-dotenv>=1.0.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 loguru>=0.7.0
+
+# 业务数据库（SQLite MVP → 生产切 MySQL）
+sqlalchemy>=2.0.0

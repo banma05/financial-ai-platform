@@ -18,19 +18,41 @@ st.set_page_config(
 API_BASE = "http://localhost:8000/api/v1/rag"
 
 # ============ 会话状态初始化 ============
+CACHE_TTL = 30  # 缓存有效期（秒），避免每次切换页面都调 API
+
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []  # [{role, content, sources?, time?}]
-if "max_retries" not in st.session_state:
-    st.session_state.max_retries = 2
+    st.session_state.chat_history = []
+if "backend_ok" not in st.session_state:
+    st.session_state.backend_ok = None      # True/False/None(未检查)
+if "doc_count" not in st.session_state:
+    st.session_state.doc_count = None        # int/None
+if "last_api_check" not in st.session_state:
+    st.session_state.last_api_check = 0      # timestamp
 
 
-def check_backend() -> bool:
-    """检查后端是否存活"""
+def _cache_expired() -> bool:
+    """缓存是否过期"""
+    return (time.time() - st.session_state.last_api_check) > CACHE_TTL
+
+
+def refresh_backend_status():
+    """刷新后端状态和文档计数（带缓存，避免每次渲染都请求）"""
+    now = time.time()
+    if not _cache_expired() and st.session_state.backend_ok is not None:
+        return  # 缓存未过期，跳过
     try:
         r = requests.get("http://localhost:8000/health", timeout=3)
-        return r.status_code == 200
+        st.session_state.backend_ok = r.status_code == 200
+        if st.session_state.backend_ok:
+            try:
+                docs_resp = requests.get(f"{API_BASE}/documents", timeout=5)
+                if docs_resp.status_code == 200:
+                    st.session_state.doc_count = docs_resp.json().get("total", 0)
+            except Exception:
+                pass
     except Exception:
-        return False
+        st.session_state.backend_ok = False
+    st.session_state.last_api_check = now
 
 
 def sse_chat(query: str, top_k: int = 5):
@@ -81,12 +103,18 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 后端状态
-    backend_ok = check_backend()
-    if backend_ok:
-        st.success("🟢 后端服务运行中")
+    # 后端状态（带缓存，不卡页面切换）
+    refresh_backend_status()
+    if st.session_state.backend_ok:
+        with st.expander("🟢 后端运行中", expanded=False):
+            st.caption(f"文档数：{st.session_state.doc_count if st.session_state.doc_count is not None else '?'}")
+            if st.button("🔄 强制刷新状态", use_container_width=True):
+                st.session_state.last_api_check = 0
+                st.rerun()
+    elif st.session_state.backend_ok is False:
+        st.error("🔴 后端未启动")
     else:
-        st.error("🔴 后端服务未启动")
+        st.warning("⏳ 检查中...")
 
     st.markdown("---")
     st.caption("智能财务分析平台 V1.0")
@@ -98,19 +126,16 @@ if menu == "💬 知识库问答":
     st.title("💬 财务知识库问答")
     st.caption("基于 RAG 检索增强生成，上传年报/公告/研报后自然语言提问，AI 基于文档回答并溯源")
 
-    # 知识库状态
+    # 知识库状态（从缓存读取，不卡切换）
     col_status, col_clear = st.columns([3, 1])
     with col_status:
-        try:
-            docs_resp = requests.get(f"{API_BASE}/documents", timeout=5)
-            if docs_resp.status_code == 200:
-                doc_count = docs_resp.json().get("total", 0)
-                if doc_count == 0:
-                    st.warning("⚠️ 知识库中没有文档，请先在「文档管理」页面上传文件")
-                else:
-                    st.success(f"✅ 知识库就绪 — {doc_count} 个文档")
-        except Exception:
-            st.warning("⚠️ 无法获取知识库状态")
+        doc_count = st.session_state.doc_count
+        if doc_count is None:
+            st.warning("⏳ 正在检查知识库...")
+        elif doc_count == 0:
+            st.warning("⚠️ 知识库中没有文档，请先在「文档管理」页面上传文件")
+        else:
+            st.success(f"✅ 知识库就绪 — {doc_count} 个文档")
     with col_clear:
         if st.button("🗑️ 清空对话", use_container_width=True):
             st.session_state.chat_history = []
@@ -294,6 +319,8 @@ elif menu == "📁 文档管理":
                 if resp.status_code == 200:
                     data = resp.json()
                     st.success(f"✅ {data['message']}")
+                    # 上传成功后刷新缓存
+                    st.session_state.last_api_check = 0
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("文件名", data["filename"])
@@ -335,11 +362,12 @@ elif menu == "📁 文档管理":
                         with col1:
                             st.markdown(f"📄 **{doc['filename']}**")
                         with col2:
-                            st.caption(f"📊 {doc['page_count']} 页")
+                            st.caption(f"📊 {doc.get('page_count', 0)} 页")
                         with col3:
-                            st.caption(f"🧩 {doc['chunk_count']} 块")
+                            st.caption(f"🧩 {doc.get('chunk_count', 0)} 块")
                         with col4:
-                            st.caption(f"📅 {doc.get('created_at', '-')[:10] if doc.get('created_at') else '-'}")
+                            upload_time = doc.get('upload_time', '')
+                            st.caption(f"📅 {upload_time[:10] if upload_time else '-'}")
                         st.divider()
         else:
             st.error(f"获取文档列表失败：HTTP {resp.status_code}")

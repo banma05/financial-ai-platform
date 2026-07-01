@@ -202,6 +202,16 @@ streamlit run frontend\app.py
 - `model_router.py` 新增 `chat_stream()` 流式调用
 - 前端重写：逐字流式显示、对话历史保留、三模块导航
 - Agent 和 MCP 页面设占位预览（展示完整产品愿景）
+- **缓存优化**：`session_state` 缓存后端状态 + 文档列表（30s TTL），页面切换不再卡顿
+
+#### 业务数据库（SQLite）✅
+- 新建 `backend/db/` 模块（SQLAlchemy ORM）
+- `documents` 表：文档元数据（文件名/大小/页数/块数/上传时间）
+- `chat_history` 表：对话记录持久化
+- `query_log` 表：查询日志（审计 + 统计分析）
+- 上传时自动写入 documents 表；每次查询记录到 query_log
+- 文档列表优先从数据库读取，数据库不可用时回退 ChromaDB
+- 架构预留 MySQL 切换（改一行连接串即可）
 
 #### PROGRESS.md 重构 ✅
 - 按三模块拆分：模块一(RAG) / 模块二(Agent) / 模块三(MCP)
