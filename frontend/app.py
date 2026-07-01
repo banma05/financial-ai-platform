@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # API 地址
-API_BASE = "http://localhost:8000/api/v1/rag"
+API_BASE = "http://localhost:8001/api/v1/rag"
 
 # ============ 会话状态初始化 ============
 CACHE_TTL = 30
@@ -44,7 +44,7 @@ def refresh_backend_status():
     if not _cache_expired() and st.session_state.backend_ok is not None:
         return  # 缓存未过期，跳过
     try:
-        r = requests.get("http://localhost:8000/health", timeout=3)
+        r = requests.get("http://localhost:8001/health", timeout=3)
         st.session_state.backend_ok = r.status_code == 200
         if st.session_state.backend_ok:
             try:
@@ -142,6 +142,18 @@ if menu == "💬 知识库问答":
     with col_clear:
         if st.button("🗑️ 清空对话", use_container_width=True):
             st.session_state.chat_history = []
+            # 同时清除后端会话历史
+            try:
+                requests.post(
+                    f"{API_BASE}/session/clear",
+                    params={"session_id": st.session_state.session_id},
+                    timeout=3,
+                )
+            except Exception:
+                pass
+            # 生成新的会话ID（避免旧历史残留）
+            import uuid
+            st.session_state.session_id = str(uuid.uuid4())[:8]
             st.rerun()
 
     st.markdown("---")
