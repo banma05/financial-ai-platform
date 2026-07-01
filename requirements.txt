@@ -38,3 +38,7 @@ loguru>=0.7.0
 
 # 业务数据库（SQLite MVP → 生产切 MySQL）
 sqlalchemy>=2.0.0
+
+# 测试
+pytest>=9.0.0
+pytest-cov>=7.0.0
