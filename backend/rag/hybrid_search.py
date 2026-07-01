@@ -65,18 +65,42 @@ def route_query(query: str) -> str:
 
 # ============ BM25 关键词检索 ============
 
-def _build_bm25_index():
+# BM25 索引缓存（避免每次查询从 ChromaDB 重建）
+_bm25_cache: dict = {"bm25": None, "docs": [], "metas": [], "doc_count": -1}
+
+
+def _get_bm25_index():
+    """获取 BM25 索引（带缓存，仅在文档数变化时重建）"""
     chroma = _get_chroma()
     data = chroma.get()
+    current_count = len(data.get("documents") or [])
+
+    if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
+        return _bm25_cache["bm25"], _bm25_cache["docs"], _bm25_cache["metas"]
+
     if not data["documents"]:
+        _bm25_cache["doc_count"] = 0
+        _bm25_cache["bm25"] = None
         return None, [], []
+
     tokenized = tokenize_docs(data["documents"])
     bm25 = BM25Okapi(tokenized)
+    _bm25_cache["bm25"] = bm25
+    _bm25_cache["docs"] = data["documents"]
+    _bm25_cache["metas"] = data["metadatas"]
+    _bm25_cache["doc_count"] = current_count
+    logger.info(f"BM25 索引已缓存: {current_count} 文档")
     return bm25, data["documents"], data["metadatas"]
 
 
+def _invalidate_bm25_cache():
+    """使 BM25 缓存失效（文档变更后调用）"""
+    _bm25_cache["doc_count"] = -1
+    _bm25_cache["bm25"] = None
+
+
 def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]] = None) -> List[dict]:
-    bm25, docs, metas = _build_bm25_index()
+    bm25, docs, metas = _get_bm25_index()
     if bm25 is None:
         return []
     tokenized_query = tokenize_for_search(query)
@@ -267,6 +291,10 @@ def hybrid_search(
     use_rerank = force_rerank or (strategy == "complex" and len(fused) > top_k)
 
     if use_rerank:
+        # 裁剪候选集：Cross-Encoder 很慢，top_k=5 时 10 个候选即可（省 ~50% 重排时间）
+        max_candidates = max(top_k * 2, 10)
+        if len(fused) > max_candidates:
+            fused = fused[:max_candidates]
         final = lambda_mart_rerank(query, fused, top_k=top_k)
         filter_info = f"（过滤: {applied_filter}）" if applied_filter else ""
         logger.info(
