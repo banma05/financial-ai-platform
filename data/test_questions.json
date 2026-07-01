@@ -1,11 +1,12 @@
 {
   "meta": {
     "name": "财务分析标准测试集",
-    "version": "1.0",
+    "version": "1.1",
     "created": "2026-06-30",
-    "total_questions": 23,
-    "based_on_documents": ["测试财报摘要.md（贵州茅台2024年报摘要）", "比亚迪2024年报.PDF"],
-    "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析等类别"
+    "updated": "2026-07-01",
+    "total_questions": 33,
+    "based_on_documents": ["测试财报摘要.md（贵州茅台2024年报摘要）", "比亚迪2024年报.PDF", "腾讯控股2024年年报.pdf"],
+    "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析、边界异常、脏数据等类别"
   },
   "questions": [
     {
@@ -217,6 +218,106 @@
       "ideal_pages": [30, 31],
       "min_recall": 2,
       "source": "PDF表格-比亚迪费用表"
+    },
+    {
+      "id": "Q24",
+      "category": "边界异常",
+      "difficulty": "easy",
+      "query": "它去年赚了多少？",
+      "expected_keywords": ["862.28亿元", "归母净利润"],
+      "ideal_pages": [1],
+      "min_recall": 0,
+      "note": "模糊指代：无上下文时'它'无法确定指向。期望多轮对话场景中能结合历史回答，或直接回答'无法确定'"
+    },
+    {
+      "id": "Q25",
+      "category": "边界异常",
+      "difficulty": "easy",
+      "query": "毛利率",
+      "expected_keywords": ["毛利率", "91.80%", "销售毛利率"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "note": "超短Query测试：仅两个字的查询，验证检索能否正确补全语境"
+    },
+    {
+      "id": "Q26",
+      "category": "边界异常",
+      "difficulty": "medium",
+      "query": "请问腾讯2024年的网络游戏收入有多少？元宇宙相关的布局有哪些？AI大模型方面的投入和进展如何？在海外市场的拓展情况怎样？员工人数和薪酬成本有什么变化？",
+      "expected_keywords": ["网络游戏", "收入"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "note": "超长多问Query测试：多个问题串联，验证检索能否拆解复杂混合查询"
+    },
+    {
+      "id": "Q27",
+      "category": "边界异常",
+      "difficulty": "medium",
+      "query": "比亚迪2024年的员工满意度调查结果如何？",
+      "expected_keywords": [],
+      "ideal_pages": [],
+      "min_recall": 0,
+      "note": "文档无答案测试：年报中不包含的信息，期望系统回答'文档中未找到'而非编造"
+    },
+    {
+      "id": "Q28",
+      "category": "边界异常",
+      "difficulty": "easy",
+      "query": "？？？。。。",
+      "expected_keywords": [],
+      "ideal_pages": [],
+      "min_recall": 0,
+      "note": "无意义输入测试：纯标点符号，验证系统能否识别异常输入并友好提示"
+    },
+    {
+      "id": "Q29",
+      "category": "脏数据",
+      "difficulty": "easy",
+      "query": "贵州茅台的毛利润是多少？",
+      "expected_keywords": ["毛利率", "91.80%"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "note": "错别字测试：'毛利润'应为'毛利率'，验证术语展开/模糊匹配能否纠正"
+    },
+    {
+      "id": "Q30",
+      "category": "脏数据",
+      "difficulty": "easy",
+      "query": "他们公司2024年营收多少钱啊？",
+      "expected_keywords": ["营业总收入", "1,741.44亿"],
+      "ideal_pages": [1],
+      "min_recall": 0,
+      "note": "口语化测试：'营收多少钱'是口语表达，财报术语应为'营业总收入'。验证口语→专业术语的映射能力（需多轮对话上下文）"
+    },
+    {
+      "id": "Q31",
+      "category": "脏数据",
+      "difficulty": "medium",
+      "query": "2024年BYD的revenue growth rate是多少percent？",
+      "expected_keywords": ["比亚迪", "营业收入", "增长率"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "note": "中英混杂测试：BYD/revenue/growth rate/percent 混杂在中文问题中"
+    },
+    {
+      "id": "Q32",
+      "category": "脏数据",
+      "difficulty": "medium",
+      "query": "茅台的资产管理负债比例（资本负债率）是百分之几？",
+      "expected_keywords": ["资产负债率", "12.55%"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "note": "术语混淆测试：'资产管理负债比例'、'资本负债率'都是'资产负债率'的非标准表述"
+    },
+    {
+      "id": "Q33",
+      "category": "脏数据",
+      "difficulty": "hard",
+      "query": "茅台2024年营收多少？净利多少？毛利率？ROE？增长率？分红？",
+      "expected_keywords": ["1,741.44亿", "862.28亿", "91.80%", "33.77%", "15.71%", "276.00元"],
+      "ideal_pages": [1],
+      "min_recall": 4,
+      "note": "密集短问测试：多个指标连续用短词提问，验证检索能否分离并分别返回相关chunk"
     }
   ]
 }

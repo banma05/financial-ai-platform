@@ -341,6 +341,7 @@ async def run_evaluation(request: EvalRequest = None):
         avg_recall_at_5=report["summary"]["avg_recall@5"],
         avg_mrr=report["summary"]["avg_mrr"],
         avg_ndcg_at_5=report["summary"]["avg_ndcg@5"],
+        avg_time_s=report["meta"].get("avg_time_per_query", 0),
         num_questions=report["meta"]["num_questions"],
         total_time_s=report["meta"]["total_time"],
     )
