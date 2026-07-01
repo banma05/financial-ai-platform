@@ -38,8 +38,10 @@ class ChatResponse(BaseModel):
 class DocumentInfo(BaseModel):
     """已上传文档信息"""
     filename: str
-    chunk_count: int
-    upload_time: str
+    chunk_count: int = 0
+    page_count: int = 0
+    file_size: int = 0
+    upload_time: str = ""
 
 
 class DocumentListResponse(BaseModel):

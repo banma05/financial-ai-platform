@@ -5,12 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+from db import init_db
 from api.rag import router as rag_router
+
+# 初始化业务数据库（SQLite → 生产切 MySQL）
+init_db()
 
 app = FastAPI(
     title="智能财务分析平台",
-    description="基于 RAG 的智能财务报告知识库问答系统",
-    version="0.1.0",
+    description="基于 RAG 的智能财务报告知识库问答系统 — 三模块架构",
+    version="0.2.0",
 )
 
 # CORS 配置（允许前端跨域访问）

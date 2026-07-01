@@ -24,8 +24,30 @@ from models.schemas import (
 from rag import load_document, split_documents, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
 from rag.model_router import chat_stream
+from db import SessionLocal, Document, ChatHistory, QueryLog
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
+
+
+def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, processing_time: float):
+    """写入查询日志（失败不影响主流程）"""
+    db = SessionLocal()
+    try:
+        log = QueryLog(
+            query=query,
+            processed_query=processed_query,
+            top_k=top_k,
+            chunks_count=chunks_count,
+            processing_time=processing_time,
+            has_sources=1 if chunks_count > 0 else 0,
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"写入查询日志失败: {e}")
+    finally:
+        db.close()
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -75,6 +97,24 @@ async def upload_document(file: UploadFile = File(...)):
     # 6. 存入向量数据库
     chunk_count = add_documents(chunks)
 
+    # 7. 写入业务数据库（文档元数据）
+    db = SessionLocal()
+    try:
+        doc = Document(
+            filename=file.filename or "unknown",
+            file_path=str(file_path),
+            file_size=int(file_size_mb * 1024 * 1024),
+            page_count=len(pages),
+            chunk_count=chunk_count,
+        )
+        db.add(doc)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"写入文档记录失败（不影响知识库）: {e}")
+    finally:
+        db.close()
+
     return DocumentUploadResponse(
         filename=file.filename or "unknown",
         file_size=int(file_size_mb * 1024 * 1024),
@@ -113,6 +153,10 @@ async def chat_stream_endpoint(request: ChatRequest):
     async def event_stream():
         import time
         start_time = time.time()
+        full_answer = ""
+        source_list = []
+        processing_time = 0.0
+        processed_query = request.query
 
         try:
             # Step 1: Query 处理
@@ -123,36 +167,42 @@ async def chat_stream_endpoint(request: ChatRequest):
             logger.info(f"流式检索到 {len(sources)} chunks")
 
             if not sources:
-                yield f"data: {json.dumps({'type': 'token', 'content': '知识库中没有找到与您问题相关的文档。请先上传相关文件后再提问。'}, ensure_ascii=False)}\n\n"
+                no_doc_msg = "知识库中没有找到与您问题相关的文档。请先上传相关文件后再提问。"
+                full_answer = no_doc_msg
+                yield f"data: {json.dumps({'type': 'token', 'content': no_doc_msg}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'type': 'done', 'sources': [], 'processing_time': round(time.time() - start_time, 2)}, ensure_ascii=False)}\n\n"
-                return
+                processing_time = round(time.time() - start_time, 2)
+            else:
+                # Step 3: 构建 Prompt + 流式 LLM
+                prompt = build_prompt(processed_query, sources)
+                messages = [
+                    {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
+                    {"role": "user", "content": prompt},
+                ]
 
-            # Step 3: 构建 Prompt + 流式 LLM
-            prompt = build_prompt(processed_query, sources)
-            messages = [
-                {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
-                {"role": "user", "content": prompt},
-            ]
+                # 逐 token 推送
+                for token in chat_stream(messages, query=processed_query):
+                    full_answer += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0)
 
-            # 逐 token 推送
-            for token in chat_stream(messages, query=processed_query):
-                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0)  # 让出控制权，防止阻塞
+                processing_time = round(time.time() - start_time, 2)
 
-            processing_time = round(time.time() - start_time, 2)
+                # Step 4: 推送 sources
+                source_list = [
+                    {
+                        "content": s["content"][:200] + "..." if len(s["content"]) > 200 else s["content"],
+                        "source": s["source"],
+                        "page": s["page"],
+                        "score": s.get("rerank_score", s.get("rrf_score", s.get("score", 0))),
+                    }
+                    for s in sources
+                ]
 
-            # Step 4: 推送 sources
-            source_list = [
-                {
-                    "content": s["content"][:200] + "..." if len(s["content"]) > 200 else s["content"],
-                    "source": s["source"],
-                    "page": s["page"],
-                    "score": s.get("rerank_score", s.get("rrf_score", s.get("score", 0))),
-                }
-                for s in sources
-            ]
+                yield f"data: {json.dumps({'type': 'done', 'sources': source_list, 'processing_time': processing_time, 'processed_query': processed_query if processed_query != request.query else None}, ensure_ascii=False)}\n\n"
 
-            yield f"data: {json.dumps({'type': 'done', 'sources': source_list, 'processing_time': processing_time, 'processed_query': processed_query if processed_query != request.query else None}, ensure_ascii=False)}\n\n"
+            # Step 5: 写入查询日志（非阻塞，失败不影响响应）
+            _log_query(request.query, processed_query, request.top_k, len(sources) if sources else 0, processing_time)
 
         except Exception as e:
             logger.error(f"流式输出失败: {e}")
@@ -172,8 +222,28 @@ async def chat_stream_endpoint(request: ChatRequest):
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents():
     """
-    列出知识库中的所有文档
+    列出知识库中的所有文档（优先从业务数据库读取）
     """
+    db = SessionLocal()
+    try:
+        db_docs = db.query(Document).filter(Document.status == "active").order_by(Document.upload_time.desc()).all()
+        if db_docs:
+            docs = [d.to_dict() for d in db_docs]
+            # 补充 ChromaDB 的最新 chunk_count（数据库可能不同步）
+            chroma_docs = {d["filename"]: d for d in get_document_list()}
+            for doc in docs:
+                if doc["filename"] in chroma_docs:
+                    doc["chunk_count"] = chroma_docs[doc["filename"]]["chunk_count"]
+            return DocumentListResponse(
+                documents=[DocumentInfo(**d) for d in docs],
+                total=len(docs),
+            )
+    except Exception as e:
+        logger.warning(f"数据库读取失败，回退 ChromaDB: {e}")
+    finally:
+        db.close()
+
+    # 数据库不可用时回退 ChromaDB
     docs = get_document_list()
     return DocumentListResponse(
         documents=[DocumentInfo(**d) for d in docs],
