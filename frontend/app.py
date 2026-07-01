@@ -18,16 +18,19 @@ st.set_page_config(
 API_BASE = "http://localhost:8000/api/v1/rag"
 
 # ============ 会话状态初始化 ============
-CACHE_TTL = 30  # 缓存有效期（秒），避免每次切换页面都调 API
+CACHE_TTL = 30
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "session_id" not in st.session_state:
+    import uuid
+    st.session_state.session_id = str(uuid.uuid4())[:8]  # 8位随机会话ID
 if "backend_ok" not in st.session_state:
-    st.session_state.backend_ok = None      # True/False/None(未检查)
+    st.session_state.backend_ok = None
 if "doc_count" not in st.session_state:
-    st.session_state.doc_count = None        # int/None
+    st.session_state.doc_count = None
 if "last_api_check" not in st.session_state:
-    st.session_state.last_api_check = 0      # timestamp
+    st.session_state.last_api_check = 0
 
 
 def _cache_expired() -> bool:
@@ -63,7 +66,7 @@ def sse_chat(query: str, top_k: int = 5):
     try:
         resp = requests.post(
             f"{API_BASE}/chat/stream",
-            json={"query": query, "top_k": top_k},
+            json={"query": query, "top_k": top_k, "session_id": st.session_state.session_id},
             stream=True,
             timeout=120,
         )

@@ -28,6 +28,23 @@ from db import SessionLocal, Document, ChatHistory, QueryLog
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 
+# ============ 会话管理（内存缓存，用于多轮对话） ============
+# 生产环境应迁移到 Redis 或 chat_history 表
+from collections import defaultdict
+_session_store: dict = defaultdict(list)  # {session_id: [{role, content}, ...]}
+MAX_HISTORY_TURNS = 10  # 每个会话最多保留 10 轮对话
+
+
+def _get_history(session_id: str) -> list:
+    return _session_store.get(session_id, [])
+
+
+def _save_turn(session_id: str, role: str, content: str):
+    _session_store[session_id].append({"role": role, "content": content})
+    # 超过上限时保留最近 N 轮
+    if len(_session_store[session_id]) > MAX_HISTORY_TURNS * 2:
+        _session_store[session_id] = _session_store[session_id][-(MAX_HISTORY_TURNS * 2):]
+
 
 def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, processing_time: float):
     """写入查询日志（失败不影响主流程）"""
@@ -126,19 +143,24 @@ async def upload_document(file: UploadFile = File(...)):
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """
-    向知识库提问
+    向知识库提问（支持多轮对话）
     """
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 
-    result = rag_query(query=request.query, top_k=request.top_k)
+    session_id = request.session_id or "default"
+    history = _get_history(session_id)
+    result = rag_query(query=request.query, top_k=request.top_k, history=history)
+    # 保存到会话历史
+    _save_turn(session_id, "user", request.query)
+    _save_turn(session_id, "assistant", result.get("answer", ""))
     return ChatResponse(**result)
 
 
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     """
-    向知识库提问（流式输出 SSE）
+    向知识库提问（流式输出 SSE + 多轮对话支持）
 
     先推送答案文本（逐 token），最后推送 sources 和 meta 数据。
     事件格式：data: {"type":"token","content":"..."} 或 data: {"type":"done","sources":[...],"processing_time":...}
@@ -149,6 +171,8 @@ async def chat_stream_endpoint(request: ChatRequest):
 
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
+
+    session_id = request.session_id or "default"
 
     async def event_stream():
         import time
@@ -164,7 +188,7 @@ async def chat_stream_endpoint(request: ChatRequest):
 
             # Step 2: 混合检索
             sources = hybrid_search(processed_query, top_k=request.top_k)
-            logger.info(f"流式检索到 {len(sources)} chunks")
+            logger.info(f"[{session_id}] 流式检索到 {len(sources)} chunks")
 
             if not sources:
                 no_doc_msg = "知识库中没有找到与您问题相关的文档。请先上传相关文件后再提问。"
@@ -173,14 +197,14 @@ async def chat_stream_endpoint(request: ChatRequest):
                 yield f"data: {json.dumps({'type': 'done', 'sources': [], 'processing_time': round(time.time() - start_time, 2)}, ensure_ascii=False)}\n\n"
                 processing_time = round(time.time() - start_time, 2)
             else:
-                # Step 3: 构建 Prompt + 流式 LLM
-                prompt = build_prompt(processed_query, sources)
+                # Step 3: 构建 Prompt（含历史对话）+ 流式 LLM
+                history = _get_history(session_id)
+                prompt = build_prompt(processed_query, sources, history=history)
                 messages = [
                     {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
                     {"role": "user", "content": prompt},
                 ]
 
-                # 逐 token 推送
                 for token in chat_stream(messages, query=processed_query):
                     full_answer += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
@@ -188,7 +212,6 @@ async def chat_stream_endpoint(request: ChatRequest):
 
                 processing_time = round(time.time() - start_time, 2)
 
-                # Step 4: 推送 sources
                 source_list = [
                     {
                         "content": s["content"][:200] + "..." if len(s["content"]) > 200 else s["content"],
@@ -201,7 +224,11 @@ async def chat_stream_endpoint(request: ChatRequest):
 
                 yield f"data: {json.dumps({'type': 'done', 'sources': source_list, 'processing_time': processing_time, 'processed_query': processed_query if processed_query != request.query else None}, ensure_ascii=False)}\n\n"
 
-            # Step 5: 写入查询日志（非阻塞，失败不影响响应）
+            # Step 4: 保存到会话历史
+            _save_turn(session_id, "user", request.query)
+            _save_turn(session_id, "assistant", full_answer)
+
+            # Step 5: 写入查询日志
             _log_query(request.query, processed_query, request.top_k, len(sources) if sources else 0, processing_time)
 
         except Exception as e:

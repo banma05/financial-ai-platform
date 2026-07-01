@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
     """聊天请求"""
     query: str = Field(..., description="用户问题")
     top_k: int = Field(default=5, description="检索文档数")
+    session_id: str = Field(default="default", description="会话ID，用于多轮对话")
 
 
 class ChatResponse(BaseModel):

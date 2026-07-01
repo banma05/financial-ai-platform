@@ -16,7 +16,7 @@ from .hybrid_search import hybrid_search
 from .model_router import chat as routed_chat
 
 
-def build_prompt(query: str, sources: List[dict]) -> str:
+def build_prompt(query: str, sources: List[dict], history: Optional[List[dict]] = None) -> str:
     context_parts = []
     for i, s in enumerate(sources, start=1):
         context_parts.append(
@@ -24,15 +24,27 @@ def build_prompt(query: str, sources: List[dict]) -> str:
         )
     context = "\n\n".join(context_parts)
 
+    # 历史对话（最近 3 轮，控制 token 消耗）
+    history_text = ""
+    if history:
+        recent = history[-6:]  # 最近 3 轮 = 6 条消息
+        lines = []
+        for msg in recent:
+            role_label = "用户" if msg["role"] == "user" else "助手"
+            lines.append(f"{role_label}：{msg['content']}")
+        if lines:
+            history_text = "## 历史对话\n" + "\n".join(lines) + "\n\n"
+
     return f"""你是一个专业的财务分析助手。请基于以下参考文档回答用户的问题。
 
 要求：
 1. 严格基于参考文档的内容回答，不要编造信息
 2. 如果参考文档中没有相关信息，请明确说"文档中未找到相关信息"
-3. 回答要专业、准确，适合金融专业人士阅读
-4. 在回答末尾列出你引用的文档来源和页码
+3. 结合历史对话上下文理解用户问题（如"它"指代的对象、追问的隐含前提）
+4. 回答要专业、准确，适合金融专业人士阅读
+5. 在回答末尾列出你引用的文档来源和页码
 
-## 参考文档
+{history_text}## 参考文档
 {context}
 
 ## 用户问题
@@ -45,6 +57,7 @@ def rag_query(
     query: str,
     top_k: int = RETRIEVAL_TOP_K,
     eval_facts: Optional[List[str]] = None,
+    history: Optional[List[dict]] = None,
 ) -> dict:
     """
     四步口诀完整 RAG 流程
@@ -70,8 +83,8 @@ def rag_query(
             "processing_time": round(time.time() - start_time, 2),
         }
 
-    # 构建 Prompt + LLM 生成
-    prompt = build_prompt(processed_query, sources)
+    # 构建 Prompt + LLM 生成（含历史对话）
+    prompt = build_prompt(processed_query, sources, history=history)
     messages = [
         {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
         {"role": "user", "content": prompt},
