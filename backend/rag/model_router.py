@@ -60,6 +60,14 @@ def classify(query: str) -> TaskType:
     return TaskType.SIMPLE
 
 
+def _resolve_task(query: Optional[str], task_type: TaskType) -> dict:
+    """解析任务类型并返回模型配置"""
+    if query is None:
+        query = ""
+    target = classify(query) if task_type == TaskType.AUTO else task_type
+    return MODEL_CONFIG[target]
+
+
 def chat(
     messages: list,
     task_type: TaskType = TaskType.AUTO,
@@ -72,11 +80,10 @@ def chat(
                 query = msg.get("content", "")
                 break
 
-    target = classify(query) if task_type == TaskType.AUTO else task_type
-    cfg = MODEL_CONFIG[target]
+    cfg = _resolve_task(query, task_type)
     client = _get_client()
 
-    logger.info(f"模型: {cfg['model']} | 类型: {target.value}")
+    logger.info(f"模型: {cfg['model']} | 类型: {task_type.value}")
 
     response = client.chat.completions.create(
         model=cfg["model"],
@@ -85,3 +92,32 @@ def chat(
         max_tokens=cfg["max_tokens"],
     )
     return response.choices[0].message.content
+
+
+def chat_stream(
+    messages: list,
+    task_type: TaskType = TaskType.AUTO,
+    query: Optional[str] = None,
+):
+    """LLM 流式调用，逐 token 返回"""
+    if query is None:
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                query = msg.get("content", "")
+                break
+
+    cfg = _resolve_task(query, task_type)
+    client = _get_client()
+
+    logger.info(f"流式调用: {cfg['model']} | 类型: {task_type.value}")
+
+    response = client.chat.completions.create(
+        model=cfg["model"],
+        messages=messages,
+        temperature=cfg["temperature"],
+        max_tokens=cfg["max_tokens"],
+        stream=True,
+    )
+    for chunk in response:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content

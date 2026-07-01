@@ -3,8 +3,10 @@ RAG 相关 API 路由
 """
 import os
 import json
+import asyncio
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from config import UPLOAD_DIR, MAX_FILE_SIZE_MB
@@ -21,6 +23,7 @@ from models.schemas import (
 )
 from rag import load_document, split_documents, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
+from rag.model_router import chat_stream
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 
@@ -90,6 +93,80 @@ async def chat(request: ChatRequest):
 
     result = rag_query(query=request.query, top_k=request.top_k)
     return ChatResponse(**result)
+
+
+@router.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """
+    向知识库提问（流式输出 SSE）
+
+    先推送答案文本（逐 token），最后推送 sources 和 meta 数据。
+    事件格式：data: {"type":"token","content":"..."} 或 data: {"type":"done","sources":[...],"processing_time":...}
+    """
+    from rag.query_processor import process_query
+    from rag.hybrid_search import hybrid_search
+    from rag.retriever import build_prompt
+
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    async def event_stream():
+        import time
+        start_time = time.time()
+
+        try:
+            # Step 1: Query 处理
+            processed_query = process_query(request.query)
+
+            # Step 2: 混合检索
+            sources = hybrid_search(processed_query, top_k=request.top_k)
+            logger.info(f"流式检索到 {len(sources)} chunks")
+
+            if not sources:
+                yield f"data: {json.dumps({'type': 'token', 'content': '知识库中没有找到与您问题相关的文档。请先上传相关文件后再提问。'}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'sources': [], 'processing_time': round(time.time() - start_time, 2)}, ensure_ascii=False)}\n\n"
+                return
+
+            # Step 3: 构建 Prompt + 流式 LLM
+            prompt = build_prompt(processed_query, sources)
+            messages = [
+                {"role": "system", "content": "你是一个专业的财务分析助手，擅长解读财务报表、年报、审计报告等金融文档。"},
+                {"role": "user", "content": prompt},
+            ]
+
+            # 逐 token 推送
+            for token in chat_stream(messages, query=processed_query):
+                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0)  # 让出控制权，防止阻塞
+
+            processing_time = round(time.time() - start_time, 2)
+
+            # Step 4: 推送 sources
+            source_list = [
+                {
+                    "content": s["content"][:200] + "..." if len(s["content"]) > 200 else s["content"],
+                    "source": s["source"],
+                    "page": s["page"],
+                    "score": s.get("rerank_score", s.get("rrf_score", s.get("score", 0))),
+                }
+                for s in sources
+            ]
+
+            yield f"data: {json.dumps({'type': 'done', 'sources': source_list, 'processing_time': processing_time, 'processed_query': processed_query if processed_query != request.query else None}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            logger.error(f"流式输出失败: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/documents", response_model=DocumentListResponse)
