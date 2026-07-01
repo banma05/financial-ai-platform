@@ -31,7 +31,8 @@
 | 混合检索 | 🟢 90% | BM25+语义 → RRF(k=60) → LambdaMART(默认) |
 | Entity Routing | 🟡 60% | 公司实体识别+文档过滤，保留为可选能力 |
 | 检索+问答 | 🟢 85% | deepseek-v4-pro，引用溯源 |
-| 评测体系 | 🟢 90% | 20题6类3难度 + R@k/MRR/NDCG + 数字归一化 |
+| 评测体系 | 🟢 90% | 33题6类3难度 + R@k/MRR/NDCG + 数字归一化 |
+| 单元测试 | 🟢 75% | 142用例覆盖4核心组件，LLM/DB/模型全部mock隔离 |
 | 参数实验 | 🟢 90% | 4组对比实验（chunk/overlap/阈值/query） |
 | FastAPI 后端 | 🟢 85% | 5接口+RAG流式SSE，缺鉴权/限流 |
 | Streamlit 前端 | 🟢 80% | 流式输出+对话历史+三模块导航，缺图表展示 |
@@ -196,6 +197,26 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-01 — 单元测试防线搭建 ✅
+
+#### 测试框架
+- 安装 pytest + pytest-cov，加入 `requirements.txt`
+- 新建 `backend/tests/` 目录，含 `conftest.py`（自动处理 Python path）
+
+#### 四个核心组件测试（142 用例全部通过）
+
+| 组件 | 用例数 | 覆盖要点 |
+|------|:--:|------|
+| `entity_router.py` | 29 | 实体识别、跨文档判断、文档过滤、文件名反向匹配、BM25 加权源、注册表一致性 |
+| `evaluator.py` | 49 | 文本归一化(9)、R@k(7)、Precision(4)、MRR(4)、NDCG@k(4)、LLM 评测 mock(6)、批量评测(3) |
+| `query_processor.py` | 29 | 术语展开(12)、余弦相似度(4)、LLM 扩写 mock(3)、校验 mock(2)、集成流程(5) |
+| `hybrid_search.py` | 35 | 策略路由(12)、RRF 融合(7)、LambdaMART 重排 mock(4)、BM25/semantic mock(6)、集成流程(6) |
+
+- 运行方式：`pytest backend/tests/ -v`（全量 ~10s）
+- 所有外部依赖（LLM/Embedding/ChromaDB/CrossEncoder）均通过 `unittest.mock` 隔离
+
+---
 
 ### 2026-07-01 — 前端重构 + PROGRESS 三模块化
 
