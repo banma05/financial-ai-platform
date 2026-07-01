@@ -68,3 +68,17 @@ QUERY_MIN_SIMILARITY = float(os.getenv("QUERY_MIN_SIMILARITY", "0.8"))
 
 # ============ 检索参数 ============
 RETRIEVAL_TOP_K = 5       # 检索返回的最相关文档数
+
+# ============ API 安全配置 ============
+API_KEY = os.getenv("API_KEY", "")
+# API 鉴权密钥，为空时不启用鉴权（开发环境），生产环境必须设置
+# 使用方式：请求头 X-API-Key: <API_KEY>
+
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+# 是否启用限流，默认开启。「true」开启，「false」关闭
+
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+# 每 IP 每分钟最大请求数（默认 30），chat/stream 接口单独控制
+
+RATE_LIMIT_CHAT_PER_MINUTE = int(os.getenv("RATE_LIMIT_CHAT_PER_MINUTE", "10"))
+# 每 IP 每分钟 chat/stream 最大请求数（默认 10，LLM 调用成本高）

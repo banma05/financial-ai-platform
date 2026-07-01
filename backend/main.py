@@ -29,6 +29,10 @@ app.add_middleware(
 # 注册路由
 app.include_router(rag_router)
 
+# 安装安全中间件（鉴权 + 限流）
+from middleware.auth import setup_auth_middleware
+setup_auth_middleware(app)
+
 
 @app.get("/")
 async def root():
