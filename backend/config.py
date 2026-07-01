@@ -51,8 +51,8 @@ CHUNK_SIZE = 800          # 每个文本块的大小（字符数）
 CHUNK_OVERLAP = 150       # 块之间的重叠（保证语义连贯）
 
 # 语义切分参数
-SEMANTIC_THRESHOLD_MODE = os.getenv("SEMANTIC_THRESHOLD_MODE", "mean-0.5std")
-# 可选值: "mean-1std"（激进，块多）、"mean-0.5std"（默认）、"mean"（保守，块少）
+SEMANTIC_THRESHOLD_MODE = os.getenv("SEMANTIC_THRESHOLD_MODE", "mean-1std")
+# 可选值: "mean-1std"（默认，保守切分，减少碎片）、"mean-0.5std"（更多切分）、"mean"（最保守）
 # 对应 sigma_multiplier: 1.0 / 0.5 / 0.0
 SEMANTIC_MIN_CHUNK_SIZE = int(os.getenv("SEMANTIC_MIN_CHUNK_SIZE", "200"))
 SEMANTIC_MAX_CHUNK_SIZE = int(os.getenv("SEMANTIC_MAX_CHUNK_SIZE", "1200"))
