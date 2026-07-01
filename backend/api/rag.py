@@ -67,6 +67,17 @@ def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, 
         db.close()
 
 
+@router.post("/session/clear")
+async def clear_session(session_id: str = "default"):
+    """
+    清除指定会话的对话历史（用于"清空对话"功能）
+    """
+    if session_id in _session_store:
+        del _session_store[session_id]
+        logger.info(f"会话 {session_id} 已清除")
+    return {"message": "会话已清除", "session_id": session_id}
+
+
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """

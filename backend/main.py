@@ -47,4 +47,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
     logger.info("启动智能财务分析平台...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
