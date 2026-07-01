@@ -291,10 +291,6 @@ def hybrid_search(
     use_rerank = force_rerank or (strategy == "complex" and len(fused) > top_k)
 
     if use_rerank:
-        # 裁剪候选集：Cross-Encoder 很慢，top_k=5 时 10 个候选即可（省 ~50% 重排时间）
-        max_candidates = max(top_k * 2, 10)
-        if len(fused) > max_candidates:
-            fused = fused[:max_candidates]
         final = lambda_mart_rerank(query, fused, top_k=top_k)
         filter_info = f"（过滤: {applied_filter}）" if applied_filter else ""
         logger.info(
