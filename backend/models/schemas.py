@@ -65,6 +65,7 @@ class EvalSummary(BaseModel):
     avg_recall_at_5: float = 0.0
     avg_mrr: float = 0.0
     avg_ndcg_at_5: float = 0.0
+    avg_time_s: float = 0.0   # 平均单题响应时间
     num_questions: int = 0
     total_time_s: float = 0.0
 
