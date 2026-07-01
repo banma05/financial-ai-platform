@@ -3,10 +3,10 @@
     "name": "财务分析标准测试集",
     "version": "1.1",
     "created": "2026-06-30",
-    "updated": "2026-07-01",
-    "total_questions": 33,
+    "updated": "2026-07-01 (v1.2: 33→50题)",
+    "total_questions": 50,
     "based_on_documents": ["测试财报摘要.md（贵州茅台2024年报摘要）", "比亚迪2024年报.PDF", "腾讯控股2024年年报.pdf"],
-    "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析、边界异常、脏数据等类别"
+    "description": "覆盖数值查询、趋势分析、对比、定义解释、跨文档检索、风险分析、边界异常、脏数据等类别。2026-07-01扩展至50题，补充比亚迪/腾讯/跨文档专项。"
   },
   "questions": [
     {
@@ -142,7 +142,7 @@
       "query": "为什么贵州茅台2024年筹资活动现金流净额为负？这意味着什么？",
       "expected_keywords": ["-475.42亿元", "现金分红", "筹资活动", "负"],
       "ideal_pages": [1],
-      "min_recall": 1
+      "min_recall": 2
     },
     {
       "id": "Q16",
@@ -318,6 +318,176 @@
       "ideal_pages": [1],
       "min_recall": 4,
       "note": "密集短问测试：多个指标连续用短词提问，验证检索能否分离并分别返回相关chunk"
+    },
+    {
+      "id": "Q34",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "比亚迪2024年的营业收入是多少？",
+      "expected_keywords": ["营业收入", "比亚迪", "亿元"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "source": "比亚迪年报-收入数据"
+    },
+    {
+      "id": "Q35",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "query": "比亚迪2024年归属于上市公司股东的净利润是多少？",
+      "expected_keywords": ["归母净利润", "归属于上市公司股东的净利润", "亿元", "比亚迪"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "source": "比亚迪年报-利润核心指标"
+    },
+    {
+      "id": "Q36",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "query": "腾讯控股2024年的总收入是多少？同比增长了多少？",
+      "expected_keywords": ["腾讯", "收入", "同比增长", "增值服务"],
+      "ideal_pages": [1],
+      "min_recall": 2,
+      "source": "腾讯年报-收入数据"
+    },
+    {
+      "id": "Q37",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "query": "腾讯2024年的净利润和净利润率分别是多少？",
+      "expected_keywords": ["腾讯", "净利润", "净利润率", "%", "亿元"],
+      "ideal_pages": [1],
+      "min_recall": 2,
+      "source": "腾讯年报-利润指标"
+    },
+    {
+      "id": "Q38",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "比亚迪2024年的营业收入相比2023年增长了多少个百分点？",
+      "expected_keywords": ["比亚迪", "营业收入", "同比增长", "%", "2023"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "source": "比亚迪年报-增长趋势"
+    },
+    {
+      "id": "Q39",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "腾讯2024年的毛利率相比2023年有什么变化？",
+      "expected_keywords": ["腾讯", "毛利率", "%", "2023", "同比增长", "下降"],
+      "ideal_pages": [1],
+      "min_recall": 1,
+      "source": "腾讯年报-毛利率趋势"
+    },
+    {
+      "id": "Q40",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "query": "比亚迪2024年各项业务板块（汽车、手机部件、电池等）各自的收入增长情况如何？",
+      "expected_keywords": ["比亚迪", "汽车", "手机部件", "二次充电电池", "同比增长", "%"],
+      "ideal_pages": [30, 31],
+      "min_recall": 3,
+      "source": "比亚迪年报-业务板块分析"
+    },
+    {
+      "id": "Q41",
+      "category": "对比分析",
+      "difficulty": "medium",
+      "query": "腾讯2024年增值服务、网络广告、金融科技三大业务板块各自的收入占比是多少？",
+      "expected_keywords": ["腾讯", "增值服务", "网络广告", "金融科技", "收入", "%"],
+      "ideal_pages": [1],
+      "min_recall": 3,
+      "source": "腾讯年报-业务板块对比"
+    },
+    {
+      "id": "Q42",
+      "category": "定义解释",
+      "difficulty": "medium",
+      "query": "比亚迪的主营业务包括哪些板块？各板块的核心产品是什么？",
+      "expected_keywords": ["汽车", "手机部件", "电池", "比亚迪", "新能源汽车"],
+      "ideal_pages": [1],
+      "min_recall": 2,
+      "source": "比亚迪年报-业务介绍"
+    },
+    {
+      "id": "Q43",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "query": "比亚迪面临的主要经营风险和不确定性有哪些？",
+      "expected_keywords": ["比亚迪", "风险", "新能源", "竞争", "原材料", "政策", "市场"],
+      "ideal_pages": [40, 50],
+      "min_recall": 2,
+      "source": "比亚迪年报-风险提示"
+    },
+    {
+      "id": "Q44",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "query": "腾讯控股面临的主要监管风险和行业竞争风险是什么？",
+      "expected_keywords": ["腾讯", "风险", "监管", "竞争", "行业", "政策"],
+      "ideal_pages": [80, 90],
+      "min_recall": 2,
+      "source": "腾讯年报-风险管理"
+    },
+    {
+      "id": "Q45",
+      "category": "综合分析",
+      "difficulty": "hard",
+      "query": "从盈利能力、偿债能力和现金流三个维度综合评价比亚迪2024年的财务健康状况",
+      "expected_keywords": ["比亚迪", "毛利率", "资产负债率", "现金流", "净资产收益率", "ROE"],
+      "ideal_pages": [1, 5, 10],
+      "min_recall": 4,
+      "source": "比亚迪年报-财务综合分析"
+    },
+    {
+      "id": "Q46",
+      "category": "综合分析",
+      "difficulty": "hard",
+      "query": "从收入结构、盈利能力和增长驱动因素三个角度分析腾讯2024年的经营质量",
+      "expected_keywords": ["腾讯", "增值服务", "广告", "毛利率", "增长", "云"],
+      "ideal_pages": [1, 5],
+      "min_recall": 3,
+      "source": "腾讯年报-经营质量分析"
+    },
+    {
+      "id": "Q47",
+      "category": "跨文档检索",
+      "difficulty": "hard",
+      "query": "对比贵州茅台和比亚迪2024年的毛利率，哪家更高？差距有多大？两家公司的毛利率差异说明什么？",
+      "expected_keywords": ["茅台", "比亚迪", "毛利率", "91.80%", "%"],
+      "ideal_pages": [1, 2],
+      "min_recall": 3,
+      "source": "跨文档-茅台vs比亚迪毛利率"
+    },
+    {
+      "id": "Q48",
+      "category": "跨文档检索",
+      "difficulty": "hard",
+      "query": "贵州茅台、比亚迪、腾讯三家公司的净利润率分别是多少？哪家公司盈利能力最强？",
+      "expected_keywords": ["茅台", "比亚迪", "腾讯", "净利润", "净利润率", "%"],
+      "ideal_pages": [1, 2, 3],
+      "min_recall": 4,
+      "source": "跨文档-三家公司盈利能力对比"
+    },
+    {
+      "id": "Q49",
+      "category": "跨文档检索",
+      "difficulty": "hard",
+      "query": "从营收规模、增长速度和盈利质量三个维度，对比分析贵州茅台和腾讯控股2024年的经营表现",
+      "expected_keywords": ["茅台", "腾讯", "营业收入", "增长率", "利润率", "%"],
+      "ideal_pages": [1, 3],
+      "min_recall": 4,
+      "source": "跨文档-茅台vs腾讯综合对比"
+    },
+    {
+      "id": "Q50",
+      "category": "综合推理",
+      "difficulty": "hard",
+      "query": "比亚迪2024年的研发投入产出效率如何评价？研发费用增长和营收增长是否匹配？",
+      "expected_keywords": ["比亚迪", "研发费用", "研发投入", "营业收入", "增长率", "%"],
+      "ideal_pages": [30, 35],
+      "min_recall": 3,
+      "source": "比亚迪年报-研发投入效率"
     }
   ]
 }
