@@ -72,3 +72,33 @@ class QueryLog(Base):
     processing_time = Column(Float, default=0.0, comment="处理耗时（秒）")
     has_sources = Column(Integer, default=0, comment="是否有检索结果：0=无 1=有")
     created_at = Column(DateTime, default=datetime.now, comment="查询时间")
+
+
+class AnalysisLog(Base):
+    """分析任务日志（模块二 Agent）—— 记录每次分析请求的执行情况"""
+    __tablename__ = "analysis_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, default="default", comment="会话ID")
+    user_input = Column(Text, default="", comment="用户分析需求")
+    template_name = Column(String(100), default="", comment="使用的分析模板")
+    task_count = Column(Integer, default=0, comment="子任务数")
+    task_details = Column(JSON, default=list, comment="各子任务详情")
+    report = Column(Text, default="", comment="生成的报告")
+    chart_count = Column(Integer, default=0, comment="生成的图表数")
+    processing_time = Column(Float, default=0.0, comment="总处理耗时（秒）")
+    status = Column(String(20), default="completed", comment="completed / failed / clarification")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "user_input": self.user_input,
+            "template_name": self.template_name,
+            "task_count": self.task_count,
+            "chart_count": self.chart_count,
+            "processing_time": self.processing_time,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else "",
+        }

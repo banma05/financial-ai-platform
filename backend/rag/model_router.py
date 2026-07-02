@@ -121,3 +121,28 @@ def chat_stream(
     for chunk in response:
         if chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
+
+
+# ============ LangChain ChatOpenAI 包装器（模块二 Agent 使用）============
+
+_langchain_llm = None
+
+
+def get_langchain_llm() -> "ChatOpenAI":
+    """
+    获取 LangChain ChatOpenAI 实例，供 Agent 模块使用。
+
+    复用 DeepSeek API 的地址和密钥，不破坏现有 openai SDK 调用路径。
+    返回的 ChatOpenAI 实例可直接用于 LangGraph / LangChain Tool calling。
+    """
+    global _langchain_llm
+    if _langchain_llm is None:
+        from langchain_openai import ChatOpenAI
+        _langchain_llm = ChatOpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+            model=LLM_MODEL,
+            temperature=0.3,
+            max_tokens=4000,
+        )
+    return _langchain_llm
