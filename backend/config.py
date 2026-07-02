@@ -82,3 +82,14 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
 
 RATE_LIMIT_CHAT_PER_MINUTE = int(os.getenv("RATE_LIMIT_CHAT_PER_MINUTE", "10"))
 # 每 IP 每分钟 chat/stream 最大请求数（默认 10，LLM 调用成本高）
+
+# ============ Agent 配置（模块二）============
+AGENT_MAX_TASKS = int(os.getenv("AGENT_MAX_TASKS", "10"))
+# 单次分析最多拆解的子任务数，防止 LLM 过度拆解
+
+AGENT_STREAM_INTERVAL = float(os.getenv("AGENT_STREAM_INTERVAL", "0.1"))
+# SSE 流式事件推送间隔（秒），用于前端进度动画
+
+CHART_OUTPUT_DIR = os.getenv("CHART_OUTPUT_DIR", str(ROOT_DIR / "data" / "charts"))
+# 图表输出目录（base64 模式不落盘，留作后续 PDF 导出用）
+Path(CHART_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)

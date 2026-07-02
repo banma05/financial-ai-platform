@@ -39,6 +39,13 @@ loguru>=0.7.0
 # 业务数据库（SQLite MVP → 生产切 MySQL）
 sqlalchemy>=2.0.0
 
+# Agent 框架（模块二）
+langgraph>=0.3.0
+langchain-openai>=0.3.0
+
+# 图表生成（模块二）
+matplotlib>=3.9.0
+
 # 测试
 pytest>=9.0.0
 pytest-cov>=7.0.0
