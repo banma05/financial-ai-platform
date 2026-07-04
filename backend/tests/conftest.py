@@ -1,5 +1,8 @@
 """
 pytest 全局配置 — 将 backend 目录加入 Python path
+
+注意：CUDA segfault 修复不在本文件（pytest 插件先于 conftest 加载），
+      请使用 scripts/run_tests.py 运行测试。
 """
 import sys
 from pathlib import Path

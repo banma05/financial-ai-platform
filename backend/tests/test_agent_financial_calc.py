@@ -231,7 +231,7 @@ class TestFinancialCalcTool:
     def test_run_valid_formula(self):
         """正常调用已注册公式"""
         tool = FinancialCalcTool()
-        result = tool.run("roe", {"net_profit": 100, "avg_equity": 500})
+        result = tool.run("roe", net_profit=100, avg_equity=500)
         assert result["success"] is True
         assert result["result"] == 20.0
         assert result["category"] == "盈利能力"
@@ -241,14 +241,14 @@ class TestFinancialCalcTool:
     def test_run_unknown_formula(self):
         """调用不存在的公式"""
         tool = FinancialCalcTool()
-        result = tool.run("nonexistent_formula", {})
+        result = tool.run("nonexistent_formula")
         assert result["success"] is False
         assert "error" in result
 
     def test_run_missing_params(self):
         """缺少必需参数"""
         tool = FinancialCalcTool()
-        result = tool.run("roe", {"net_profit": 100})  # 缺少 avg_equity
+        result = tool.run("roe", net_profit=100)  # 缺少 avg_equity
         assert result["success"] is False
         assert "缺少参数" in result["error"]
 
@@ -275,12 +275,12 @@ class TestFinancialCalcTool:
     def test_dupont_via_tool(self):
         """通过 Tool 入口调用杜邦分析"""
         tool = FinancialCalcTool()
-        result = tool.run("dupont", {
-            "net_profit": 862.28,
-            "revenue": 1741.44,
-            "total_assets": 3000,
-            "equity": 2687.45,
-        })
+        result = tool.run("dupont",
+            net_profit=862.28,
+            revenue=1741.44,
+            total_assets=3000,
+            equity=2687.45,
+        )
         assert result["success"] is True
         assert isinstance(result["result"], dict)
         assert "roe" in result["result"]

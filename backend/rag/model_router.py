@@ -11,7 +11,7 @@ from typing import Optional
 from loguru import logger
 from openai import OpenAI
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, AGENT_LLM_MODEL
 
 
 class TaskType(str, Enum):
@@ -20,10 +20,10 @@ class TaskType(str, Enum):
     AUTO = "auto"
 
 
-# 当前都用 deepseek-v4-pro，想省钱时把 SIMPLE 换成 deepseek-v4-flash
+# SIMPLE 用 flash 提速省钱，COMPLEX 用 pro 保质量
 MODEL_CONFIG = {
     TaskType.SIMPLE: {
-        "model": LLM_MODEL,    # deepseek-v4-pro
+        "model": "deepseek-v4-flash",
         "temperature": 0.3,
         "max_tokens": 2000,
     },
@@ -128,21 +128,21 @@ def chat_stream(
 _langchain_llm = None
 
 
-def get_langchain_llm() -> "ChatOpenAI":
+def get_langchain_llm(model: str = None) -> "ChatOpenAI":
     """
     获取 LangChain ChatOpenAI 实例，供 Agent 模块使用。
 
-    复用 DeepSeek API 的地址和密钥，不破坏现有 openai SDK 调用路径。
-    返回的 ChatOpenAI 实例可直接用于 LangGraph / LangChain Tool calling。
+    Agent 模块默认使用 AGENT_LLM_MODEL（flash 提速），
+    RAG QA 模块使用 LLM_MODEL（pro 保质量）。
     """
-    global _langchain_llm
-    if _langchain_llm is None:
-        from langchain_openai import ChatOpenAI
-        _langchain_llm = ChatOpenAI(
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
-            model=LLM_MODEL,
-            temperature=0.3,
-            max_tokens=4000,
-        )
-    return _langchain_llm
+    # 注意：这里不复用全局单例，因为不同调用方可能需要不同模型
+    from langchain_openai import ChatOpenAI
+    _model = model or AGENT_LLM_MODEL
+    logger.debug(f"LangChain LLM: {_model}")
+    return ChatOpenAI(
+        api_key=DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
+        model=_model,
+        temperature=0.3,
+        max_tokens=4000,
+    )
