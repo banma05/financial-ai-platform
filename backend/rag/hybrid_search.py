@@ -6,6 +6,14 @@
 - LambdaMART 统一打分维度（Cross-Encoder 实现，架构预留 LambdaMART）
 - 策略路由分流：简单问题直接向量检索，复杂问题才重排序
 """
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与 CUDA 冲突
+
+# 🔧 必须在所有 sentence-transformers 相关 import 之前导入 CrossEncoder
+# 原因：langchain_huggingface → sentence_transformers 初始化后，
+# 再 CrossEncoder(device='cuda') 会导致 segfault
+from sentence_transformers import CrossEncoder as _CrossEncoder  # noqa: E402
+
 from typing import List, Tuple, Optional
 from loguru import logger
 from rank_bm25 import BM25Okapi
@@ -207,12 +215,10 @@ def _get_lambda_mart():
     """
     global _reranker
     if _reranker is None:
-        from sentence_transformers import CrossEncoder
-        import os
         local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
         model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
-        _reranker = CrossEncoder(model_name, cache_folder="D:/Python312/huggingface-cache")
-        logger.info(f"LambdaMART（Cross-Encoder）已加载: {model_name}")
+        _reranker = _CrossEncoder(model_name, device="cuda", cache_folder="D:/Python312/huggingface-cache")
+        logger.info(f"LambdaMART（Cross-Encoder GPU）已加载: {model_name}")
     return _reranker
 
 
@@ -279,6 +285,13 @@ def hybrid_search(
     if applied_filter and strategy == "simple":
         strategy = "complex"
         logger.info(f"实体路由命中 → 自动升级为 complex（启用重排序）")
+
+    # 🔧 GPU 预热：必须在 Embedding 模型加载前初始化 CrossEncoder
+    # 原因：HuggingFaceEmbeddings(CPU) → CrossEncoder(GPU) 会触发 segfault
+    # 先加载 GPU 模型再加载 CPU 模型则正常
+    use_rerank = force_rerank or (strategy == "complex")
+    if use_rerank:
+        _get_lambda_mart()  # 提前初始化 GPU 模型
 
     # 并行召回（带文档过滤）
     bm25_results = bm25_search(query, top_k=10, filter_sources=applied_filter)

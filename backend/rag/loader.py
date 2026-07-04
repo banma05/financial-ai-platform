@@ -35,6 +35,9 @@ def load_pdf(file_path: str) -> List[dict]:
     """
     加载 PDF 文件，按页提取文本 + 结构化表格
 
+    使用 "blocks" 模式提取文本：按版面段落块分组，保留阅读顺序
+    （默认 get_text() 按物理坐标排序，多栏布局下会交叉拼接）
+
     返回: [{
         "text": "段落文本...",
         "tables": [{"markdown": "...", "rows": 5, "cols": 3}, ...],
@@ -47,7 +50,14 @@ def load_pdf(file_path: str) -> List[dict]:
     try:
         doc = pymupdf.open(file_path)
         for page_num, page in enumerate(doc, start=1):
-            text = page.get_text()
+            # 用 "blocks" 模式按版面段落块提取，避免多栏乱序
+            blocks = page.get_text("blocks")
+            # 按 y 坐标为主、x 坐标为辅排序（先上后下，先左后右）
+            blocks.sort(key=lambda b: (round(b[1] / 10) * 10, b[0]))
+            # 只取文本块（type=0），过滤图片块
+            text_lines = [b[4].strip() for b in blocks if b[4].strip() and b[6] == 0]
+            text = "\n".join(text_lines)
+
             tables = []
 
             # 检测页面中的表格
