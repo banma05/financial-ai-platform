@@ -91,16 +91,38 @@ class ChartTool:
         self.name = "chart"
         self.output_dir = output_dir or str(CHART_OUTPUT_DIR)
 
-    def run(self, config: ChartConfig) -> str:
+    def run(self, chart_type: str = "bar", title: str = "财务分析图表",
+            data: dict = None, x_label: str = "", y_label: str = "",
+            **kwargs) -> str:
         """
         生成图表并返回 base64 编码的 PNG。
 
-        参数:
-            config: ChartConfig 对象，包含 chart_type, title, data, x_label, y_label
+        参数（与 Planner 输出的 params 字段对应）:
+            chart_type: line/bar/pie/radar/dual_axis
+            title: 图表标题
+            data: 图表数据 {"labels": [...], "values": [...]}
+            x_label: X 轴标签
+            y_label: Y 轴标签
 
         返回:
             base64 编码的 PNG 字符串
         """
+        # 从依赖注入的数据中提取 labels/values
+        if data is None:
+            data = {}
+        # 合并 kwargs 中的数值参数到 data
+        numeric_data = {k: v for k, v in {**kwargs, **data}.items() if isinstance(v, (int, float))}
+        if numeric_data and not data.get("values"):
+            data["labels"] = list(numeric_data.keys())
+            data["values"] = list(numeric_data.values())
+
+        config = ChartConfig(
+            chart_type=chart_type,
+            title=title,
+            data=data,
+            x_label=x_label or "指标",
+            y_label=y_label or "数值",
+        )
         chart_methods = {
             "line": self._line_chart,
             "bar": self._bar_chart,
