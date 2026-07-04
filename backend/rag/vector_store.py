@@ -123,18 +123,43 @@ def get_document_list() -> List[dict]:
 
 
 def reset_database():
-    """清空向量数据库（用于开发调试时重置）"""
+    """清空向量数据库（用于开发调试时重置）
+
+    采用物理删除策略：先删 collection → 再清持久化目录 → 重建
+    仅调用 delete_collection() 不够可靠，旧数据可能残留
+    """
     global _chroma_store
-    # 用 ChromaDB 自己的 API 删除 collection，不要手动删文件
-    # 否则会破坏 ChromaDB 的 SQLite 元数据导致 tenant 错误
+    import gc
+    import shutil
+
+    # 1. 删除 ChromaDB collection
     if _chroma_store is not None:
         try:
-            _chroma_store.delete_collection()
-        except Exception:
-            pass
+            client = _chroma_store._client
+            client.delete_collection(COLLECTION_NAME)
+        except Exception as e:
+            logger.debug(f"delete_collection 异常（可忽略）: {e}")
         _chroma_store = None
-    import gc
+
+    # 2. 物理删除持久化目录（确保旧数据彻底清除）
+    persist_dir = Path(CHROMA_PERSIST_DIR)
+    if persist_dir.exists():
+        try:
+            shutil.rmtree(persist_dir)
+        except Exception as e:
+            logger.warning(f"删除持久化目录失败: {e}")
+            # 备用方案：逐个删除子文件
+            for item in persist_dir.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except Exception:
+                    pass
+
     gc.collect()
-    # 重新创建 collection（触发懒加载）
+
+    # 3. 重建（触发懒加载，创建全新 collection）
     _get_chroma()
-    logger.warning("向量数据库已重置")
+    logger.warning("向量数据库已完全重置（物理删除 + 重建）")

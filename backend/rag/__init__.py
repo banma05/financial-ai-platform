@@ -1,3 +1,8 @@
+# 🔧 必须在所有其他 import 之前导入 sentence_transformers
+# langchain_chroma/langchain_huggingface 会触发 sentence_transformers 初始化
+# 在它初始化后 CrossEncoder(device='cuda') 会导致 segfault
+import sentence_transformers  # noqa: F401
+
 from .loader import load_document
 from .splitter import split_documents
 from .vector_store import add_documents, search_similar, get_document_list, reset_database

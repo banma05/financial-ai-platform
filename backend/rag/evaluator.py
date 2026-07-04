@@ -456,6 +456,58 @@ def batch_evaluate(
     return report
 
 
+# ============ 语义评测（补充关键词评测，捕获术语差异）============
+
+def semantic_recall_at_k(
+    query: str,
+    retrieved_chunks: List[dict],
+    k: int = 5,
+    sim_threshold: float = 0.5,
+) -> dict:
+    """
+    语义召回率@k：基于 query-chunk 余弦相似度，不依赖关键词
+
+    设计动机：关键词评测对术语差异敏感（如"资本负债率" vs chunk 中的"资产负债率"），
+    语义评测直接用向量相似度判断相关性，更鲁棒。
+
+    与关键词评测互补使用：
+    - 关键词 R@5 高 + 语义 R@5 高 → 检索质量好
+    - 关键词 R@5 低 + 语义 R@5 高 → 关键词标注不全，检索实际 OK
+    - 关键词 R@5 高 + 语义 R@5 低 → 关键词太宽泛，实际语义不匹配
+    """
+    if not retrieved_chunks:
+        return {"semantic_recall@k": 0.0, "k": k, "avg_similarity": 0.0}
+
+    import numpy as np
+    from .embedder import get_embedding_model
+
+    model = get_embedding_model()
+    q_vec = model.embed_query(query)
+    q_vec = np.array(q_vec)
+
+    top_k = retrieved_chunks[:k]
+    similarities = []
+    relevant_count = 0
+
+    for chunk in top_k:
+        c_vec = model.embed_query(chunk["content"][:1000])  # 截断长 chunk
+        c_vec = np.array(c_vec)
+        sim = float(np.dot(q_vec, c_vec) / (np.linalg.norm(q_vec) * np.linalg.norm(c_vec) + 1e-8))
+        similarities.append(sim)
+        if sim >= sim_threshold:
+            relevant_count += 1
+
+    avg_sim = float(np.mean(similarities)) if similarities else 0.0
+
+    return {
+        "semantic_recall@k": round(relevant_count / k, 4) if k > 0 else 0.0,
+        "k": k,
+        "relevant_chunks": relevant_count,
+        "avg_similarity": round(avg_sim, 4),
+        "all_similarities": [round(s, 4) for s in similarities],
+    }
+
+
 # ============ 评测报告持久化 ============
 
 _eval_report_cache: Optional[dict] = None

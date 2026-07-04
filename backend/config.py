@@ -54,9 +54,9 @@ CHUNK_OVERLAP = 150       # 块之间的重叠（保证语义连贯）
 SEMANTIC_THRESHOLD_MODE = os.getenv("SEMANTIC_THRESHOLD_MODE", "mean-1std")
 # 可选值: "mean-1std"（默认，保守切分，减少碎片）、"mean-0.5std"（更多切分）、"mean"（最保守）
 # 对应 sigma_multiplier: 1.0 / 0.5 / 0.0
-SEMANTIC_MIN_CHUNK_SIZE = int(os.getenv("SEMANTIC_MIN_CHUNK_SIZE", "200"))
-SEMANTIC_MAX_CHUNK_SIZE = int(os.getenv("SEMANTIC_MAX_CHUNK_SIZE", "1200"))
-SEMANTIC_OVERLAP_RATIO = float(os.getenv("SEMANTIC_OVERLAP_RATIO", "0.15"))
+SEMANTIC_MIN_CHUNK_SIZE = int(os.getenv("SEMANTIC_MIN_CHUNK_SIZE", "400"))
+SEMANTIC_MAX_CHUNK_SIZE = int(os.getenv("SEMANTIC_MAX_CHUNK_SIZE", "1500"))
+SEMANTIC_OVERLAP_RATIO = float(os.getenv("SEMANTIC_OVERLAP_RATIO", "0.20"))
 
 # ============ Query 处理参数 ============
 QUERY_SHORT_THRESHOLD = int(os.getenv("QUERY_SHORT_THRESHOLD", "15"))

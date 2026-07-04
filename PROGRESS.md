@@ -1,9 +1,9 @@
 
 # 项目进度存档
 
-> 📅 最后更新：2026-07-02
+> 📅 最后更新：2026-07-04
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：模块一已完成，模块二 V2.5 MVP 完成，模块三规划中
+> 📌 当前阶段：模块一 GPU 加速 + 知识库质量优化完成
 
 ---
 
@@ -213,26 +213,26 @@ streamlit run frontend\app.py
 ### 2026-07-02 — 模块二 V2.5 MVP 完成 ✅
 
 #### 核心交付
-- **Agent 框架**：自研轻量编排（Planner→Executor→Reporter），不依赖 LangGraph 完整框架，降低复杂度
+- **Agent 框架**：自研轻量编排（Planner→Executor→Reporter），不依赖 LangGraph 完整框架
 - **财务公式库**：19 个内置公式（盈利能力 5/偿债能力 4/营运 3/成长 3/估值 2/现金流 2/杜邦 1），纯 Python 零外部依赖
 - **图表工具**：5 种图表（折线/柱状/饼图/雷达/双轴），matplotlib Agg 后端 + 中文字体自动适配
 - **分析模板**：3 个预设模板（盈利能力评估/杜邦分析/成长性分析）
-- **SSE 流式分析**：7 种事件类型（plan_start/task_start/task_complete/chart/report_start/done/error/clarification）
+- **SSE 流式分析**：7 种事件类型
 - **前端 UI**：替换占位页面，SSE 流式进度 + Markdown 报告渲染 + 图表展示
 
-#### 技术选型
-- LLM 调用：新增 LangChain ChatOpenAI 包装器（不破坏模块一的 openai SDK 调用）
-- 不依赖外部财务库（FinanceToolkit）、不依赖 LangGraph（用自研轻量编排）
-- 图表 base64 嵌入，不落盘
+#### 测试与验证
+- 53 个单元测试全部通过（财务公式 40 + Planner 13）
+- API 4 端点验证通过，模块一 RAG 功能不受影响
+- 50 题评测脚本已就绪（scripts/quick_eval_50.py），评测进行中（每条约 10s+）
 
-#### 测试数据
-- 53 个单元测试用例全部通过（财务公式 40 + Planner 13）
-- API 4 个端点验证通过（health/templates/formulas/stream）
-- 模块一不受影响（RAG Documents 端点正常）
+#### 待办清单调整
+- ❌ Entity Routing 全链路开发 — 已删除（实验验证负收益 -2.7pp）
+- ↓ Docker 容器化 — 降级至 P1
+- ✅ 采纳建议的 P0 精简方案（4 项 → 本周可完成）
 
 #### 文件统计
-- 新建 14 个文件，修改 7 个文件
-- +2929 行代码
+- 新建 15 个文件，修改 7 个文件，+2929 行代码
+- 21 files changed in commit 089de3c
 
 ### 2026-07-01 — 模块一完整功能验证 + 性能优化 ✅
 
