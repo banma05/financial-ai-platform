@@ -11,7 +11,7 @@ from loguru import logger
 
 from rag.hybrid_search import hybrid_search
 from rag.query_processor import process_query
-from rag.model_router import chat, get_langchain_llm, TaskType
+from rag.model_router import chat, TaskType
 
 
 class DataQueryTool:
@@ -97,45 +97,75 @@ class DataQueryTool:
 
 ## 提取要求
 1. 如果文档中有查询所需的数值，请以 JSON 格式输出，字段名使用中文
-2. 数值保留原始精度，不要四舍五入
-3. 如果涉及多年数据，按年份分组
-4. 如果文档中没有相关数据，设置 found=false
-5. 包含一个 summary 字段，用简洁中文总结发现的数据
+2. **数值必须是纯数字，不要带单位**（如"亿元""万元""%"等不要出现）
+3. 数据结构必须扁平，不要嵌套（不要用公司名或年份做外层 key）
+4. 如果涉及多年数据，用 "营业收入_2024": 1709.90, "营业收入_2023": 1500.00 这种扁平格式
+5. 如果文档中没有相关数据，设置 found=false
+6. 包含一个 summary 字段，用简洁中文总结发现的数据
 
-## 输出格式（严格 JSON）
+## 输出格式（严格 JSON，只输出 JSON，不要任何解释）
 {{
-  "found": true/false,
-  "data": {{}},
-  "summary": "一句话总结",
-  "confidence": 0.0-1.0
+  "found": true,
+  "data": {{"净利润": 862.28, "营业收入": 1741.44}},
+  "summary": "贵州茅台2024年净利润862.28亿元，营收1741.44亿元",
+  "confidence": 0.9
 }}
 
 特别注意：
-- 如果查询涉及百分比（如毛利率、净利率），请保留百分号并注明
-- 如果单位是"亿元""万元"等，请保留原始单位
-- 金额类数字注意区分"元"和"万元""亿元"
+- 金额类数字注意区分"元"和"万元""亿元"，输出时统一转为亿元单位
+- 百分比类指标（如毛利率）直接输出数值，如 92.38 而不是 "92.38%"
 """
 
         try:
             messages = [
-                {"role": "system", "content": "你是一个精确的财务数据提取专家。只返回 JSON，不解释。"},
+                {"role": "system", "content": "你是一个精确的财务数据提取专家。只返回严格 JSON，不解释，不输出任何其他内容。数值必须是纯数字不带单位。"},
                 {"role": "user", "content": extract_prompt},
             ]
             response = chat(messages, query=query, task_type=TaskType.SIMPLE)
 
-            # 尝试解析 JSON
+            # 尝试解析 JSON（增强容错）
             import json
-            # 处理 LLM 可能包裹的 ```json ... ``` 格式
+            import re as regex
             json_str = response.strip()
+            # 处理 LLM 可能包裹的 ```json ... ``` 格式
             if json_str.startswith("```"):
                 lines = json_str.split("\n")
                 json_str = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+            # 移除尾部多余字符（截断的 JSON 常见问题）
+            json_str = json_str.rstrip().rstrip(",").rstrip()
+            # 尝试找到最后一个完整的 }，截断后面的多余内容
+            brace_count = 0
+            last_valid_pos = 0
+            for pos, ch in enumerate(json_str):
+                if ch == "{":
+                    brace_count += 1
+                elif ch == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        last_valid_pos = pos + 1
+            if last_valid_pos > 0 and last_valid_pos < len(json_str):
+                json_str = json_str[:last_valid_pos]
             result = json.loads(json_str)
             return result
 
         except Exception as e:
-            logger.warning(f"LLM 数据提取失败: {e}，降级为正则提取模式")
-            return self._regex_extract_numbers(query, sources)
+            # 🔧 flash JSON 不稳定时的重试策略：先试 pro，再失败才降级正则
+            first_error = str(e)
+            try:
+                logger.warning(f"Flash JSON 提取失败 ({first_error[:60]})，重试 pro 模型...")
+                messages[0]["content"] = "你是一个精确的财务数据提取专家。只返回严格 JSON，不解释，不输出任何其他内容。"
+                response_pro = chat(messages, query=query, task_type=TaskType.COMPLEX)
+                json_str = response_pro.strip()
+                if json_str.startswith("```"):
+                    lines = json_str.split("\n")
+                    json_str = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                json_str = json_str.rstrip().rstrip(",").rstrip()
+                result = json.loads(json_str)
+                logger.info("Pro 模型重试成功")
+                return result
+            except Exception as retry_e:
+                logger.warning(f"Pro 重试也失败: {retry_e}，最终降级正则提取")
+                return self._regex_extract_numbers(query, sources)
 
 
     def _regex_extract_numbers(self, query: str, sources: List[dict]) -> dict:

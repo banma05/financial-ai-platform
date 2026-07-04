@@ -165,8 +165,16 @@ class ChartTool:
     def _bar_chart(self, config: ChartConfig) -> str:
         """柱状图：适用于对比分析（分组柱状图）"""
         data = config.data
-        categories = data.get("categories", [])  # X 轴类别
-        series = data.get("series", {})           # {"系列名": [值列表], ...}
+        categories = data.get("categories", [])
+        series = data.get("series", {})
+
+        # 🔧 兼容自动转换格式：labels+values → categories+series
+        if not categories and not series:
+            labels = data.get("labels", [])
+            values = data.get("values", [])
+            if labels and values:
+                categories = [str(l) for l in labels]
+                series = {"数值": values}
 
         fig, ax = plt.subplots(figsize=(8, 4.5))
         colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6A994E"]
@@ -183,7 +191,7 @@ class ChartTool:
         ax.set_xlabel(config.x_label or "类别")
         ax.set_ylabel(config.y_label or "数值")
         ax.set_xticks(x)
-        ax.set_xticklabels(categories)
+        ax.set_xticklabels(categories, rotation=30, ha="right")
         ax.legend()
         ax.grid(True, alpha=0.3, axis="y")
 

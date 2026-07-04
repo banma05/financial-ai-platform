@@ -15,7 +15,7 @@ init_db()
 app = FastAPI(
     title="智能财务分析平台",
     description="智能财务分析平台 — 三模块架构：知识库 + Agent + MCP",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 # CORS 配置（允许前端跨域访问）
@@ -40,7 +40,7 @@ setup_auth_middleware(app)
 async def root():
     return {
         "message": "智能财务分析平台 API",
-        "version": "0.1.0",
+        "version": "0.4.0",
         "docs": "/docs",
     }
 

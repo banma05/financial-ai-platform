@@ -2,7 +2,7 @@
 Planner 单元测试 — 任务拆解逻辑 + 模板加载 + 追问检测
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from agent.planner import Planner, BUILTIN_TEMPLATES
 from agent.schemas import AnalysisTask, AnalysisPlan
 
@@ -94,19 +94,16 @@ class TestPlannerTemplates:
     def test_unknown_template(self):
         """未注册的模板名应该由 plan() 走 LLM 模式（此处只测不会崩溃）"""
         planner = Planner()
-        result = planner.plan("分析茅台", template_name=None)
+        # 必须 mock chat() 否则触发真实 LLM 调用
+        with patch("agent.planner.chat", return_value='{"tasks": [], "requires_clarification": null}'):
+            result = planner.plan("分析茅台", template_name=None)
         assert isinstance(result, AnalysisPlan)
 
 
 class TestPlannerLLM:
-    """LLM 拆解测试（mock LLM）"""
+    """LLM 拆解测试（mock chat()）"""
 
-    @pytest.fixture
-    def mock_llm(self):
-        """创建一个 mock LLM"""
-        mock = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = """{
+    NORMAL_JSON = """{
   "tasks": [
     {"task_id": "1", "task_type": "data_query", "description": "查询茅台营收", "params": {"query": "茅台营收"}, "depends_on": []},
     {"task_id": "2", "task_type": "calculate", "description": "计算毛利率", "params": {"formula": "gross_profit_margin"}, "depends_on": ["1"]},
@@ -115,43 +112,13 @@ class TestPlannerLLM:
   ],
   "requires_clarification": null
 }"""
-        mock.invoke.return_value = mock_response
-        return mock
 
-    def test_parse_with_llm_success(self, mock_llm):
-        """LLM 返回正常 JSON 应该正确解析"""
-        planner = Planner(llm=mock_llm)
-        plan = planner._parse_with_llm("分析贵州茅台")
-        assert len(plan.tasks) == 4
-        assert plan.requires_clarification is None
-        # 验证依赖关系
-        calc_task = next(t for t in plan.tasks if t.task_type == "calculate")
-        assert "1" in calc_task.depends_on
-
-    def test_parse_with_llm_clarification(self, mock_llm):
-        """LLM 返回追问内容"""
-        mock_llm.invoke.return_value.content = """{
+    CLARIFY_JSON = """{
   "tasks": [],
   "requires_clarification": "请问您要分析哪家公司的数据？"
 }"""
-        planner = Planner(llm=mock_llm)
-        plan = planner._parse_with_llm("分析毛利率")
-        assert plan.requires_clarification is not None
-        assert "哪家公司" in plan.requires_clarification
 
-    def test_parse_with_llm_json_error_fallback(self, mock_llm):
-        """LLM 返回非法 JSON 应该触发回退"""
-        mock_llm.invoke.return_value.content = "这不是合法的 JSON 格式"
-        planner = Planner(llm=mock_llm)
-        plan = planner._parse_with_llm("随便分析点东西")
-        # 回退方案至少应该返回 1-2 个任务
-        assert len(plan.tasks) >= 1
-        # 回退任务应该包含基本的 data_query
-        assert plan.tasks[0].task_type == "data_query"
-
-    def test_parse_with_llm_wrapped_json(self, mock_llm):
-        """LLM 返回 ```json...``` 包裹的 JSON"""
-        mock_llm.invoke.return_value.content = """```json
+    WRAPPED_JSON = """```json
 {
   "tasks": [
     {"task_id": "1", "task_type": "data_query", "description": "测试", "params": {}, "depends_on": []}
@@ -159,8 +126,38 @@ class TestPlannerLLM:
   "requires_clarification": null
 }
 ```"""
-        planner = Planner(llm=mock_llm)
-        plan = planner._parse_with_llm("测试")
+
+    def test_parse_with_llm_success(self):
+        """LLM 返回正常 JSON 应该正确解析"""
+        with patch("agent.planner.chat", return_value=self.NORMAL_JSON):
+            planner = Planner()
+            plan = planner._parse_with_llm("分析贵州茅台")
+        assert len(plan.tasks) == 4
+        assert plan.requires_clarification is None
+        calc_task = next(t for t in plan.tasks if t.task_type == "calculate")
+        assert "1" in calc_task.depends_on
+
+    def test_parse_with_llm_clarification(self):
+        """LLM 返回追问内容"""
+        with patch("agent.planner.chat", return_value=self.CLARIFY_JSON):
+            planner = Planner()
+            plan = planner._parse_with_llm("分析毛利率")
+        assert plan.requires_clarification is not None
+        assert "哪家公司" in plan.requires_clarification
+
+    def test_parse_with_llm_json_error_fallback(self):
+        """LLM 返回非法 JSON 应该触发回退"""
+        with patch("agent.planner.chat", return_value="这不是合法的 JSON 格式"):
+            planner = Planner()
+            plan = planner._parse_with_llm("随便分析点东西")
+        assert len(plan.tasks) >= 1
+        assert plan.tasks[0].task_type == "data_query"
+
+    def test_parse_with_llm_wrapped_json(self):
+        """LLM 返回 ```json...``` 包裹的 JSON"""
+        with patch("agent.planner.chat", return_value=self.WRAPPED_JSON):
+            planner = Planner()
+            plan = planner._parse_with_llm("测试")
         assert len(plan.tasks) == 1
 
 

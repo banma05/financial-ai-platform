@@ -10,7 +10,7 @@ Reporter（报告生成器）— 将执行结果组装为结构化分析报告
 from typing import List
 from loguru import logger
 
-from rag.model_router import get_langchain_llm, chat
+from rag.model_router import chat, TaskType
 from .schemas import AnalysisTask, TaskResult
 
 
@@ -25,8 +25,8 @@ class Reporter:
     4. 图表引用嵌入报告
     """
 
-    def __init__(self, llm=None):
-        self.llm = llm or get_langchain_llm()
+    def __init__(self):
+        pass  # LLM 调用统一走 chat()，无需持有实例
 
     def generate(
         self,
@@ -181,7 +181,7 @@ class Reporter:
                 {"role": "system", "content": "你是一位资深的财务分析师。请基于提供的数据给出专业、诚实的分析。"},
                 {"role": "user", "content": prompt},
             ]
-            response = chat(messages, query=user_input)
+            response = chat(messages, query=user_input, task_type=TaskType.SIMPLE)
             return response
         except Exception as e:
             logger.warning(f"LLM 生成洞察失败: {e}")

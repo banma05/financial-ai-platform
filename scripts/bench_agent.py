@@ -2,12 +2,17 @@
 Agent 评测脚本 — 20 题全量评测（子任务拆解准确率 + 指标覆盖率 + 耗时基准）
 """
 import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 import sys
 import time
 import json
 from pathlib import Path
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# 🔧 修复 Windows GBK 编码下 emoji 打印崩溃
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
@@ -149,10 +154,10 @@ for i, q in enumerate(questions, 1):
     if task_result["status"] == "needs_clarification":
         logger.warning(f"  [!] 需要追问: {task_result['detail'][:80]}")
 
-    # Phase 2: 全链路执行（同步模式）
+    # Phase 2: 全链路执行（同步模式，复用 Phase 1 的 Plan 避免重复 LLM 调用）
     exec_start = time.time()
     try:
-        agent_result = run_agent_sync(query)
+        agent_result = run_agent_sync(query, plan=plan)
     except Exception as e:
         logger.error(f"  Agent 执行失败: {e}")
         failed.append(qid)
