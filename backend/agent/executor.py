@@ -263,13 +263,26 @@ class ToolRegistry:
             if not isinstance(extracted, dict):
                 continue
 
-            # 遍历提取的数据，做中→英映射 + 数值解析
+            # 展平一层嵌套（LLM 可能返回 {"公司名": {...}} 或 {"2024": {...}}）
+            flat_data = {}
             for k, v in extracted.items():
-                # 跳过非数据字段
                 if k in ("found", "success", "summary", "error", "confidence",
                          "expression", "display_name", "category", "unit"):
                     continue
+                if isinstance(v, dict) and not isinstance(v, list):
+                    # 嵌套结构：展平内层键值对
+                    for sub_k, sub_v in v.items():
+                        if not isinstance(sub_v, (dict, list)):
+                            flat_data[sub_k] = sub_v
+                elif not isinstance(v, (dict, list)):
+                    flat_data[k] = v
 
+            # 先处理展平后的数据
+            all_extracted = {**flat_data, **{k: v for k, v in extracted.items()
+                                              if not isinstance(v, (dict, list))}}
+
+            # 遍历提取的数据，做中→英映射 + 数值解析
+            for k, v in all_extracted.items():
                 # 解析数值（支持 "1709.90亿元" 等带单位字符串）
                 parsed = _parse_financial_value(v)
                 if parsed is None:
@@ -287,11 +300,14 @@ class ToolRegistry:
                     params[k] = parsed
 
             # 特殊处理：dupont 公式需要 4 个参数
-            # 如果 extracted 中有相关指标，确保参数齐全
             if task.params.get("formula") == "dupont":
                 for needed in ("net_profit", "revenue", "total_assets", "equity"):
                     if needed not in params:
-                        logger.debug(f"杜邦分析缺少参数: {needed}，将从已有数据推断")
+                        logger.warning(
+                            f"杜邦分析缺少参数: {needed}，"
+                            f"extracted keys: {list(all_extracted.keys())[:15]}，"
+                            f"flat keys: {list(flat_data.keys())[:10]}"
+                        )
 
         return params
 

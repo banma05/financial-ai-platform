@@ -3,7 +3,26 @@
 
 > 📅 最后更新：2026-07-04
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：模块一 GPU 加速 + 知识库质量优化完成
+> 📌 当前阶段：**阶段一 — 关键Bug修复 + 架构重构启动**
+> 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
+
+---
+
+## 五阶段工程化路线图（V3.0）
+
+| 阶段 | 内容 | 状态 | 预计产出 |
+|------|------|:----:|------|
+| **阶段一** | 修复6个关键Bug + 清理死代码 | ✅ 完成 (7/4) | 稳定Agent基础 |
+| **阶段二** | DAG并行引擎 + 智能依赖注入 + 重试 | ⏳ | Agent工程化升级 |
+| **阶段三** | MCP模块从零开发（6+工具） | ⏳ | 外部数据源接入 |
+| **阶段四** | Docker + Redis + MySQL + CI/CD | ⏳ | 生产级工程补齐 |
+| **阶段五** | 三模块联动整合 + 统一评测 | ⏳ | 端到端数据流打通 |
+
+### 核心架构决策（2026-07-04）
+- ✅ **不用 LangGraph**：自研 DAG 引擎（ThreadPoolExecutor + 拓扑排序），工具全是同步IO，3层DAG足够
+- ✅ **LLM 统一调用**：全部走 `chat()`，删除 `get_langchain_llm()`
+- ✅ **MCP 先内置后独立**：阶段三复用 ToolRegistry，阶段四 Docker 化拆独立进程
+- ✅ **高并发路线**：短期 Lock+TTL+重试 → 中期 Redis+MySQL → 长期 Milvus+K8s
 
 ---
 
@@ -210,6 +229,36 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-04 — 阶段一完成：6项关键Bug修复 + LangGraph架构重构 ✅
+
+#### 架构决策
+- **撤回自研方案，采用 LangGraph StateGraph**：业界标准 Agent 编排框架
+  - StateGraph 做顶层编排（planner→executor→reporter）
+  - ThreadPoolExecutor 做同层任务并行（DAG 拓扑排序）
+  - 面试讲法："2026年主流方案是 LangGraph + 层内并行，我选择这个组合因为..."
+
+#### 6项修复清单
+| # | 修复项 | 文件 |
+|:--:|------|------|
+| 1.1 | 柱状图数据格式兼容（labels+values→categories+series） | chart.py |
+| 1.2 | 流式执行依赖失败检查（与 sync 路径一致） | graph.py |
+| 1.3 | 移除 LangGraph 死代码 → 正式接入 StateGraph | graph.py |
+| 1.4 | LLM 调用路径统一（删除 get_langchain_llm，全用 chat()） | planner.py, reporter.py, data_query.py, model_router.py |
+| 1.5 | DAG 拓扑排序 + 层内并行执行 | graph.py（新增 _topological_layers） |
+| 1.6 | Flash JSON 提取失败→pro 重试 | data_query.py |
+
+#### 额外优化
+- 清理 `get_langchain_llm` 死代码（reporter.py, data_query.py, model_router.py）
+- 修复版本号不一致（main.py 0.1.0/0.3.0 → 0.4.0）
+- 图表 x 轴标签增加 rotation 避免重叠
+- Planner 测试改为 mock `chat()` 适配新架构
+- 55 个测试全部通过
+
+#### 文件变更
+- 重写：`graph.py`（LangGraph StateGraph + DAG并行）
+- 修改：`chart.py`, `planner.py`, `reporter.py`, `data_query.py`, `model_router.py`, `config.py`, `main.py`, `executor.py`, 测试文件 × 2
+- 清理：`graph.py` 删除 ~140 行死代码
 
 ### 2026-07-04 — 模块二 P0 验收补全 + Agent 核心修复 ✅
 

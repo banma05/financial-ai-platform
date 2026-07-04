@@ -1,19 +1,21 @@
 """
-LangGraph StateGraph — Agent 核心编排
+Agent 核心编排 — LangGraph StateGraph + ThreadPoolExecutor 层内并行
 
-三节点流程：
-    planner → executor → (条件路由) → reporter → END
-                             └→ executor（还有未完成任务）
+架构（V3.0）：
+    planner → executor (DAG并行) → reporter → END
 
-V2.5 MVP: 简单线性执行（3 节点 + 条件循环）
-V3.0 增强: DAG 拓扑排序 + 并行执行
+LangGraph 负责：顶层流控制、State管理、SSE流式事件
+ThreadPoolExecutor 负责：同层任务并行执行（最多4线程）
 """
 import json
 import time
-from typing import TypedDict, List, Optional, Any, Generator
+from typing import TypedDict, List, Optional, Generator, Union, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
-from .schemas import AnalysisTask, TaskResult, AnalysisPlan, ChartConfig
+from langgraph.graph import StateGraph, END
+
+from .schemas import AnalysisTask, TaskResult, AnalysisPlan
 from .planner import Planner, BUILTIN_TEMPLATES
 from .executor import Executor, ToolRegistry
 from .reporter import Reporter
@@ -25,23 +27,22 @@ from .tools.chart import ChartTool
 # ==================== State 定义 ====================
 
 class AgentState(TypedDict, total=False):
-    """LangGraph 节点间传递的共享状态"""
-    user_input: str                          # 原始用户输入
-    session_id: str                          # 会话 ID
-    template_name: Optional[str]             # 分析模板名
-    tasks: List[dict]                        # 子任务列表（序列化）
-    current_task_idx: int                    # 当前执行到的任务索引
-    task_results: List[dict]                 # 各任务执行结果（序列化）
-    chart_count: int                         # 生成的图表数量
-    final_report: str                        # 最终报告
-    error: Optional[str]                     # 错误信息
-    clarification: Optional[str]             # 追问内容
-    processing_time: float                   # 总耗时
+    """LangGraph Agent 共享状态"""
+    user_input: str
+    session_id: str
+    template_name: Optional[str]
+    plan: Optional[dict]        # AnalysisPlan 序列化
+    tasks: List[dict]           # AnalysisTask 序列化列表
+    task_results: List[dict]    # TaskResult 序列化列表
+    chart_count: int
+    final_report: str
+    clarification: Optional[str]
+    processing_time: float
+    error: Optional[str]
 
 
 # ==================== 全局单例 ====================
 
-_agent_app = None
 _tool_registry: Optional[ToolRegistry] = None
 _planner: Optional[Planner] = None
 _executor: Optional[Executor] = None
@@ -56,113 +57,167 @@ def _init_components():
         _tool_registry.register(DataQueryTool())
         _tool_registry.register(FinancialCalcTool())
         _tool_registry.register(ChartTool())
-
         _planner = Planner()
         _executor = Executor(_tool_registry)
         _reporter = Reporter()
 
 
+# ==================== DAG 拓扑排序 ====================
+
+def _topological_layers(tasks: List[dict]) -> List[List[dict]]:
+    """
+    Kahn 算法分层拓扑排序。
+
+    返回：[[layer0_tasks], [layer1_tasks], ...]
+    同层任务之间无依赖关系，可并行执行。
+    """
+    task_map = {t["task_id"]: t for t in tasks}
+    in_degree = {t["task_id"]: len(t.get("depends_on", [])) for t in tasks}
+    adjacency = {t["task_id"]: [] for t in tasks}
+    for t in tasks:
+        for dep_id in t.get("depends_on", []):
+            if dep_id in adjacency:
+                adjacency[dep_id].append(t["task_id"])
+
+    layers = []
+    while in_degree:
+        # 找到所有入度为 0 的节点（当前层）
+        current = [tid for tid, deg in in_degree.items() if deg == 0]
+        if not current:
+            # 存在循环依赖，剩余任务全部放入最后一层
+            remaining = [task_map[tid] for tid in in_degree]
+            if remaining:
+                layers.append(remaining)
+            break
+        layers.append([task_map[tid] for tid in current])
+        # 移除当前层节点，更新入度
+        for tid in current:
+            del in_degree[tid]
+            for neighbor in adjacency[tid]:
+                if neighbor in in_degree:
+                    in_degree[neighbor] -= 1
+
+    return layers
+
+
 # ==================== 节点函数 ====================
 
 def planner_node(state: AgentState) -> dict:
-    """Planner 节点：分析需求 → 子任务列表"""
+    """Planner 节点：分析需求 → 任务列表"""
     _init_components()
-
     user_input = state["user_input"]
     template = state.get("template_name")
 
-    logger.info(f"[Planner] 开始拆解任务: {user_input[:50]}...")
+    logger.info(f"[Planner] 开始拆解: {user_input[:50]}...")
 
     try:
         plan: AnalysisPlan = _planner.plan(user_input, template)
-
-        if plan.requires_clarification:
-            logger.info(f"[Planner] 需要追问: {plan.requires_clarification}")
-            return {
-                "clarification": plan.requires_clarification,
-                "tasks": [],
-                "current_task_idx": 0,
-                "chart_count": 0,
-            }
-
-        # 序列化任务列表
-        tasks_dict = [t.model_dump() for t in plan.tasks]
-        logger.info(f"[Planner] 拆解完成，共 {len(tasks_dict)} 个子任务")
-
-        return {
-            "clarification": None,
-            "tasks": tasks_dict,
-            "current_task_idx": 0,
-            "chart_count": 0,
-        }
     except Exception as e:
         logger.error(f"[Planner] 拆解失败: {e}")
         return {
             "clarification": None,
             "tasks": [{
                 "task_id": "1", "task_type": "data_query",
-                "description": f"查询「{user_input}」相关数据", "params": {"query": user_input}
+                "description": f"查询「{user_input}」相关数据",
+                "params": {"query": user_input},
             }],
-            "current_task_idx": 0,
             "chart_count": 0,
         }
 
+    if plan.requires_clarification:
+        logger.info(f"[Planner] 需要追问: {plan.requires_clarification}")
+        return {
+            "clarification": plan.requires_clarification,
+            "tasks": [],
+            "chart_count": 0,
+        }
+
+    tasks_dict = [t.model_dump() for t in plan.tasks]
+    layers = _topological_layers(tasks_dict)
+    logger.info(f"[Planner] 拆解完成: {len(tasks_dict)} 任务, {len(layers)} DAG层")
+    for i, layer in enumerate(layers):
+        logger.debug(f"  层{i}: {[t['task_id'] + ':' + t['task_type'] for t in layer]}")
+
+    return {
+        "clarification": None,
+        "plan": plan.model_dump(),
+        "tasks": tasks_dict,
+        "task_results": [],
+        "chart_count": 0,
+    }
+
 
 def executor_node(state: AgentState) -> dict:
-    """Executor 节点：按序执行当前任务"""
+    """
+    Executor 节点：按 DAG 拓扑层并行执行所有任务。
+
+    同一层的任务（无相互依赖）通过 ThreadPoolExecutor 并行提交，
+    每层完成后才进入下一层（保证依赖关系）。
+    """
     _init_components()
-
-    idx = state.get("current_task_idx", 0)
     tasks_dict = state.get("tasks", [])
-    existing_results = state.get("task_results", [])
+    all_results = state.get("task_results", [])
 
-    if idx >= len(tasks_dict):
-        return {}  # 所有任务已完成
+    if not tasks_dict:
+        return {}
 
-    task_dict = tasks_dict[idx]
-    task = AnalysisTask(**task_dict)
-    logger.info(f"[Executor] 执行任务 [{task.task_id}]: {task.description}")
+    # 按 task_id 建立已有结果索引
+    result_map: Dict[str, dict] = {r["task_id"]: r for r in all_results}
+    # 找出尚未完成的任务
+    pending = [t for t in tasks_dict if t["task_id"] not in result_map]
 
-    try:
-        # 将已有结果反序列化为 TaskResult 列表供依赖注入
-        dep_results = [TaskResult(**r) for r in existing_results]
+    if not pending:
+        logger.info("[Executor] 所有任务已完成")
+        return {}
 
-        # 执行单个任务
-        result = _executor.tools.execute_task(task, dep_results)
+    # 拓扑分层
+    layers = _topological_layers(pending)
 
-        new_results = existing_results + [result.model_dump()]
+    for layer_idx, layer in enumerate(layers):
+        logger.info(f"[Executor] DAG 层 {layer_idx+1}/{len(layers)}: {len(layer)} 任务并行")
 
-        # 检查是否生成了图表
-        chart_count = state.get("chart_count", 0)
-        if result.chart_base64:
-            chart_count += 1
+        def _execute_one(task_dict: dict) -> dict:
+            """执行单个任务（线程安全）"""
+            task = AnalysisTask(**task_dict)
+            # 检查依赖
+            for dep_id in task.depends_on:
+                dep = result_map.get(dep_id)
+                if dep and not dep.get("success", True):
+                    return TaskResult(
+                        task_id=task.task_id, task_type=task.task_type,
+                        success=False,
+                        error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
+                    ).model_dump()
 
-        return {
-            "task_results": new_results,
-            "current_task_idx": idx + 1,
-            "chart_count": chart_count,
-        }
+            dep_results = [TaskResult(**result_map[dep_id]) for dep_id in task.depends_on if dep_id in result_map]
+            result = _executor.tools.execute_task(task, dep_results)
+            return result.model_dump()
 
-    except Exception as e:
-        logger.error(f"[Executor] 任务 [{task.task_id}] 异常: {e}")
-        error_result = TaskResult(
-            task_id=task.task_id,
-            task_type=task.task_type,
-            success=False,
-            error=str(e),
-        )
-        new_results = existing_results + [error_result.model_dump()]
-        return {
-            "task_results": new_results,
-            "current_task_idx": idx + 1,
-        }
+        # 层内并行执行
+        with ThreadPoolExecutor(max_workers=min(4, len(layer))) as pool:
+            futures = {pool.submit(_execute_one, t): t["task_id"] for t in layer}
+            for future in as_completed(futures):
+                task_id = futures[future]
+                try:
+                    result_dict = future.result()
+                    result_map[task_id] = result_dict
+                except Exception as e:
+                    logger.error(f"[Executor] 任务 {task_id} 异常: {e}")
+                    result_map[task_id] = TaskResult(
+                        task_id=task_id, task_type="unknown",
+                        success=False, error=str(e),
+                    ).model_dump()
+
+    new_results = [result_map[t["task_id"]] for t in tasks_dict if t["task_id"] in result_map]
+    chart_count = sum(1 for r in new_results if r.get("chart_base64"))
+
+    return {"task_results": new_results, "chart_count": chart_count}
 
 
 def reporter_node(state: AgentState) -> dict:
-    """Reporter 节点：生成最终报告"""
+    """Reporter 节点：生成最终分析报告"""
     _init_components()
 
-    # 如果需要追问，生成追问报告
     if state.get("clarification"):
         return {
             "final_report": f"### ⚠️ 需要更多信息\n\n{state['clarification']}\n\n请补充信息后重试。",
@@ -176,7 +231,7 @@ def reporter_node(state: AgentState) -> dict:
     tasks = [AnalysisTask(**t) for t in tasks_dict]
     results = [TaskResult(**r) for r in results_dict]
 
-    logger.info(f"[Reporter] 生成报告: {len(tasks)} 任务, {len(results)} 结果")
+    logger.info(f"[Reporter] 生成报告: {len(tasks)} 任务, {len(results)} 结果, {chart_count} 图表")
 
     try:
         report = _reporter.generate(user_input, tasks, results, chart_count)
@@ -188,21 +243,46 @@ def reporter_node(state: AgentState) -> dict:
 
 # ==================== 条件路由 ====================
 
-def _should_continue(state: AgentState) -> str:
-    """判断是否继续执行 executor"""
+def _route_after_planner(state: AgentState) -> str:
+    """Planner 之后：有追问→reporter，否则→executor"""
     if state.get("clarification"):
-        return "reporter"  # 需要追问，直接到 reporter
-
-    idx = state.get("current_task_idx", 0)
-    total = len(state.get("tasks", []))
-
-    if idx >= total:
-        return "reporter"  # 所有任务完成
-
-    return "executor"  # 继续执行下一个任务
+        return "reporter"
+    return "executor"
 
 
-# ==================== 流式事件发射器 ====================
+# ==================== 构建 Graph ====================
+
+def _build_agent_graph() -> StateGraph:
+    """构建 LangGraph StateGraph"""
+    builder = StateGraph(AgentState)
+
+    builder.add_node("planner", planner_node)
+    builder.add_node("executor", executor_node)
+    builder.add_node("reporter", reporter_node)
+
+    builder.set_entry_point("planner")
+    builder.add_conditional_edges("planner", _route_after_planner, {
+        "executor": "executor",
+        "reporter": "reporter",
+    })
+    builder.add_edge("executor", "reporter")
+    builder.add_edge("reporter", END)
+
+    return builder.compile()
+
+
+# 全局 Graph 实例（懒编译）
+_agent_graph = None
+
+
+def _get_agent_graph():
+    global _agent_graph
+    if _agent_graph is None:
+        _agent_graph = _build_agent_graph()
+    return _agent_graph
+
+
+# ==================== 公共入口 ====================
 
 class AgentEvent:
     """SSE 事件数据类"""
@@ -222,103 +302,110 @@ def run_agent_stream(
     """
     流式执行 Agent 分析，yield SSE 事件字符串。
 
-    用法（FastAPI 端点）:
-        for sse_event in run_agent_stream(query, session_id):
-            yield sse_event
-
-    事件序列：
-    1. plan_start    — 开始规划，含任务数
-    2. task_start    — 开始执行某个子任务
-    3. task_complete — 子任务执行完成
-    4. chart         — 图表生成（base64）
-    5. report_start  — 开始生成报告
-    6. done          — 分析完成，含报告文本
-    7. error         — 分析出错
-    8. clarification — 需要追问用户
+    通过 LangGraph graph.stream() 获取节点事件，
+    包装为前端可消费的 SSE 格式。
     """
     _init_components()
     start_time = time.time()
 
     try:
-        # Phase 1: Planner
-        logger.info(f"[Agent] 开始分析: {user_input[:60]}...")
+        graph = _get_agent_graph()
+        initial_state: AgentState = {
+            "user_input": user_input,
+            "session_id": session_id,
+            "template_name": template_name,
+        }
+
         yield AgentEvent("plan_start", message="正在分析需求...").to_sse()
 
-        plan: AnalysisPlan = _planner.plan(user_input, template_name)
+        # LangGraph stream 逐节点产出状态
+        last_state = initial_state
+        task_count = 0
+        prev_result_count = 0
+        prev_chart_count = 0
 
-        if plan.requires_clarification:
-            yield AgentEvent(
-                "clarification",
-                question=plan.requires_clarification,
-                message="需要更多信息",
-            ).to_sse()
-            return
+        for event in graph.stream(initial_state, stream_mode="values"):
+            # event 是一个 dict，包含更新后的状态
+            combined_state = {**last_state, **event}
+            last_state = combined_state
 
-        tasks = plan.tasks
-        yield AgentEvent(
-            "plan_start",
-            task_count=len(tasks),
-            tasks=[{"id": t.task_id, "type": t.task_type, "desc": t.description} for t in tasks],
-            message=f"已规划 {len(tasks)} 个子任务",
-        ).to_sse()
-
-        # Phase 2: Executor（逐个执行）
-        results: List[TaskResult] = []
-        chart_count = 0
-
-        for i, task in enumerate(tasks):
-            yield AgentEvent(
-                "task_start",
-                task_id=task.task_id,
-                task_idx=i + 1,
-                total=len(tasks),
-                description=task.description,
-                message=f"执行中: {task.description}",
-            ).to_sse()
-
-            # 执行任务
-            dep_results = results  # 前置任务结果
-            result = _executor.tools.execute_task(task, dep_results)
-            results.append(result)
-
-            # 推送图表
-            if result.chart_base64:
-                chart_count += 1
+            # 检查是否需要追问
+            if combined_state.get("clarification"):
                 yield AgentEvent(
-                    "chart",
-                    task_id=task.task_id,
-                    chart_base64=result.chart_base64,
-                    chart_index=chart_count,
-                    message=f"图表 {chart_count} 已生成",
+                    "clarification",
+                    question=combined_state["clarification"],
+                    message="需要更多信息",
+                ).to_sse()
+                return
+
+            # 任务规划完成
+            tasks = combined_state.get("tasks", [])
+            if tasks and task_count == 0:
+                task_count = len(tasks)
+                yield AgentEvent(
+                    "plan_start",
+                    task_count=task_count,
+                    tasks=[{"id": t["task_id"], "type": t["task_type"], "desc": t.get("description", "")} for t in tasks],
+                    message=f"已规划 {task_count} 个子任务",
                 ).to_sse()
 
-            # 推送完成事件
+            # 任务执行进度
+            results = combined_state.get("task_results", [])
+            if len(results) > prev_result_count:
+                for r in results[prev_result_count:]:
+                    if r.get("chart_base64"):
+                        yield AgentEvent(
+                            "chart",
+                            task_id=r["task_id"],
+                            chart_base64=r["chart_base64"],
+                            chart_index=combined_state.get("chart_count", 0),
+                            message=f"图表已生成",
+                        ).to_sse()
+                    yield AgentEvent(
+                        "task_complete",
+                        task_id=r["task_id"],
+                        success=r.get("success", False),
+                        summary=r.get("summary", ""),
+                        error=r.get("error"),
+                        message=f"{'✅' if r.get('success') else '❌'} {r.get('summary') or r.get('error') or '任务完成'}",
+                    ).to_sse()
+                prev_result_count = len(results)
+                prev_chart_count = combined_state.get("chart_count", 0)
+
+            # 报告生成完成
+            if combined_state.get("final_report"):
+                report = combined_state["final_report"]
+                processing_time = round(time.time() - start_time, 1)
+                charts = [r.get("chart_base64") for r in results if r.get("chart_base64")]
+
+                yield AgentEvent(
+                    "done",
+                    report=report,
+                    charts=charts,
+                    task_count=len(results),
+                    processing_time=processing_time,
+                    message=f"分析完成，耗时 {processing_time} 秒",
+                ).to_sse()
+                return
+
+        # 如果流结束了但没有 final_report，再跑一次 reporter
+        # (正常流程 executor→reporter 已处理，这是兜底)
+        if not last_state.get("final_report") and not last_state.get("clarification"):
+            tasks_dict = last_state.get("tasks", [])
+            results_dict = last_state.get("task_results", [])
+            chart_count = last_state.get("chart_count", 0)
+            tasks = [AnalysisTask(**t) for t in tasks_dict]
+            results = [TaskResult(**r) for r in results_dict]
+            report = _reporter.generate(user_input, tasks, results, chart_count)
+            processing_time = round(time.time() - start_time, 1)
             yield AgentEvent(
-                "task_complete",
-                task_id=task.task_id,
-                task_idx=i + 1,
-                total=len(tasks),
-                success=result.success,
-                summary=result.summary,
-                error=result.error,
-                message=f"{'✅' if result.success else '❌'} {result.summary or result.error or task.description}",
+                "done",
+                report=report,
+                charts=[r.get("chart_base64") for r in results_dict if r.get("chart_base64")],
+                task_count=len(results),
+                processing_time=processing_time,
+                message=f"分析完成，耗时 {processing_time} 秒",
             ).to_sse()
-
-        # Phase 3: Reporter
-        yield AgentEvent("report_start", message="正在生成分析报告...").to_sse()
-
-        report = _reporter.generate(user_input, tasks, results, chart_count)
-
-        processing_time = round(time.time() - start_time, 1)
-
-        yield AgentEvent(
-            "done",
-            report=report,
-            charts=[r.chart_base64 for r in results if r.chart_base64],
-            task_count=len(tasks),
-            processing_time=processing_time,
-            message=f"分析完成，耗时 {processing_time} 秒",
-        ).to_sse()
 
     except Exception as e:
         logger.error(f"[Agent] 分析异常: {e}")
@@ -329,44 +416,59 @@ def run_agent_sync(
     user_input: str,
     session_id: str = "default",
     template_name: Optional[str] = None,
+    plan: AnalysisPlan = None,
 ) -> dict:
     """
-    同步执行 Agent 分析（非流式）。
+    同步执行 Agent 分析（非流式）。通过 LangGraph graph.invoke()
 
-    返回:
-        {
-            "report": str,        # Markdown 报告
-            "charts": List[str],  # 图表 base64 列表
-            "task_count": int,    # 执行子任务数
-            "processing_time": float,  # 总耗时
-        }
+    参数:
+        plan: 可选，预生成的 AnalysisPlan。传入后跳过 Planner 步骤。
     """
     _init_components()
     start_time = time.time()
 
-    # Planner
-    plan = _planner.plan(user_input, template_name)
-    if plan.requires_clarification:
+    # 如已有 plan 则跳过 Planner（benchmark 复用优化）
+    if plan is not None:
+        if plan.requires_clarification:
+            return {
+                "report": f"### ⚠️ 需要更多信息\n\n{plan.requires_clarification}",
+                "charts": [],
+                "task_count": 0,
+                "processing_time": round(time.time() - start_time, 1),
+                "clarification": plan.requires_clarification,
+            }
+        results = _executor.execute(plan.tasks)
+        chart_count = sum(1 for r in results if r.chart_base64)
+        report = _reporter.generate(user_input, plan.tasks, results, chart_count)
         return {
-            "report": f"### ⚠️ 需要更多信息\n\n{plan.requires_clarification}",
+            "report": report,
+            "charts": [r.chart_base64 for r in results if r.chart_base64],
+            "task_count": len(plan.tasks),
+            "processing_time": round(time.time() - start_time, 1),
+        }
+
+    # 正常流程：通过 LangGraph
+    graph = _get_agent_graph()
+    initial_state: AgentState = {
+        "user_input": user_input,
+        "session_id": session_id,
+        "template_name": template_name,
+    }
+
+    try:
+        final_state = graph.invoke(initial_state)
+    except Exception as e:
+        logger.error(f"[Agent] 同步执行失败: {e}")
+        return {
+            "report": f"## 分析异常\n\n错误: {e}",
             "charts": [],
             "task_count": 0,
             "processing_time": round(time.time() - start_time, 1),
-            "clarification": plan.requires_clarification,
         }
 
-    # Executor
-    results = _executor.execute(plan.tasks)
-    chart_count = sum(1 for r in results if r.chart_base64)
-
-    # Reporter
-    report = _reporter.generate(user_input, plan.tasks, results, chart_count)
-
-    processing_time = round(time.time() - start_time, 1)
-
     return {
-        "report": report,
-        "charts": [r.chart_base64 for r in results if r.chart_base64],
-        "task_count": len(plan.tasks),
-        "processing_time": processing_time,
+        "report": final_state.get("final_report", "## 报告生成失败"),
+        "charts": [r.get("chart_base64") for r in final_state.get("task_results", []) if r.get("chart_base64")],
+        "task_count": len(final_state.get("task_results", [])),
+        "processing_time": round(time.time() - start_time, 1),
     }

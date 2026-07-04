@@ -9,7 +9,7 @@ import json
 from typing import List, Optional
 from loguru import logger
 
-from rag.model_router import get_langchain_llm
+from rag.model_router import chat, TaskType, LLM_MODEL, AGENT_LLM_MODEL
 from .schemas import AnalysisTask, AnalysisPlan
 
 
@@ -184,8 +184,26 @@ class Planner:
     3. 检测是否有歧义 → 需要追问时返回 clarification_question
     """
 
-    def __init__(self, llm=None):
-        self.llm = llm or get_langchain_llm()
+    # 触发使用 pro 模型的复杂查询关键词
+    _COMPLEX_PATTERNS = [
+        "对比", "差异", "维度", "综合", "全面", "三家", "两家", "多公司",
+        "跨公司", "横向", "纵向", "深度", "详细", "系统性",
+    ]
+
+    def __init__(self):
+        pass  # 无状态，LLM调用直接走 chat()
+
+    def _is_complex(self, user_input: str) -> bool:
+        """检测是否为复杂查询（需要 pro 模型拆解）"""
+        companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        company_count = sum(1 for c in companies if c in user_input)
+        if company_count >= 2:
+            return True
+        if any(kw in user_input for kw in self._COMPLEX_PATTERNS):
+            return True
+        if len(user_input) >= 60:
+            return True
+        return False
 
     def plan(self, user_input: str, template_name: Optional[str] = None) -> AnalysisPlan:
         """
@@ -304,9 +322,12 @@ class Planner:
 """
 
         try:
-            response = self.llm.invoke(prompt)
-            # 提取 JSON
-            text = response.content if hasattr(response, "content") else str(response)
+            # 🔧 复杂查询自动切 pro 模型保质量
+            task_type = TaskType.COMPLEX if self._is_complex(user_input) else TaskType.SIMPLE
+            model_hint = "pro" if task_type == TaskType.COMPLEX else "flash"
+            logger.info(f"LLM 自由拆解模式（{model_hint}）")
+            messages = [{"role": "user", "content": prompt}]
+            text = chat(messages, query=user_input, task_type=task_type)
             text = text.strip()
             if text.startswith("```"):
                 lines = text.split("\n")
