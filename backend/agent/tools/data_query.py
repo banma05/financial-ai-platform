@@ -134,10 +134,71 @@ class DataQueryTool:
             return result
 
         except Exception as e:
-            logger.warning(f"LLM 数据提取失败: {e}，回退到原文引用模式")
-            return {
-                "found": True,
-                "data": {},
-                "summary": sources[0]["content"][:200] if sources else "无数据",
-                "confidence": 0.3,
-            }
+            logger.warning(f"LLM 数据提取失败: {e}，降级为正则提取模式")
+            return self._regex_extract_numbers(query, sources)
+
+
+    def _regex_extract_numbers(self, query: str, sources: List[dict]) -> dict:
+        """
+        正则兜底提取器：当 LLM JSON 解析失败时，用正则从 chunk 中提取数值。
+
+        策略：
+        1. 在检索到的 chunk 中查找 query 提到的财务术语
+        2. 提取术语附近出现的数值（含单位）
+        3. 构建简单的结构化数据
+        """
+        import re
+        combined = " ".join([s["content"][:800] for s in sources[:3]])
+
+        # 财务术语 → 数值的正则
+        # 匹配模式：术语后面跟数字+单位
+        # 例如："营业收入 1709.90亿元" → revenue: 1709.90
+        patterns = [
+            (r'(?:营业收入|营业总收入|营收)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '营业收入'),
+            (r'(?:营业成本|成本)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '营业成本'),
+            (r'(?:净利润|归[属母]净利润)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '净利润'),
+            (r'(?:毛利率|销售毛利率)\D{0,5}?(\d+\.?\d*)\s*%', '毛利率'),
+            (r'(?:净利率|销售净利率)\D{0,5}?(\d+\.?\d*)\s*%', '净利率'),
+            (r'(?:ROE|净资产收益率)\D{0,5}?(\d+\.?\d*)\s*%', 'ROE'),
+            (r'(?:资产负债率|负债率)\D{0,5}?(\d+\.?\d*)\s*%', '资产负债率'),
+            (r'(?:总资产)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '总资产'),
+            (r'(?:净资产|股东权益)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '净资产'),
+            (r'(?:经营活动.*?现金流)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '经营现金流'),
+            (r'(?:总负债)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '总负债'),
+            (r'(?:流动资产)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '流动资产'),
+            (r'(?:流动负债)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '流动负债'),
+            (r'(?:研发费用|研发投入)\D{0,10}?(\d+\.?\d*)\s*(?:亿元|万元|元)', '研发费用'),
+            (r'(?:基本每股收益|EPS)\D{0,10}?(\d+\.?\d*)\s*元', '基本每股收益'),
+        ]
+
+        data = {}
+        found_any = False
+        for pattern, key in patterns:
+            match = re.search(pattern, combined)
+            if match:
+                try:
+                    val = float(match.group(1))
+                    data[key] = val
+                    found_any = True
+                except ValueError:
+                    pass
+
+        # 尝试提取年份区分的数据
+        years = re.findall(r'(202[0-4])年.*?(\d+\.?\d*)', combined)
+        year_data = {}
+        for yr, num_str in years:
+            try:
+                year_data[yr] = float(num_str)
+            except ValueError:
+                pass
+
+        summary = f"正则提取到 {len(data)} 个指标: {list(data.keys())[:5]}"
+        if not found_any:
+            summary = sources[0]["content"][:200] if sources else "无法提取数值"
+
+        return {
+            "found": found_any,
+            "data": data,
+            "summary": summary,
+            "confidence": 0.3,
+        }

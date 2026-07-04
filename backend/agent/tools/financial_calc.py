@@ -417,13 +417,13 @@ class FinancialCalcTool:
     def __init__(self):
         self.name = "financial_calc"
 
-    def run(self, formula: str, params: Dict[str, Any]) -> dict:
+    def run(self, formula: str, **data_values) -> dict:
         """
         计算公式并返回结果。
 
         参数:
             formula: FORMULA_REGISTRY 中的公式名
-            params: {"param_name": value, ...}
+            **data_values: 公式所需的参数值（如 revenue=1709.90, cost=...）
 
         返回:
             {
@@ -436,6 +436,7 @@ class FinancialCalcTool:
                 "error": None or str,
             }
         """
+        params = data_values  # 从 executor 依赖注入的数据值
         entry = FORMULA_REGISTRY.get(formula)
         if not entry:
             return {
