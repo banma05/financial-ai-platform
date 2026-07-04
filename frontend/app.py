@@ -309,7 +309,7 @@ elif menu == "🤖 数据分析 Agent":
         with col2:
             template = st.selectbox(
                 "分析模板",
-                ["无（自由分析）", "盈利能力评估", "杜邦分析", "成长性分析"],
+                ["无（自由分析）", "盈利能力评估", "杜邦分析", "成长性分析", "现金流分析", "财务风险扫描"],
                 key="agent_template",
             )
             submitted = st.button("🚀 开始分析", use_container_width=True, type="primary")
@@ -320,6 +320,8 @@ elif menu == "🤖 数据分析 Agent":
             "盈利能力评估": "profitability",
             "杜邦分析": "dupont",
             "成长性分析": "growth",
+            "现金流分析": "cash_flow",
+            "财务风险扫描": "risk_scan",
         }
         template_name = template_map.get(template, None)
 

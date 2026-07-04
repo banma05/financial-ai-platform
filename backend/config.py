@@ -15,6 +15,8 @@ ROOT_DIR = Path(__file__).parent.parent.resolve()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-pro")
+AGENT_LLM_MODEL = os.getenv("AGENT_LLM_MODEL", "deepseek-v4-flash")
+# Agent 模块（Planner/DataQuery）默认用 flash 提速，Reporter 洞察仍用 pro 保质量
 
 # ============ 模型缓存全部指向 D 盘，不占 C 盘 ============
 HF_ENDPOINT = os.getenv("HF_ENDPOINT", "https://hf-mirror.com")

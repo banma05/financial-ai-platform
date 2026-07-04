@@ -103,6 +103,74 @@ BUILTIN_TEMPLATES = {
              "depends_on": ["3", "4"]},
         ],
     },
+    "cash_flow": {
+        "name": "cash_flow",
+        "display_name": "现金流分析",
+        "description": "分析经营活动/投资活动/筹资活动三大现金流，评估自由现金流和利润质量",
+        "category": "现金流",
+        "tasks": [
+            {"task_id": "1", "task_type": "data_query",
+             "description": "查询经营活动现金流净额和净利润数据",
+             "params": {"query": "{company} 经营活动产生的现金流量净额 净利润"}},
+            {"task_id": "2", "task_type": "data_query",
+             "description": "查询投资活动和筹资活动现金流数据",
+             "params": {"query": "{company} 投资活动产生的现金流量净额 筹资活动产生的现金流量净额 资本支出"}},
+            {"task_id": "3", "task_type": "calculate",
+             "description": "计算自由现金流 FCF",
+             "params": {"formula": "free_cash_flow"},
+             "depends_on": ["1", "2"]},
+            {"task_id": "4", "task_type": "calculate",
+             "description": "计算经营现金流/净利润比率，评估利润质量",
+             "params": {"formula": "cf_to_net_profit"},
+             "depends_on": ["1"]},
+            {"task_id": "5", "task_type": "chart",
+             "description": "三大现金流结构柱状图",
+             "params": {"chart_type": "bar", "title": "{company} 现金流结构分析"},
+             "depends_on": ["1", "2"]},
+            {"task_id": "6", "task_type": "analyze",
+             "description": "综合评估现金流健康状况和利润质量",
+             "params": {},
+             "depends_on": ["3", "4"]},
+        ],
+    },
+    "risk_scan": {
+        "name": "risk_scan",
+        "display_name": "财务风险扫描",
+        "description": "从杠杆水平、流动性、偿债能力三个维度综合评估财务风险",
+        "category": "风险分析",
+        "tasks": [
+            {"task_id": "1", "task_type": "data_query",
+             "description": "查询资产负债和流动性数据",
+             "params": {"query": "{company} 总资产 总负债 流动资产 流动负债 存货"}},
+            {"task_id": "2", "task_type": "data_query",
+             "description": "查询盈利和偿债能力数据",
+             "params": {"query": "{company} 净利润 净资产 EBIT 利息费用 财务费用"}},
+            {"task_id": "3", "task_type": "calculate",
+             "description": "计算资产负债率（杠杆水平）",
+             "params": {"formula": "debt_ratio"},
+             "depends_on": ["1"]},
+            {"task_id": "4", "task_type": "calculate",
+             "description": "计算流动比率（短期偿债）",
+             "params": {"formula": "current_ratio"},
+             "depends_on": ["1"]},
+            {"task_id": "5", "task_type": "calculate",
+             "description": "计算速动比率（严格流动性）",
+             "params": {"formula": "quick_ratio"},
+             "depends_on": ["1"]},
+            {"task_id": "6", "task_type": "calculate",
+             "description": "计算利息保障倍数（长期偿债）",
+             "params": {"formula": "interest_coverage"},
+             "depends_on": ["2"]},
+            {"task_id": "7", "task_type": "chart",
+             "description": "风险指标雷达图",
+             "params": {"chart_type": "radar", "title": "{company} 财务风险雷达图"},
+             "depends_on": ["3", "4", "5", "6"]},
+            {"task_id": "8", "task_type": "analyze",
+             "description": "综合评估财务风险等级并给出预警建议",
+             "params": {},
+             "depends_on": ["3", "4", "5", "6"]},
+        ],
+    },
 }
 
 
@@ -175,16 +243,32 @@ class Planner:
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
 
-## 可用财务公式
+## 可用财务公式（共 19 个）
+# 盈利能力
 - gross_profit_margin: 毛利率 (revenue, cost)
 - net_profit_margin: 净利率 (net_profit, revenue)
 - roe: ROE净资产收益率 (net_profit, avg_equity)
 - roa: ROA总资产收益率 (net_profit, avg_total_assets)
+- ebitda_margin: EBITDA率 (ebitda, revenue)
+# 偿债能力
 - debt_ratio: 资产负债率 (total_liabilities, total_assets)
 - current_ratio: 流动比率 (current_assets, current_liabilities)
+- quick_ratio: 速动比率 (current_assets, inventory, current_liabilities)
+- interest_coverage: 利息保障倍数 (ebit, interest_expense)
+# 营运能力
+- inventory_turnover: 存货周转率 (cost, avg_inventory)
+- receivable_turnover: 应收周转率 (revenue, avg_receivables)
+- total_asset_turnover: 总资产周转率 (revenue, avg_total_assets)
+# 成长能力
 - revenue_growth: 营收增长率 (current_revenue, previous_revenue)
 - net_profit_growth: 净利润增长率 (current_profit, previous_profit)
+# 估值指标
+- pe_ratio: 市盈率 (stock_price, eps)
+- pb_ratio: 市净率 (stock_price, bvps)
+# 现金流
 - free_cash_flow: 自由现金流 (operating_cf, capital_expenditure)
+- cf_to_net_profit: 经营现金流/净利润比率 (operating_cf, net_profit)
+# 综合分析
 - dupont: 杜邦分析 (net_profit, revenue, total_assets, equity)
 
 ## 输出格式（严格 JSON，不要多余文字）

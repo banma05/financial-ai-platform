@@ -11,7 +11,7 @@ from loguru import logger
 
 from rag.hybrid_search import hybrid_search
 from rag.query_processor import process_query
-from rag.model_router import chat
+from rag.model_router import chat, get_langchain_llm, TaskType
 
 
 class DataQueryTool:
@@ -121,7 +121,7 @@ class DataQueryTool:
                 {"role": "system", "content": "你是一个精确的财务数据提取专家。只返回 JSON，不解释。"},
                 {"role": "user", "content": extract_prompt},
             ]
-            response = chat(messages, query=query)
+            response = chat(messages, query=query, task_type=TaskType.SIMPLE)
 
             # 尝试解析 JSON
             import json

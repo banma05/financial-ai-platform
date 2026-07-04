@@ -56,6 +56,41 @@ class TestPlannerTemplates:
             assert len(plan.tasks) > 0, f"模板 {name} 加载失败"
             assert all(isinstance(t, AnalysisTask) for t in plan.tasks)
 
+    def test_load_cash_flow_template(self):
+        """加载现金流分析模板"""
+        planner = Planner()
+        plan = planner._load_template("cash_flow", "比亚迪")
+        assert len(plan.tasks) == 6
+        task_types = [t.task_type for t in plan.tasks]
+        assert task_types.count("data_query") == 2
+        assert task_types.count("calculate") == 2
+        assert task_types.count("chart") == 1
+        assert task_types.count("analyze") == 1
+        # 验证公式使用
+        formulas = [t.params.get("formula") for t in plan.tasks if t.params.get("formula")]
+        assert "free_cash_flow" in formulas
+        assert "cf_to_net_profit" in formulas
+
+    def test_load_risk_scan_template(self):
+        """加载财务风险扫描模板"""
+        planner = Planner()
+        plan = planner._load_template("risk_scan", "贵州茅台")
+        assert len(plan.tasks) == 8
+        task_types = [t.task_type for t in plan.tasks]
+        assert task_types.count("data_query") == 2
+        assert task_types.count("calculate") == 4
+        assert task_types.count("chart") == 1
+        assert task_types.count("analyze") == 1
+        # 验证四个风险计算公式都存在
+        formulas = [t.params.get("formula") for t in plan.tasks if t.params.get("formula")]
+        assert "debt_ratio" in formulas
+        assert "current_ratio" in formulas
+        assert "quick_ratio" in formulas
+        assert "interest_coverage" in formulas
+        # 验证雷达图
+        chart_task = next(t for t in plan.tasks if t.task_type == "chart")
+        assert chart_task.params.get("chart_type") == "radar"
+
     def test_unknown_template(self):
         """未注册的模板名应该由 plan() 走 LLM 模式（此处只测不会崩溃）"""
         planner = Planner()

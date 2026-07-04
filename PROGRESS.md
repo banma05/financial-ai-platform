@@ -85,19 +85,18 @@
 | 自动分析报告 | 数据→图表→结论→建议 五章节报告 | ✅ |
 | 可视化图表 | 5种图表类型，中文字体自动适配 | ✅ |
 | 财务公式库 | 19个公式（盈利/偿债/营运/成长/估值/现金流/杜邦） | ✅ |
-| 分析模板库 | 盈利能力评估/杜邦分析/成长性分析 | ✅ |
+| 分析模板库 | 盈利能力/杜邦/成长/现金流/风险扫描 5 模板 | ✅ |
 | 追问澄清 | 需求模糊时 Planner 返回追问 | ✅ |
 | 多步推理 | V3.0 增强（DAG 并行执行） | ⏳ |
-| 更多模板 | 现金流分析/风险扫描等 | ⏳ |
 
 ### 验收指标
 
 | 指标 | 目标 | 当前 |
 |------|:----:|:----:|
 | 子任务拆解准确率 | ≥85% | 待评测 |
-| 指标计算准确率 | ≥98% | 已通过 19个公式 × 2+用例 = 40 测试 |
+| 指标计算准确率 | ≥98% | 已通过 55 测试（公式40+Planner15） |
 | 报告可读性评分 | ≥4/5 | 待评测 |
-| 端到端分析耗时 | ≤30s | 取决于 LLM 调用次数，待基准测试 |
+| 端到端分析耗时 | ≤30s | LLM 已切 flash 提速，待基准测试 |
 
 ### 待办
 
@@ -106,8 +105,8 @@
 - [x] ~~财务计算工具~~（19公式）
 - [x] ~~图表生成模块~~（5种图表）
 - [x] ~~Report 报告生成~~（5章节Markdown）
+- [x] ~~更多分析模板（现金流/风险扫描）~~ ✅ (7/4)
 - [ ] 子任务拆解准确率评测（需人工标注 20 个典型需求）
-- [ ] 更多分析模板（现金流/风险扫描/对比分析）
 - [ ] V3.0：DAG 并行执行 + 多步推理增强
 
 ---
@@ -211,6 +210,32 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-04 — 模块二 P0 验收补全 + Agent 核心修复 ✅
+
+#### 新增分析模板（2 套）
+- **现金流分析模板 (cash_flow)**：三大现金流查询 + FCF + 利润质量比率 + 柱状图 + 综合评估，6 个子任务
+- **财务风险扫描模板 (risk_scan)**：杠杆/流动/偿债四维雷达扫描 + 风险等级预警，8 个子任务
+- 前端下拉菜单同步更新（5 个模板可选）
+
+#### 核心修复
+- **依赖注入映射层**：DataQuery 中文键名（如"营业收入"）→ 公式英文参数（revenue），30+ 对映射 + 单位解析（"1709.90亿元"→1709.90）
+  - 根因：LLM 提取返回中文键名+单位字符串，公式参数期望英文+纯数值，中间缺一层转换
+- **LLM 速度优化**：Agent 组件（Planner/DataQuery）切换 deepseek-v4-flash，预估 Planner 从 ~44s 降至 ~3-5s
+  - model_router.py 新增 TaskType 分离（SIMPLE=flash, COMPLEX=pro）
+  - config.py 新增 AGENT_LLM_MODEL 配置项
+- **测试运行器**：`scripts/run_tests.py` 解决 pytest CLI 模式下的 CUDA segfault（PyTorch 2.6+cu124 DLL 冲突）
+  - 根因：pytest 插件先于 conftest.py 加载，sentence_transformers 的 CUDA 初始化被抢先，导致 access violation
+  - 修复：在 import pytest 之前预导入 sentence_transformers
+
+#### 测试与验证
+- 55 个单元测试全部通过（公式 40 + Planner 15）
+- 新增 2 个模板测试（现金流模板结构 + 风险扫描模板结构）
+- LLM 提示词补全全部 19 个公式（之前只列了 10 个）
+
+#### 文件变更
+- 修改：`planner.py`, `executor.py`, `model_router.py`, `config.py`, `data_query.py`, `test_agent_planner.py`, `test_agent_financial_calc.py`, `conftest.py`, `frontend/app.py`, `PROGRESS.md`
+- 新增：`scripts/run_tests.py`
 
 ### 2026-07-02 — 模块二 V2.5 MVP 完成 ✅
 
