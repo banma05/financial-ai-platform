@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 from loguru import logger
 from rag.hybrid_search import hybrid_search
 from rag.evaluator import recall_at_k, mrr, ndcg_at_k, semantic_recall_at_k
+from rag.query_processor import process_query
 import json
 
 TEST_SET = Path(__file__).parent.parent / "data" / "test_questions.json"
@@ -46,7 +47,8 @@ for i, q in enumerate(questions, 1):
 
     q_start = time.time()
     try:
-        chunks = hybrid_search(query, top_k=TOP_K)
+        processed = process_query(query)
+        chunks = hybrid_search(processed, top_k=TOP_K)
     except Exception as e:
         logger.error(f"{qid} 检索失败: {e}")
         failed_kw.append(qid)
