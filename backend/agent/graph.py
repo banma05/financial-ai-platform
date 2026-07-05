@@ -22,6 +22,7 @@ from .reporter import Reporter
 from .tools.data_query import DataQueryTool
 from .tools.financial_calc import FinancialCalcTool
 from .tools.chart import ChartTool
+from utils.logger import RequestLogContext, TraceTimer, set_trace_id
 
 
 # ==================== State 定义 ====================
@@ -110,19 +111,20 @@ def planner_node(state: AgentState) -> dict:
 
     logger.info(f"[Planner] 开始拆解: {user_input[:50]}...")
 
-    try:
-        plan: AnalysisPlan = _planner.plan(user_input, template)
-    except Exception as e:
-        logger.error(f"[Planner] 拆解失败: {e}")
-        return {
-            "clarification": None,
-            "tasks": [{
-                "task_id": "1", "task_type": "data_query",
-                "description": f"查询「{user_input}」相关数据",
-                "params": {"query": user_input},
-            }],
-            "chart_count": 0,
-        }
+    with TraceTimer("planner"):
+        try:
+            plan: AnalysisPlan = _planner.plan(user_input, template)
+        except Exception as e:
+            logger.error(f"[Planner] 拆解失败: {e}")
+            return {
+                "clarification": None,
+                "tasks": [{
+                    "task_id": "1", "task_type": "data_query",
+                    "description": f"查询「{user_input}」相关数据",
+                    "params": {"query": user_input},
+                }],
+                "chart_count": 0,
+            }
 
     if plan.requires_clarification:
         logger.info(f"[Planner] 需要追问: {plan.requires_clarification}")
@@ -170,43 +172,47 @@ def executor_node(state: AgentState) -> dict:
         logger.info("[Executor] 所有任务已完成")
         return {}
 
-    # 拓扑分层
-    layers = _topological_layers(pending)
+    with TraceTimer("executor"):
+        # 拓扑分层
+        layers = _topological_layers(pending)
 
-    for layer_idx, layer in enumerate(layers):
-        logger.info(f"[Executor] DAG 层 {layer_idx+1}/{len(layers)}: {len(layer)} 任务并行")
+        for layer_idx, layer in enumerate(layers):
+            logger.info(f"[Executor] DAG 层 {layer_idx+1}/{len(layers)}: {len(layer)} 任务并行")
 
-        def _execute_one(task_dict: dict) -> dict:
-            """执行单个任务（线程安全）"""
-            task = AnalysisTask(**task_dict)
-            # 检查依赖
-            for dep_id in task.depends_on:
-                dep = result_map.get(dep_id)
-                if dep and not dep.get("success", True):
-                    return TaskResult(
-                        task_id=task.task_id, task_type=task.task_type,
-                        success=False,
-                        error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
-                    ).model_dump()
+            def _execute_one(task_dict: dict) -> dict:
+                """执行单个任务（线程安全）"""
+                task = AnalysisTask(**task_dict)
+                # 检查依赖
+                for dep_id in task.depends_on:
+                    dep = result_map.get(dep_id)
+                    if dep and not dep.get("success", True):
+                        return TaskResult(
+                            task_id=task.task_id, task_type=task.task_type,
+                            success=False,
+                            error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
+                        ).model_dump()
 
-            dep_results = [TaskResult(**result_map[dep_id]) for dep_id in task.depends_on if dep_id in result_map]
-            result = _executor.tools.execute_task(task, dep_results)
-            return result.model_dump()
+                dep_results = [TaskResult(**result_map[dep_id]) for dep_id in task.depends_on if dep_id in result_map]
+                result = _executor.tools.execute_task(task, dep_results)
+                return result.model_dump()
 
-        # 层内并行执行
-        with ThreadPoolExecutor(max_workers=min(4, len(layer))) as pool:
-            futures = {pool.submit(_execute_one, t): t["task_id"] for t in layer}
-            for future in as_completed(futures):
-                task_id = futures[future]
-                try:
-                    result_dict = future.result()
-                    result_map[task_id] = result_dict
-                except Exception as e:
-                    logger.error(f"[Executor] 任务 {task_id} 异常: {e}")
-                    result_map[task_id] = TaskResult(
-                        task_id=task_id, task_type="unknown",
-                        success=False, error=str(e),
-                    ).model_dump()
+            # 层内并行执行
+            layer_start = time.time()
+            with ThreadPoolExecutor(max_workers=min(4, len(layer))) as pool:
+                futures = {pool.submit(_execute_one, t): t["task_id"] for t in layer}
+                for future in as_completed(futures):
+                    task_id = futures[future]
+                    try:
+                        result_dict = future.result()
+                        result_map[task_id] = result_dict
+                    except Exception as e:
+                        logger.error(f"[Executor] 任务 {task_id} 异常: {e}")
+                        result_map[task_id] = TaskResult(
+                            task_id=task_id, task_type="unknown",
+                            success=False, error=str(e),
+                        ).model_dump()
+            layer_elapsed = time.time() - layer_start
+            logger.debug(f"[Executor] DAG 层 {layer_idx+1} 耗时 {layer_elapsed:.2f}s")
 
     new_results = [result_map[t["task_id"]] for t in tasks_dict if t["task_id"] in result_map]
     chart_count = sum(1 for r in new_results if r.get("chart_base64"))
@@ -233,12 +239,13 @@ def reporter_node(state: AgentState) -> dict:
 
     logger.info(f"[Reporter] 生成报告: {len(tasks)} 任务, {len(results)} 结果, {chart_count} 图表")
 
-    try:
-        report = _reporter.generate(user_input, tasks, results, chart_count)
-        return {"final_report": report}
-    except Exception as e:
-        logger.error(f"[Reporter] 生成失败: {e}")
-        return {"final_report": f"## 分析报告生成失败\n\n错误: {e}"}
+    with TraceTimer("reporter"):
+        try:
+            report = _reporter.generate(user_input, tasks, results, chart_count)
+            return {"final_report": report}
+        except Exception as e:
+            logger.error(f"[Reporter] 生成失败: {e}")
+            return {"final_report": f"## 分析报告生成失败\n\n错误: {e}"}
 
 
 # ==================== 条件路由 ====================
@@ -307,6 +314,7 @@ def run_agent_stream(
     """
     _init_components()
     start_time = time.time()
+    tid = set_trace_id()  # 生成本次请求的 trace_id
 
     try:
         graph = _get_agent_graph()
@@ -316,6 +324,7 @@ def run_agent_stream(
             "template_name": template_name,
         }
 
+        logger.info(f"[请求开始] session={session_id}, query={user_input[:80]}")
         yield AgentEvent("plan_start", message="正在分析需求...").to_sse()
 
         # LangGraph stream 逐节点产出状态
@@ -386,17 +395,18 @@ def run_agent_stream(
                     processing_time=processing_time,
                     message=f"分析完成，耗时 {processing_time} 秒",
                 ).to_sse()
+                logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
                 return
 
-        # 如果流结束了但没有 final_report，再跑一次 reporter
-        # (正常流程 executor→reporter 已处理，这是兜底)
+        # 如果流结束了但没有 final_report，再跑一次 reporter（兜底）
         if not last_state.get("final_report") and not last_state.get("clarification"):
             tasks_dict = last_state.get("tasks", [])
             results_dict = last_state.get("task_results", [])
             chart_count = last_state.get("chart_count", 0)
             tasks = [AnalysisTask(**t) for t in tasks_dict]
             results = [TaskResult(**r) for r in results_dict]
-            report = _reporter.generate(user_input, tasks, results, chart_count)
+            with TraceTimer("reporter_fallback"):
+                report = _reporter.generate(user_input, tasks, results, chart_count)
             processing_time = round(time.time() - start_time, 1)
             yield AgentEvent(
                 "done",
@@ -406,9 +416,10 @@ def run_agent_stream(
                 processing_time=processing_time,
                 message=f"分析完成，耗时 {processing_time} 秒",
             ).to_sse()
+            logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
 
     except Exception as e:
-        logger.error(f"[Agent] 分析异常: {e}")
+        logger.error(f"[Agent] 分析异常: trace_id={tid}, error={e}")
         yield AgentEvent("error", message=str(e)).to_sse()
 
 
@@ -426,6 +437,7 @@ def run_agent_sync(
     """
     _init_components()
     start_time = time.time()
+    tid = set_trace_id()  # 生成本次请求的 trace_id
 
     # 如已有 plan 则跳过 Planner（benchmark 复用优化）
     if plan is not None:
