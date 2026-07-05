@@ -413,46 +413,65 @@ elif menu == "🤖 数据分析 Agent":
 # ============ MCP 工具集成（占位）============
 elif menu == "🔧 MCP 工具集成":
     st.title("🔧 MCP 工具集成")
-    st.caption("为 Agent 提供外部金融数据调用能力")
+    st.caption("外部金融数据源接入 — Mock 数据演示（真 API 预留接口）")
 
-    st.info("""
-    ### 🚧 模块三：规划中
+    tool_map = {
+        "mcp_stock_price": "股票行情",
+        "mcp_financial_statements": "财务报表",
+        "mcp_calculate_ratio": "财务比率",
+        "mcp_industry_comparison": "行业对比",
+        "mcp_market_index": "大盘指数",
+        "mcp_financial_calendar": "财报日历",
+    }
 
-    **核心工具（即将开发）：**
+    tool_choice = st.selectbox(
+        "选择 MCP 工具", list(tool_map.keys()),
+        format_func=lambda x: f"{tool_map[x]} ({x})"
+    )
 
-    | 工具 | 功能 | 状态 |
-    |------|------|:----:|
-    | Wind 数据接口 | 股票行情、财务数据、宏观指标 | ⏳ |
-    | 同花顺数据接口 | 实时行情、历史数据、板块数据 | ⏳ |
-    | 财务公式计算器 | 杜邦分析、现金流折现、比率分析等 | ⏳ |
-    | 行业对标工具 | 同行业可比公司数据对标 | ⏳ |
+    symbol = st.text_input("股票代码", "600519",
+                           help="600519=贵州茅台 / 002594=比亚迪 / 00700=腾讯")
 
-    **预计启动**：模块二完成后
-    """)
+    if st.button("🚀 调用工具", type="primary"):
+        try:
+            from mcp import (
+                StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
+                IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,
+            )
+            tools = {
+                "mcp_stock_price": StockPriceTool(),
+                "mcp_financial_statements": FinancialStatementsTool(),
+                "mcp_calculate_ratio": CalculateRatioTool(),
+                "mcp_industry_comparison": IndustryComparisonTool(),
+                "mcp_market_index": MarketIndexTool(),
+                "mcp_financial_calendar": FinancialCalendarTool(),
+            }
+            tool = tools[tool_choice]
 
-    # 展示已内置的财务公式
-    st.markdown("---")
-    st.subheader("🧮 已规划财务公式库（可离线使用）")
+            with st.spinner(f"调用 {tool_map[tool_choice]}..."):
+                result = tool.run(symbol=symbol)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("**盈利能力**")
-        st.caption("毛利率 = (营收-成本)/营收")
-        st.caption("净利率 = 净利润/营收")
-        st.caption("ROE = 净利润/净资产")
-        st.caption("ROA = 净利润/总资产")
+            if result.get("success"):
+                st.success(f"✅ {result.get('summary', '调用成功')}")
+                with st.expander("📊 查看完整数据", expanded=True):
+                    st.json(result)
+            else:
+                st.error(f"❌ {result.get('error', '调用失败')}")
+        except Exception as e:
+            st.error(f"工具调用异常: {e}")
 
-    with col2:
-        st.markdown("**偿债能力**")
-        st.caption("流动比率 = 流动资产/流动负债")
-        st.caption("速动比率 = (流动资产-存货)/流动负债")
-        st.caption("资产负债率 = 总负债/总资产")
-
-    with col3:
-        st.markdown("**估值指标**")
-        st.caption("PE = 股价/每股收益")
-        st.caption("PB = 股价/每股净资产")
-        st.caption("股息率 = 每股分红/股价")
+    # 工具列表参考
+    with st.expander("📋 所有 MCP 工具一览", expanded=False):
+        st.markdown("""
+        | 工具 | 功能 | 数据来源 |
+        |------|------|:------:|
+        | stock_price | 实时行情/历史K线 | Mock（茅台/比亚迪/腾讯） |
+        | financial_statements | 利润表/资产负债表/现金流 | Mock（2024年报数据） |
+        | calculate_ratio | 批量计算15个财务比率 | Mock + financial_calc 公式库 |
+        | industry_comparison | 同行业 5 家公司对比 | Mock（白酒/新能源/互联网） |
+        | market_index | 上证/沪深300/行业指数 | Mock |
+        | financial_calendar | 财报披露日/分红/股东会 | Mock（2026年真实日期） |
+        """)
 
 # ============ 文档管理 ============
 elif menu == "📁 文档管理":

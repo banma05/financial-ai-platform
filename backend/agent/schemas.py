@@ -7,7 +7,11 @@ from pydantic import BaseModel, Field
 
 # ============ 任务相关模型 ============
 
-TaskType = Literal["data_query", "calculate", "chart", "analyze", "compare"]
+TaskType = Literal[
+    "data_query", "calculate", "chart", "analyze", "compare",
+    "mcp_stock_price", "mcp_financial_statements", "mcp_calculate_ratio",
+    "mcp_industry_comparison", "mcp_market_index", "mcp_financial_calendar",
+]
 
 
 class AnalysisTask(BaseModel):
