@@ -231,36 +231,42 @@ financial-ai-platform/
 
 ---
 
-## 模块三：MCP 工具集成 ⏳
+## 模块三：MCP 工具集成 🚧（7/5 已完成核心开发）
 
 > 财务公式库已在模块二的 `financial_calc.py` 中实现（19公式/7大类）。
 > MCP 聚焦**外部数据源接入**，不重复造公式轮子。
 
-### 核心工具规划
+### 当前状态
 
-| 工具 | 功能 | 优先级 |
-|------|------|:------:|
-| stock_price | 股票实时行情/历史K线 | P0 |
-| financial_statements | 三大财务报表数据（Wind/同花顺） | P0 |
-| calculate_ratio | 高级财务比率（跨报表计算） | P0 |
-| industry_comparison | 同行业可比公司数据 | P1 |
-| market_index | 大盘指数/行业指数 | P1 |
-| financial_calendar | 财报披露日历/分红/股东大会 | P2 |
+| 工具 | 功能 | 文件 | 状态 |
+|------|------|------|:--:|
+| stock_price | 股票实时行情/历史K线 | tools/stock_price.py | ✅ |
+| financial_statements | 利润表/资产负债表/现金流 | tools/financial_statements.py | ✅ |
+| calculate_ratio | 批量15个财务比率（复用 financial_calc） | tools/calculate_ratio.py | ✅ |
+| industry_comparison | 同行业5家公司对比（白酒/新能源/互联网） | tools/industry_comparison.py | ✅ |
+| market_index | 上证/沪深300/深证/创业板/行业指数 | tools/market_index.py | ✅ |
+| financial_calendar | 财报日历/分红/股东大会 | tools/financial_calendar.py | ✅ |
 
-### 技术方案
-- MCP Server 复用 Agent 的 `ToolRegistry`（已预留扩展点）
-- 开发期用 Mock 数据生成器，真 API 预留接口
-- 阶段四 Docker 化为独立进程
+### 已交付
+- ✅ 6 个 MCP 工具全部实现（P0/P1/P2），22 测试通过
+- ✅ Mock 数据覆盖茅台/比亚迪/腾讯（行情+报表+行业+指数+日历）
+- ✅ Agent 集成完成（TaskType扩展 + tool_map注册 + LLM prompt + 前端）
+- ✅ calculate_ratio 复用 financial_calc 的 19 个公式（零重复代码）
+- ✅ ToolRegistry 增至 9 个注册工具（3原有 + 6MCP）
+
+### 待办
+- [ ] 真实 API 接入（Wind/同花顺，需 API Key）
+- [ ] 前端丰富（图表展示/历史数据可视化）
+- [ ] 新增 MCP 模板（市场行情分析/行业对标报告）
 
 ### 验收指标
 
-| 指标 | 目标 |
-|------|:----:|
-| MCP Tool 注册数量 | ≥6 |
-| Mock 数据覆盖率 | 100%（6工具均有可用Mock） |
-| Agent 透明桥接 | ToolRegistry 零改动接入 MCP 工具 |
-
----
+| 指标 | 目标 | 当前 |
+|------|:----:|:----:|
+| MCP Tool 注册数量 | ≥6 | ✅ 6 |
+| Mock 数据覆盖率 | 100% | ✅ 100% |
+| Agent 透明桥接 | 零改动接入 | ✅ ToolRegistry.register() |
+| 单元测试 | ≥18 | ✅ 22 |
 
 ## 技术栈
 
