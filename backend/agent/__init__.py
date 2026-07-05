@@ -12,13 +12,30 @@
 - run_agent_sync(): 同步执行，返回完整结果
 - BUILTIN_TEMPLATES: 预设分析模板
 """
-from .graph import run_agent_stream, run_agent_sync
-from .planner import BUILTIN_TEMPLATES
+
+# 🔧 懒加载：避免 import agent 时触发 langgraph/rag/matplotlib 全家桶
+# CI 环境只需 FORMULA_REGISTRY（纯 Python），不需要 graph 和 planner
 from .tools.financial_calc import FORMULA_REGISTRY
 
-__all__ = [
-    "run_agent_stream",
-    "run_agent_sync",
-    "BUILTIN_TEMPLATES",
-    "FORMULA_REGISTRY",
-]
+
+def run_agent_stream(*args, **kwargs):
+    from .graph import run_agent_stream as _run
+    return _run(*args, **kwargs)
+
+
+def run_agent_sync(*args, **kwargs):
+    from .graph import run_agent_sync as _run
+    return _run(*args, **kwargs)
+
+
+def _get_templates():
+    from .planner import BUILTIN_TEMPLATES as _t
+    return _t
+
+
+# 通过 __getattr__ 实现模块级懒加载（Python 3.7+）
+def __getattr__(name):
+    if name == "BUILTIN_TEMPLATES":
+        from .planner import BUILTIN_TEMPLATES
+        return BUILTIN_TEMPLATES
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
