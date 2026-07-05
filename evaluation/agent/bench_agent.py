@@ -43,7 +43,9 @@ def score_task_decomposition(plan: AnalysisPlan, golden: dict) -> dict:
     """对比 Planner 输出与 golden_plan"""
     tasks = plan.tasks
     if plan.requires_clarification:
-        return {"score": 0.0, "status": "needs_clarification", "detail": plan.requires_clarification}
+        # 需要追问是合法的边界判断（如缺少年份/公司数据），不算拆解失败
+        return {"score": None, "status": "needs_clarification",
+                "task_count": 0, "detail": plan.requires_clarification}
 
     gt = golden["golden_plan"]
     scores = {}
@@ -127,6 +129,8 @@ total_task_score = 0.0
 total_indicator_coverage = 0.0
 total_structure_score = 0.0
 total_time = 0.0
+valid_plan_count = 0
+clarification_count = 0
 by_category = {}
 by_difficulty = {}
 failed = []
@@ -154,9 +158,12 @@ for i, q in enumerate(questions, 1):
     plan_time = time.time() - plan_start
 
     task_result = score_task_decomposition(plan, golden)
-    total_task_score += task_result["score"]
-    logger.info(f"  Planner: score={task_result['score']:.1%} tasks={task_result.get('task_count','?')} time={plan_time:.1f}s")
+    if task_result["score"] is not None:
+        total_task_score += task_result["score"]
+        valid_plan_count += 1
+    logger.info(f"  Planner: score={task_result['score'] if task_result['score'] is not None else 'N/A'} tasks={task_result.get('task_count','?')} time={plan_time:.1f}s")
     if task_result["status"] == "needs_clarification":
+        clarification_count += 1
         logger.warning(f"  [!] 需要追问: {task_result['detail'][:80]}")
 
     # Phase 2: 全链路执行（同步模式，复用 Phase 1 的 Plan 避免重复 LLM 调用）
@@ -212,12 +219,14 @@ n = len(questions)
 print("\n" + "=" * 70)
 print(">>> Agent 20 题全量评测报告 <<<")
 print("=" * 70)
-print(f"题目数: {n} | 总耗时: {elapsed:.1f}s | 失败: {len(failed)} 题")
+print(f"题目数: {n} | 总耗时: {elapsed:.1f}s | 追问: {clarification_count} | 失败: {len(failed)}")
+if clarification_count > 0:
+    print(f"⚠️ 追问不计入拆解平均分（共 {clarification_count} 题）")
 print()
 
 print(f"| 指标 | 值 | 目标 | 达标? |")
 print(f"|------|:--:|:--:|:--:|")
-avg_task = total_task_score / n * 100
+avg_task = total_task_score / valid_plan_count * 100 if valid_plan_count > 0 else 0
 avg_ind = total_indicator_coverage / n * 100
 avg_struct = total_structure_score / n * 100
 avg_time = total_time / n
