@@ -50,3 +50,6 @@ matplotlib>=3.9.0
 # 测试
 pytest>=9.0.0
 pytest-cov>=7.0.0
+
+# 外部数据源（模块三 MCP）
+akshare>=1.18.0     # A股实时行情+财务报表（免费，新浪财经）
