@@ -6,9 +6,21 @@ Agent 工具包 — 为 Agent 提供"手"的能力
 - FinancialCalcTool: 15+ 内置财务公式
 - ChartTool: matplotlib 图表生成
 """
-from .data_query import DataQueryTool
+
+# 🔧 懒加载：避免 import agent.tools 时触发 RAG/matplotlib 依赖
+# 直接导入无需外部依赖的子模块
 from .financial_calc import FinancialCalcTool, FORMULA_REGISTRY
-from .chart import ChartTool
+
+
+def __getattr__(name):
+    if name == "DataQueryTool":
+        from .data_query import DataQueryTool
+        return DataQueryTool
+    if name == "ChartTool":
+        from .chart import ChartTool
+        return ChartTool
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "DataQueryTool",
