@@ -1,0 +1,73 @@
+version: "3.8"
+
+services:
+  # ── Redis（会话 + 限流）──
+  redis:
+    image: redis:7-alpine
+    container_name: fa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── FastAPI 后端 ──
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: fa-backend
+    ports:
+      - "8001:8001"
+    volumes:
+      # 数据持久化
+      - ./data/documents:/app/data/documents
+      - ./data/chroma_db:/app/data/chroma_db
+      - ./data/models:/app/data/models
+      - ./data/charts:/app/data/charts
+      - ./logs:/app/logs
+      # 评测数据
+      - ./evaluation/data:/app/evaluation/data
+      - ./evaluation/reports:/app/evaluation/reports
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app/backend
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - TOKENIZERS_PARALLELISM=false
+      # GPU（有则加 deploy.resources）
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # 如需 GPU，取消下面注释：
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── Streamlit 前端 ──
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: fa-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8001
+      - PYTHONPATH=/app
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  redis_data:

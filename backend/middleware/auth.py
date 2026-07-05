@@ -2,7 +2,7 @@
 API 安全中间件 — 鉴权 + 限流
 
 鉴权：基于 X-API-Key Header 的简单 Token 鉴权
-限流：内存滑动窗口，按 IP + 接口类型分别计数
+限流：Redis 滑动窗口优先 + 内存回退，按 IP + 接口类型分别计数
 
 设计要点：
 - /health /docs /openapi.json 等公开路径不鉴权不限流
@@ -10,15 +10,15 @@ API 安全中间件 — 鉴权 + 限流
 - RATE_LIMIT_ENABLED=false = 关闭限流
 - chat/stream 接口单独限制（LLM 调用成本高，默认 10/min）
 - 通用接口默认 30/min
+- REDIS_URL 设置时自动切换 Redis 后端（分布式安全）
 """
-import time
-from collections import defaultdict
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from loguru import logger
 
 import config
+from utils.redis_client import get_limiter
 
 # ============ 公开路径 ============
 
@@ -47,53 +47,6 @@ def _get_client_ip(request: Request) -> str:
     if request.client:
         return request.client.host
     return "unknown"
-
-
-# ============ 内存滑动窗口限流器 ============
-
-class RateLimiter:
-    """
-    基于 IP 的内存滑动窗口限流器
-
-    不持久化，重启清空。适合 MVP 阶段，生产可替换为 Redis 方案。
-    """
-
-    def __init__(self):
-        # { "ip:category": [timestamp_1, timestamp_2, ...] }
-        self._windows: dict = defaultdict(list)
-        self._window_seconds = 60  # 1 分钟窗口
-
-    def reset(self):
-        """清空所有限流记录（仅用于测试）"""
-        self._windows.clear()
-
-    def _clean(self, key: str):
-        """清理过期的请求记录"""
-        now = time.time()
-        cutoff = now - self._window_seconds
-        self._windows[key] = [t for t in self._windows[key] if t > cutoff]
-
-    def is_allowed(self, ip: str, category: str, limit: int) -> tuple[bool, int]:
-        """
-        检查是否允许请求
-
-        返回: (允许?, 剩余秒数)
-        """
-        key = f"{ip}:{category}"
-        self._clean(key)
-
-        count = len(self._windows[key])
-        if count >= limit:
-            oldest = min(self._windows[key])
-            retry_after = int(oldest + self._window_seconds - time.time()) + 1
-            return False, max(retry_after, 1)
-
-        self._windows[key].append(time.time())
-        return True, 0
-
-
-# 全局限流器（可在测试中 reset）
-_limiter = RateLimiter()
 
 
 # ============ 中间件 ============
@@ -143,7 +96,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 limit = config.RATE_LIMIT_PER_MINUTE
                 category = "api"
 
-            allowed, retry_after = _limiter.is_allowed(client_ip, category, limit)
+            allowed, retry_after = get_limiter().is_allowed(f"{client_ip}:{category}", limit)
             if not allowed:
                 logger.warning(
                     f"限流触发: {client_ip} → {path} ({category}, {limit}/min)"
@@ -157,11 +110,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 )
 
         return await call_next(request)
-
-
-# ============ 兼容旧代码的 limiter 导出 ============
-
-limiter = None  # type: ignore
 
 
 # ============ 安装入口 ============
