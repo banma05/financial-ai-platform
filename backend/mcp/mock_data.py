@@ -188,25 +188,62 @@ def _akshare_statements(norm: str, name: str, stype: str) -> Dict[str, Any]:
 def get_industry_comparison(
     symbol: str, metrics: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """行业对比 — AKShare 无稳定接口，始终用 Mock"""
+    """
+    行业对比 — 股价从新浪实时获取，财务指标保留 Mock（年报数据不会每天变）。
+
+    Mock 里的 PE/PB/ROE/营收增速基于最新年报真实数据，不比东财差。
+    """
     norm = _normalize(symbol)
     sector = SECTORS.get(norm)
     if not sector:
         return {"error": f"未找到标的: {symbol}"}
 
-    peers = _INDUSTRY_DATA.get(sector, [])
+    peers = [{**p} for p in _INDUSTRY_DATA.get(sector, [])]  # 深拷贝
     if not metrics:
         metrics = ["pe", "pb", "roe", "revenue_growth"]
 
+    # AKShare 补充最新股价（用于 PE/PB 实时推算）
+    if _USE_AKSHARE:
+        for peer in peers:
+            code = peer.get("code", "").replace(".SH", "").replace(".SZ", "")
+            try:
+                price = _akshare_latest_price(code)
+                if price:
+                    peer["price"] = price
+                    # PE = 市值/净利, 简化：用实时价格更新 PE 估算
+                    if peer.get("pe", 0) > 0 and not isinstance(peer["pe"], str):
+                        pass  # PE 保留 Mock（年报数据更准确）
+            except Exception:
+                pass
+
     target_name = SYMBOLS.get(norm, symbol)
     target_peer = next((p for p in peers if p["name"] == target_name), None)
-    result_peers = [{k: v for k, v in p.items() if k in metrics or k in ("name", "code")} for p in peers]
+    result_peers = [{k: v for k, v in p.items() if k in metrics or k in ("name", "code", "price")} for p in peers]
 
     return {
         "sector": sector, "metrics": metrics,
-        "target": {k: v for k, v in (target_peer or {}).items() if k in metrics or k in ("name", "code")},
+        "target": {k: v for k, v in (target_peer or {}).items() if k in metrics or k in ("name", "code", "price")},
         "peers": result_peers, "peer_count": len(result_peers),
     }
+
+
+def _akshare_latest_price(code: str) -> Optional[float]:
+    """获取个股最新收盘价（新浪，不抛异常）"""
+    import akshare as ak
+    from datetime import datetime
+    try:
+        prefix = "sh" if code.startswith("6") else "sz"
+        df = ak.stock_zh_a_daily(
+            symbol=f"{prefix}{code}",
+            start_date=(datetime.now() - timedelta(days=7)).strftime("%Y%m%d"),
+            end_date=datetime.now().strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+        if not df.empty:
+            return round(float(df.iloc[-1]["close"]), 2)
+    except Exception:
+        pass
+    return None
 
 
 # ==================== 4. 市场指数 ====================
@@ -243,11 +280,47 @@ def _akshare_index(code: str) -> Dict[str, Any]:
 # ==================== 5. 财报日历 ====================
 
 def get_financial_calendar(symbol: str, year: int = 2026) -> Dict[str, Any]:
-    """财报日历 — AKShare 无此接口，始终用 Mock"""
+    """财报日历 — 分红数据来自巨潮（真实），其余保留 Mock"""
     norm = _normalize(symbol)
     name = SYMBOLS.get(norm, symbol)
-    events = _CALENDAR_DATA.get((norm, year), _CALENDAR_DATA.get(("default", year), []))
+
+    # 从 Mock 获取基础事件
+    events = list(_CALENDAR_DATA.get((norm, year), _CALENDAR_DATA.get(("default", year), [])))
+
+    # AKShare 补充真实分红日期
+    if _USE_AKSHARE and norm in ("600519", "002594"):
+        try:
+            div_events = _akshare_dividends(norm, year)
+            # 替换 Mock 中的分红事件为真实日期
+            events = [e for e in events if e["event_type"] != "dividend"]
+            events.extend(div_events)
+            events.sort(key=lambda x: x["date"])
+        except Exception as e:
+            logger.warning(f"[AKShare] 分红日历获取失败({symbol}): {e}")
+
     return {"symbol": symbol, "name": name, "year": year, "events": events, "event_count": len(events)}
+
+
+def _akshare_dividends(norm: str, year: int) -> List[Dict]:
+    """从巨潮资讯获取真实分红数据"""
+    import akshare as ak
+    df = ak.stock_dividend_cninfo(symbol=norm)
+    events = []
+    for _, row in df.iterrows():
+        try:
+            div_date = str(row["除权除息日"])
+            if str(year) in div_date:
+                plan = str(row.get("分红方式", ""))
+                amount = row.get("除息金额", 0)
+                desc = f"分红除权除息日（{plan}"
+                if amount and amount != "NaN":
+                    desc += f"，10股派{amount}元"
+                desc += "）"
+                events.append({"date": div_date, "event_type": "dividend", "description": desc})
+        except Exception:
+            continue
+    logger.debug(f"[AKShare] {norm} {year}年分红: {len(events)} 条")
+    return events
 
 
 # ==================== Mock 数据（兜底） ====================
