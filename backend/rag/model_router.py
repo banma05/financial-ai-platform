@@ -12,6 +12,7 @@ from loguru import logger
 from openai import OpenAI
 
 from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, AGENT_LLM_MODEL
+from utils.retry import llm_retry
 
 
 class TaskType(str, Enum):
@@ -68,6 +69,7 @@ def _resolve_task(query: Optional[str], task_type: TaskType) -> dict:
     return MODEL_CONFIG[target]
 
 
+@llm_retry(max_retries=3, base_delay=1.0)
 def chat(
     messages: list,
     task_type: TaskType = TaskType.AUTO,
