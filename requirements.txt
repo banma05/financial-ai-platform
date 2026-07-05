@@ -42,6 +42,7 @@ sqlalchemy>=2.0.0
 # Agent 框架（模块二）
 langgraph>=0.3.0
 langchain-openai>=0.3.0
+tenacity>=8.0.0    # 指数退避重试（langchain 传递依赖，现直接使用）
 
 # 图表生成（模块二）
 matplotlib>=3.9.0
