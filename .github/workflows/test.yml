@@ -21,7 +21,7 @@ jobs:
       - name: 安装依赖（轻量，仅测试所需）
         run: |
           pip install --upgrade pip
-          pip install pytest loguru pydantic tenacity redis httpx
+          pip install -r requirements-ci.txt
 
       - name: 运行单元测试
         env:
