@@ -13,7 +13,7 @@ Query 处理器 — 短句扩写 + 财务术语展开 + 余弦相似度校验
 - 余弦兜底可将扩写噪声率从 ~20% 降到 < 5%
 """
 import numpy as np
-from typing import Optional, Dict
+from typing import List, Optional, Dict
 from loguru import logger
 
 from .model_router import chat as llm_chat, TaskType
@@ -184,15 +184,72 @@ def validate_expansion(original: str, expanded: str) -> str:
         return expanded
 
 
-def process_query(query: str) -> str:
+def rewrite_multiturn_query(query: str, history: List[dict]) -> str:
     """
-    完整 Query 处理流程：术语展开 → 扩写 → 校验 → 输出
+    多轮对话改写：将含代词的追问改写为独立检索语句。
+
+    只在检测到歧义信号时触发（零开销判断）：
+    - 代词：它、他、她、这、那、这个、那个、其、该
+    - 短追问：< 8 字符的追问（如"毛利率呢？"）
+    - 省略主语：只提指标不提公司名
+    """
+    if not history or len(history) < 2:
+        return query
+
+    # 歧义检测（纯规则，不调 LLM，零延迟）
+    pronoun_signals = {"它", "他", "她", "这", "那", "这个", "那个", "其", "该", "呢", "上述", "前面", "以上"}
+    has_pronoun = any(p in query for p in pronoun_signals)
+    is_short_followup = len(query) < 8
+
+    if not has_pronoun and not is_short_followup:
+        return query
+
+    logger.info(f"[多轮改写] 检测到歧义: {query[:50]}")
+
+    # 提取最近 4 轮对话作为上下文
+    recent = history[-8:]
+    history_text = "\n".join(
+        f"{'用户' if m['role'] == 'user' else '助手'}：{m['content'][:200]}"
+        for m in recent
+    )
+
+    prompt = f"""你是查询改写助手。根据对话历史，将用户的追问改写为完整的独立检索语句。
+
+## 对话历史
+{history_text}
+
+## 当前追问
+{query}
+
+## 改写规则
+1. 将代词（它/那个/该）替换为具体指代对象
+2. 补充省略的主语（公司名、年份）
+3. 保持原意图，不要添加额外信息
+4. 只输出改写后的语句
+
+改写："""
+
+    try:
+        rewritten = llm_chat(
+            messages=[{"role": "user", "content": prompt}],
+            query=query,
+        )
+        if rewritten and 3 < len(rewritten) < 200:
+            logger.info(f"[多轮改写] '{query[:30]}' → '{rewritten[:60]}'")
+            return rewritten.strip()
+    except Exception as e:
+        logger.warning(f"[多轮改写] 失败: {e}")
+
+    return query
+
+
+def process_query(query: str, history: List[dict] = None) -> str:
+    """
+    Query 处理管道：术语展开 → 多轮改写 → 扩写 → 校验
 
     参数:
         query: 原始用户问题
-
-    返回:
-        处理后的查询文本
+        history: 对话历史（可选），用于多轮改写
     """
     if not query or not query.strip():
         return query
@@ -201,6 +258,10 @@ def process_query(query: str) -> str:
 
     # 0. 财务术语缩写展开（零延迟、零幻觉）
     query = expand_financial_terms(query)
+
+    # 0.5. 多轮改写（有歧义时调一次 flash，~1-2s）
+    if history:
+        query = rewrite_multiturn_query(query, history)
 
     # 1. 短句扩写
     expanded = expand_query(query)
