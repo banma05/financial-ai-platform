@@ -191,9 +191,11 @@ for i, q in enumerate(questions, 1):
     # 按类别/难度分组
     for group, key in [(by_category, cat), (by_difficulty, diff)]:
         if key not in group:
-            group[key] = {"count": 0, "task_score": 0.0, "ind_coverage": 0.0, "time": 0.0}
+            group[key] = {"count": 0, "valid_count": 0, "task_score": 0.0, "ind_coverage": 0.0, "time": 0.0}
         group[key]["count"] += 1
-        group[key]["task_score"] += task_result["score"]
+        if task_result["score"] is not None:
+            group[key]["valid_count"] += 1
+            group[key]["task_score"] += task_result["score"]
         group[key]["ind_coverage"] += ind_result["coverage"]
         group[key]["time"] += exec_time
 
@@ -241,17 +243,17 @@ print(f"| 类别 | 题数 | 拆解准确率 | 指标覆盖率 | 平均耗时 |")
 print(f"|------|:--:|:--:|:--:|:--:|")
 for cat in sorted(by_category.keys()):
     g = by_category[cat]
-    c = g["count"]
-    print(f"| {cat} | {c} | {g['task_score']/c*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
+    c, vc = g["count"], g.get("valid_count", g["count"])
+    print(f"| {cat} | {c} | {g['task_score']/vc*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
 
 print(f"\n### 按难度")
 print(f"| 难度 | 题数 | 拆解准确率 | 指标覆盖率 | 平均耗时 |")
 print(f"|------|:--:|:--:|:--:|:--:|")
 for d in ["easy", "medium", "hard"]:
-    g = by_difficulty.get(d, {"count": 0, "task_score": 0, "ind_coverage": 0, "time": 0})
-    c = g["count"]
+    g = by_difficulty.get(d, {"count": 0, "valid_count": 0, "task_score": 0, "ind_coverage": 0, "time": 0})
+    c, vc = g["count"], g.get("valid_count", g["count"])
     if c > 0:
-        print(f"| {d} | {c} | {g['task_score']/c*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
+        print(f"| {d} | {c} | {g['task_score']/vc*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
 
 if failed:
     print(f"\n### 失败题: {failed}")
