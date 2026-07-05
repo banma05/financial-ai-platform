@@ -1,0 +1,337 @@
+{
+  "meta": {
+    "test_set": "data/test_questions.json",
+    "num_questions": 20,
+    "top_k": 5,
+    "total_time": 64.22,
+    "avg_time_per_query": 3.211
+  },
+  "summary": {
+    "avg_recall@1": 0.6817,
+    "avg_recall@3": 0.8792,
+    "avg_recall@5": 0.9125,
+    "avg_mrr": 0.8583,
+    "avg_ndcg@5": 1.9344
+  },
+  "by_difficulty": {
+    "easy": {
+      "count": 5,
+      "avg_recall@5": 0.8667,
+      "avg_mrr": 0.6333
+    },
+    "medium": {
+      "count": 10,
+      "avg_recall@5": 0.925,
+      "avg_mrr": 0.9
+    },
+    "hard": {
+      "count": 5,
+      "avg_recall@5": 0.9333,
+      "avg_mrr": 1.0
+    }
+  },
+  "by_category": {
+    "综合分析": {
+      "count": 1,
+      "avg_recall@5": 1.0,
+      "avg_mrr": 1.0
+    },
+    "综合推理": {
+      "count": 1,
+      "avg_recall@5": 0.8333,
+      "avg_mrr": 1.0
+    },
+    "定义解释": {
+      "count": 3,
+      "avg_recall@5": 1.0,
+      "avg_mrr": 1.0
+    },
+    "趋势分析": {
+      "count": 4,
+      "avg_recall@5": 0.8125,
+      "avg_mrr": 0.875
+    },
+    "跨文档检索": {
+      "count": 1,
+      "avg_recall@5": 0.8333,
+      "avg_mrr": 1.0
+    },
+    "风险分析": {
+      "count": 2,
+      "avg_recall@5": 1.0,
+      "avg_mrr": 1.0
+    },
+    "数值查询": {
+      "count": 5,
+      "avg_recall@5": 0.8667,
+      "avg_mrr": 0.5333
+    },
+    "对比分析": {
+      "count": 3,
+      "avg_recall@5": 1.0,
+      "avg_mrr": 1.0
+    }
+  },
+  "details": [
+    {
+      "id": "Q01",
+      "query": "贵州茅台2024年的营业总收入是多少？",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "recall@1": 0.0,
+      "recall@3": 0.6667,
+      "recall@5": 0.6667,
+      "mrr": 0.5,
+      "ndcg@5": 0.7654,
+      "time": 0.867,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q02",
+      "query": "2024年贵州茅台的归属于母公司股东的净利润是多少？",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "recall@1": 0.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 0.3333,
+      "ndcg@5": 0.7039,
+      "time": 0.562,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q03",
+      "query": "贵州茅台2024年的基本每股收益是多少？",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "recall@1": 0.0,
+      "recall@3": 0.6667,
+      "recall@5": 0.6667,
+      "mrr": 0.3333,
+      "ndcg@5": 0.4693,
+      "time": 0.556,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q04",
+      "query": "茅台2024年的销售毛利率是多少？",
+      "category": "数值查询",
+      "difficulty": "easy",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.4078,
+      "time": 6.474,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q05",
+      "query": "贵州茅台2024年末的货币资金有多少？资产负债率是多少？",
+      "category": "数值查询",
+      "difficulty": "medium",
+      "recall@1": 0.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 0.5,
+      "ndcg@5": 1.1804,
+      "time": 0.559,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q06",
+      "query": "贵州茅台2024年的营业收入相比2023年增长了多少？",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "recall@1": 0.0,
+      "recall@3": 0.25,
+      "recall@5": 0.25,
+      "mrr": 0.5,
+      "ndcg@5": 0.2463,
+      "time": 0.547,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q07",
+      "query": "茅台2024年经营活动现金流净额的变化情况如何？",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.3152,
+      "time": 5.871,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q08",
+      "query": "贵州茅台2024年的ROE相比2023年有什么变化？",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "recall@1": 0.5,
+      "recall@3": 0.5,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.3848,
+      "time": 6.629,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q09",
+      "query": "茅台2024年的资产负债率比2023年下降了多少个百分点？",
+      "category": "趋势分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.827,
+      "time": 0.61,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q10",
+      "query": "贵州茅台直销渠道和批发代理渠道2024年的收入分别是多少？哪个占比更高？",
+      "category": "对比分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.3378,
+      "time": 0.588,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q11",
+      "query": "茅台酒和系列酒2024年各自的营业收入和增速是多少？",
+      "category": "对比分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 3.5706,
+      "time": 0.577,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q12",
+      "query": "贵州茅台2024年各项费用（销售、管理、研发）分别增长了多少？原因是什么？",
+      "category": "对比分析",
+      "difficulty": "hard",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 4.0984,
+      "time": 7.202,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q13",
+      "query": "贵州茅台的主营业务是什么？",
+      "category": "定义解释",
+      "difficulty": "easy",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.8855,
+      "time": 0.591,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q14",
+      "query": "贵州茅台2024年的利润分配方案是怎样的？",
+      "category": "定义解释",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 1.7125,
+      "time": 0.587,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q15",
+      "query": "为什么贵州茅台2024年筹资活动现金流净额为负？这意味着什么？",
+      "category": "定义解释",
+      "difficulty": "hard",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.1711,
+      "time": 5.883,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q16",
+      "query": "贵州茅台面临的主要经营风险有哪些？",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.035,
+      "time": 6.498,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q17",
+      "query": "贵州茅台2025年的经营目标和主要措施是什么？",
+      "category": "风险分析",
+      "difficulty": "medium",
+      "recall@1": 1.0,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.4185,
+      "time": 0.59,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q18",
+      "query": "综合分析贵州茅台2024年的盈利能力：毛利率、净利率、ROE各是多少？与2023年相比有什么趋势？",
+      "category": "综合分析",
+      "difficulty": "hard",
+      "recall@1": 0.8,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "ndcg@5": 2.3802,
+      "time": 7.567,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q19",
+      "query": "对比贵州茅台和比亚迪2024年的财务表现，两家公司的盈利能力和增长情况有何异同？",
+      "category": "跨文档检索",
+      "difficulty": "hard",
+      "recall@1": 0.5,
+      "recall@3": 0.6667,
+      "recall@5": 0.8333,
+      "mrr": 1.0,
+      "ndcg@5": 2.4219,
+      "time": 10.812,
+      "chunks_found": 5
+    },
+    {
+      "id": "Q20",
+      "query": "从现金流角度来看，贵州茅台2024年的经营、投资、筹资三大现金流各是什么状态？公司的现金流健康吗？",
+      "category": "综合推理",
+      "difficulty": "hard",
+      "recall@1": 0.8333,
+      "recall@3": 0.8333,
+      "recall@5": 0.8333,
+      "mrr": 1.0,
+      "ndcg@5": 2.3566,
+      "time": 0.648,
+      "chunks_found": 5
+    }
+  ]
+}

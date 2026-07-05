@@ -21,7 +21,7 @@ from .hybrid_search import hybrid_search
 from .evaluator import batch_evaluate, recall_at_k, mrr, ndcg_at_k
 
 # 默认测试集路径
-DEFAULT_TEST_SET = str(Path(__file__).parent.parent.parent / "data" / "test_questions.json")
+DEFAULT_TEST_SET = str(Path(__file__).parent.parent.parent / "evaluation" / "data" / "rag_questions.json")
 
 # 默认测试文档（如果知识库为空才自动加载）
 DEFAULT_DOCS_DIR = Path(__file__).parent.parent.parent / "data" / "documents"
@@ -637,7 +637,7 @@ def run_all_experiments(
     all_results["recommendations"] = recommendations
 
     # 保存结果
-    output_dir = Path(__file__).parent.parent.parent / "data" / "eval_reports"
+    output_dir = Path(__file__).parent.parent.parent / "evaluation" / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-TEST_SET_PATH = Path(__file__).parent.parent.parent / "data" / "test_questions.json"
+TEST_SET_PATH = Path(__file__).parent.parent.parent / "evaluation" / "data" / "rag_questions.json"
 
 
 @pytest.fixture

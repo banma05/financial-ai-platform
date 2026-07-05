@@ -21,7 +21,7 @@ from agent.planner import Planner, BUILTIN_TEMPLATES
 from agent.schemas import AnalysisPlan, AnalysisTask
 from agent.graph import run_agent_sync
 
-TEST_SET = Path(__file__).parent.parent / "data" / "agent_test_questions.json"
+TEST_SET = Path(__file__).parent.parent / "evaluation" / "data" / "agent_questions.json"
 
 with open(TEST_SET, "r", encoding="utf-8") as f:
     data = json.load(f)

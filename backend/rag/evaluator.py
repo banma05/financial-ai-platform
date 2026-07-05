@@ -529,7 +529,7 @@ def save_report(report: dict, output_path: Optional[str] = None) -> str:
 
     参数:
         report: 评测报告 dict
-        output_path: 输出路径，默认为 data/eval_reports/ 下按时间戳命名
+        output_path: 输出路径，默认为 evaluation/reports/ 下按时间戳命名
 
     返回:
         输出文件路径
@@ -540,7 +540,7 @@ def save_report(report: dict, output_path: Optional[str] = None) -> str:
     if output_path is None:
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path(__file__).parent.parent.parent / "data" / "eval_reports"
+        output_dir = Path(__file__).parent.parent.parent / "evaluation" / "reports"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(output_dir / f"eval_{timestamp}.json")
 

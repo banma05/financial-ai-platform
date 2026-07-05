@@ -309,7 +309,7 @@ async def run_evaluation(request: EvalRequest = None):
     if request.test_set_path:
         test_set_path = request.test_set_path
     else:
-        test_set_path = str(Path(__file__).parent.parent.parent / "data" / "test_questions.json")
+        test_set_path = str(Path(__file__).parent.parent.parent / "evaluation" / "data" / "rag_questions.json")
 
     if not Path(test_set_path).exists():
         raise HTTPException(

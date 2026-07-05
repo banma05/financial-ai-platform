@@ -20,9 +20,9 @@ from typing import List, Dict
 from loguru import logger
 
 # ============ 配置 ============
-TEST_SET_PATH = Path(__file__).parent.parent.parent / "data" / "test_questions.json"
+TEST_SET_PATH = Path(__file__).parent.parent.parent / "evaluation" / "data" / "rag_questions.json"
 DOCS_DIR = Path(__file__).parent.parent.parent / "data" / "documents"
-REPORT_PATH = Path(__file__).parent.parent.parent / "data" / "eval_reports" / "quick_tune_report.json"
+REPORT_PATH = Path(__file__).parent.parent.parent / "evaluation" / "reports" / "quick_tune_report.json"
 
 
 def _load_test_questions() -> List[dict]:
