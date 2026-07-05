@@ -26,13 +26,87 @@
 
 ---
 
-## 模块总览
+## 项目架构总览
+
+### 实际目录结构
+
+```
+backend/
+├── rag/              ← 模块一：知识库 RAG（检索+索引+评估）
+│   ├── loader.py          文档加载（PDF/Word/MD/TXT + 表格提取）
+│   ├── semantic_splitter.py  语义动态切分
+│   ├── embedder.py        BGE 向量化
+│   ├── vector_store.py    ChromaDB 管理
+│   ├── hybrid_search.py   混合检索（BM25+语义→RRF→LambdaMART）
+│   ├── query_processor.py Query 理解（术语展开+LLM扩写+校验）
+│   ├── entity_router.py   实体识别+文档路由
+│   ├── jieba_tokenizer.py 中文分词+138财务词典
+│   ├── retriever.py       完整 RAG 问答入口（prompt构建+溯源）
+│   ├── evaluator.py       评测体系（50题+R@k/MRR/NDCG+LLM评测）
+│   ├── model_router.py    LLM 统一调用（chat/chat_stream/flash-pro分层）
+│   ├── experiments.py     参数实验记录
+│   └── quick_tune.py      快速调优工具
+│
+├── agent/             ← 模块二：数据分析 Agent（LangGraph 编排）
+│   ├── graph.py            LangGraph StateGraph 顶层编排
+│   ├── planner.py          任务拆解 + 5模板
+│   ├── executor.py         ToolRegistry + 依赖注入
+│   ├── reporter.py         报告生成（5章节Markdown）
+│   ├── schemas.py          数据模型
+│   └── tools/
+│       ├── data_query.py    RAG检索→结构化提取
+│       ├── financial_calc.py 19财务公式（7大类）
+│       ├── chart.py         5种图表（line/bar/pie/radar/dual_axis）
+│       └── param_injection.py  三层回退依赖注入
+│
+├── utils/             ← 公共工具层（阶段二新建）
+│   ├── retry.py            重试机制（tenacity + CircuitBreaker）
+│   └── logger.py           结构化日志（trace_id + JSON + 轮转）
+│
+├── api/               ← FastAPI 路由层
+│   ├── rag.py              RAG 问答 API（上传/对话/评测）
+│   └── agent.py            Agent 分析 API（同步+SSE流式）
+│
+├── middleware/         ← 中间件层
+│   └── auth.py             X-API-Key 鉴权 + 滑动窗口限流
+│
+├── models/            ← Pydantic 数据模型
+│   └── schemas.py
+│
+├── db/                ← 数据库（预留，阶段四启用）
+├── tests/             ← 130 个单元测试
+├── config.py          ← 全局配置（API Key/模型/参数）
+└── main.py            ← FastAPI 入口
+```
+
+### 按 RAG 标准能力域对照
+
+> 参照业界 RAG 七领域框架，逐项标注当前覆盖度和已知缺口。
+
+| 能力域 | 关键技能 | 当前实现 | 覆盖度 | 缺口 |
+|--------|---------|---------|:------:|------|
+| **retrieval** 检索 | Query理解/改写/混合检索/重排 | query_processor + hybrid_search + LambdaMART | 🟢 85% | 缺意图分类、HyDE、多轮改写 |
+| **indexing** 索引 | 文档加载/分块/向量化/索引构建 | loader + semantic_splitter + embedder + ChromaDB | 🟢 85% | **缺 metadata 独立管理层** |
+| **knowledge-base** 知识库 | 数据源/语料管理/更新同步/质量/版本 | 手动文件管理 + rebuild_index | 🔴 25% | **全部缺失：语料管理UI、增量更新、质量检查、版本回滚** |
+| **generation** 生成 | Prompt模板/上下文组装/LLM生成/引用/幻觉控制 | retriever + model_router + reporter | 🟡 65% | **缺幻觉检测**、引用格式不够结构化 |
+| **evaluation** 评估 | 检索评估/生成评估/端到端/指标/基准 | evaluator(50题+R@k/MRR/NDCG+LLM) | 🟢 85% | 缺生成质量专项评估( faithfulness / relevancy 完整版) |
+| **observability** 可观测 | 日志/追踪/监控/告警/仪表盘 | utils/logger (trace_id+JSON) | 🟡 35% | **全部缺失：监控Dashboard、告警、延迟统计** |
+| **integration** 集成部署 | API/Agent/工作流/工具化/部署 | FastAPI+Streamlit+LangGraph | 🟡 60% | 缺 Docker/CI/CD（阶段四）、缺 MCP（阶段三） |
+
+> **结论**：我们的 RAG 在 **检索** 和 **索引** 两个核心域已达到生产级，但 **知识库管理** 和 **可观测性** 是最大短板。这两个域不需要复杂算法，主要是工程规范化——适合在阶段四统一补齐。
+
+### 模块完成度总览
 
 | 模块 | 定位 | 状态 | 完善度 | 核心基线 |
 |------|------|:----:|:------:|----------|
-| **模块一：知识库 RAG** | 财报/公告/研报 智能问答+溯源 | ✅ 已完成 | 🟢 90% | R@5=87.3% MRR=90.8% |
-| **模块二：数据分析 Agent** | NL驱动分析+报告+可视化 | ✅ V3.0 重构中 | 🟡 70% | 5模板+19公式+5图表+LangGraph DAG |
-| **模块三：MCP 工具集成** | 外部数据源+财务公式库 | ⏳ 规划中 | — | 待开发 |
+| **rag/** | 知识库 RAG（检索+索引+评估） | ✅ | 🟢 85% | SEM-R@5=95.2%, MRR=89.5%, GPU加速6.7x |
+| **agent/** | 数据分析 Agent（编排+工具+报告） | ✅ | 🟢 80% | LangGraph+5模板+19公式+三层注入+重试+trace_id |
+| **utils/** | 公共工具层（重试+日志） | ✅ | 🟢 90% | tenacity重试+CircuitBreaker+trace_id+JSON轮转 |
+| **api/** | FastAPI 路由 | ✅ | 🟢 85% | 7端点+SSE流式+鉴权限流 |
+| **middleware/** | 鉴权限流 | ✅ | 🟢 85% | X-API-Key+滑动窗口(30/min通用,10/min Chat) |
+| **tests/** | 单元测试 | ✅ | 🟢 85% | 130用例，agent 96 + rag 196 = 覆盖核心路径 |
+| **MCP** | 外部数据源接入 | ⏳ | — | 阶段三开发（6+工具） |
+| **工程化** | Docker/Redis/CI/CD | ⏳ | — | 阶段四统一补齐 |
 
 ---
 
@@ -81,95 +155,82 @@
 ---
 
 
-## 模块二：数据分析 Agent ✅ V2.5 MVP
+## 模块二：数据分析 Agent ✅ V3.0（阶段一+二完成）
 
 ### 当前状态
 
 | 组件 | 完善度 | 说明 |
 |------|:------:|------|
-| Planner（任务拆解） | 🟢 85% | LLM 拆解(flash/pro自动切换) + 5个内置模板 |
-| Executor（工具执行） | 🟢 85% | ToolRegistry + 依赖注入 + DAG拓扑并行 |
-| DataQuery 工具 | 🟡 60% | 封装 RAG + LLM 结构提取，依赖知识库数据 |
+| Planner（任务拆解） | 🟢 85% | LLM 拆解(flash/pro) + 5模板 + 追问澄清 |
+| Executor（工具执行） | 🟢 90% | ToolRegistry + ParamInjector三层注入 + DAG层内并行 |
+| DataQuery 工具 | 🟡 65% | 封装 RAG + LLM 结构提取 + flash→pro自动重试 |
 | FinancialCalc 工具 | 🟢 90% | 19个内置公式，7大类，纯 Python 零依赖 |
 | Chart 工具 | 🟢 80% | 5种图表（line/bar/pie/radar/dual_axis），base64 嵌入 |
 | Reporter（报告生成） | 🟢 80% | Markdown 五章节报告 + LLM 洞察生成 |
-| API 路由 | 🟢 85% | 4个端点（同步+SSE流式+模板+公式），继承鉴权限流 |
+| API 路由 | 🟢 85% | 4端点（同步+SSE流式+模板+公式），鉴权限流继承 |
 | 前端 UI | 🟢 80% | SSE 流式进度 + 报告渲染 + 图表展示 + 历史记录 |
+| 工程化（阶段二） | 🟢 90% | tenacity重试+CircuitBreaker+trace_id+JSON日志轮转 |
 
 ### 核心交付
 
-| 能力 | 说明 |  状态  |
+| 能力 | 说明 | 状态 |
 |------|------|:----:|
-| NL 驱动数据查询 | 自然语言→RAG检索→结构化提取 |  ✅   |
-| 自动分析报告 | 数据→图表→结论→建议 五章节报告 |  ✅   |
-| 可视化图表 | 5种图表类型，中文字体自动适配 |  ✅   |
-| 财务公式库 | 19个公式（盈利/偿债/营运/成长/估值/现金流/杜邦） |  ✅   |
-| 分析模板库 | 盈利能力/杜邦/成长/现金流/风险扫描 5 模板 |  ✅   |
-| 追问澄清 | 需求模糊时 Planner 返回追问 |  ✅   |
-| DAG 多步推理 | LangGraph StateGraph + 拓扑排序层内并行 |  ✅   |
+| NL 驱动数据查询 | 自然语言→RAG检索→结构化提取 | ✅ |
+| 自动分析报告 | 数据→图表→结论→建议 五章节报告 | ✅ |
+| 可视化图表 | 5种图表类型，中文字体自动适配 | ✅ |
+| 财务公式库 | 19个公式（盈利/偿债/营运/成长/估值/现金流/杜邦） | ✅ |
+| 分析模板库 | 盈利能力/杜邦/成长/现金流/风险扫描 5 模板 | ✅ |
+| 追问澄清 | 需求模糊时 Planner 返回追问 | ✅ |
+| DAG 多步推理 | LangGraph StateGraph 编排 + 拓扑排序层内并行 | ✅ |
+| 智能依赖注入 | 三层回退（精确→编辑距离→LLM语义），命中率可统计 | ✅ |
+| 错误恢复 | chat() @retry 退避 + 429自动延长 + CircuitBreaker | ✅ |
+| 全链路追踪 | trace_id 贯穿 planner→executor→reporter + 计时 | ✅ |
 
 ### 验收指标
 
 | 指标 | 目标 | 当前 |
 |------|:----:|:----:|
-| 子任务拆解准确率 | ≥85% | 待评测 |
-| 指标计算准确率 | ≥98% | 已通过 55 测试（公式40+Planner15） |
-| 报告可读性评分 | ≥4/5 | 待评测 |
-| 端到端分析耗时 | ≤30s | LLM 已切 flash 提速，待基准测试 |
+| 子任务拆解准确率 | ≥85% | 待评测（76.9%，阶段三后重测） |
+| 指标计算准确率 | ≥98% | ✅ 105测试通过（公式40+注入41+Planner15+重试19+日志15=130） |
+| 端到端分析耗时 | ≤30s | 待基准测试 |
+| 单元测试覆盖 | — | 130 全部通过 |
 
 ### 待办
 
-- [x] ~~Agent 框架选型~~ → LangGraph + 自研轻量编排（不用 LangGraph 完整依赖）
-- [x] ~~Planner 模块~~（LLM拆解+模板加载）
-- [x] ~~财务计算工具~~（19公式）
-- [x] ~~图表生成模块~~（5种图表）
-- [x] ~~Report 报告生成~~（5章节Markdown）
-- [x] ~~更多分析模板（现金流/风险扫描）~~ ✅ (7/4)
-- [x] ~~DAG 并行执行（LangGraph + 拓扑排序）~~ ✅ (7/4)
-- [x] ~~LLM 调用统一（flash/pro 分层）~~ ✅ (7/4)
-- [ ] 子任务拆解准确率评测（待阶段二后重测）
-- [ ] 智能依赖注入三层回退（阶段二待启动）
+- [ ] 子任务拆解准确率评测（76.9% → ≥85%）
+- [ ] 端到端耗时基准测试（目标 ≤30s）
+- [ ] DataQuery 完善度提升（60%→80%，改善结构化提取准确率）
 
 ---
 
 ## 模块三：MCP 工具集成 ⏳
 
+> 财务公式库已在模块二的 `financial_calc.py` 中实现（19公式/7大类）。
+> MCP 聚焦**外部数据源接入**，不重复造公式轮子。
+
 ### 核心工具规划
 
 | 工具 | 功能 | 优先级 |
 |------|------|:------:|
-| Wind 数据接口 | 股票行情、财务数据、宏观指标 | P0 |
-| 同花顺数据接口 | 实时行情、历史数据、板块数据 | P1 |
-| 财务公式计算器 | 杜邦分析、现金流折现、比率分析等 8 类公式 | P0 |
-| 行业对标工具 | 同行业可比公司数据自动获取 | P2 |
+| stock_price | 股票实时行情/历史K线 | P0 |
+| financial_statements | 三大财务报表数据（Wind/同花顺） | P0 |
+| calculate_ratio | 高级财务比率（跨报表计算） | P0 |
+| industry_comparison | 同行业可比公司数据 | P1 |
+| market_index | 大盘指数/行业指数 | P1 |
+| financial_calendar | 财报披露日历/分红/股东大会 | P2 |
 
-### 财务公式库（已规划，可离线使用）
-
-| 分类 | 公式数 | 示例 |
-|------|:------:|------|
-| 盈利能力 | 5 | 毛利率、净利率、ROE、ROA、EBITDA率 |
-| 偿债能力 | 4 | 资产负债率、流动比率、速动比率、利息保障倍数 |
-| 营运能力 | 3 | 存货周转率、应收周转率、总资产周转率 |
-| 成长能力 | 3 | 营收增长率、净利增长率、总资产增长率 |
-| 估值指标 | 5 | PE、PB、PS、股息率、PEG |
-| 现金流 | 2 | 自由现金流、经营现金流/净利比 |
-| 杜邦分析 | 1 | ROE = 净利率 × 周转率 × 权益乘数 |
+### 技术方案
+- MCP Server 复用 Agent 的 `ToolRegistry`（已预留扩展点）
+- 开发期用 Mock 数据生成器，真 API 预留接口
+- 阶段四 Docker 化为独立进程
 
 ### 验收指标
 
 | 指标 | 目标 |
 |------|:----:|
-| 外部数据调用成功率 | ≥99% |
-| 数据调用延迟 | ≤3s |
-| 公式计算准确率 | 100% |
-| MCP Tool 注册数量 | ≥10 |
-
-### 待启动
-
-- [ ] MCP Server 框架搭建
-- [ ] Wind/同花顺 API 对接
-- [ ] 财务公式库实现
-- [ ] Tool Schema 标准化注册
+| MCP Tool 注册数量 | ≥6 |
+| Mock 数据覆盖率 | 100%（6工具均有可用Mock） |
+| Agent 透明桥接 | ToolRegistry 零改动接入 MCP 工具 |
 
 ---
 
@@ -197,9 +258,9 @@
 4. **向量库**：ChromaDB 轻量免运维，后续可迁移 Milvus
 5. **分块参数**：chunk_size=800, overlap=150（实验验证最优）
 6. **BM25 分词**：jieba 精确模式 + 138 财务术语词典
-7. **评测体系**：20题标准集 + recall@k/MRR/NDCG + 数字归一化
-8. **检索策略**：默认 LambdaMART 重排，仅极短问候降级 simple（+8.5pp 核心突破）
-9. **三模块架构**：知识库→Agent→MCP，渐次叠加，每模块可独立迭代
+7. **评测体系**：50题标准集（双轨关键词+语义） + R@k/MRR/NDCG + LLM评测（Context Recall/Faithfulness）
+8. **检索策略**：默认 LambdaMART 重排（+8.5pp），极短问候降级 simple，GPU加速6.7x
+9. **分层架构**：rag/ + agent/ + utils/ + api/ + middleware/ + tests/，职责清晰，可独立迭代
 
 ---
 

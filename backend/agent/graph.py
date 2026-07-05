@@ -22,7 +22,7 @@ from .reporter import Reporter
 from .tools.data_query import DataQueryTool
 from .tools.financial_calc import FinancialCalcTool
 from .tools.chart import ChartTool
-from utils.logger import RequestLogContext, TraceTimer, set_trace_id
+from utils.logger import TraceTimer, set_trace_id
 
 
 # ==================== State 定义 ====================
