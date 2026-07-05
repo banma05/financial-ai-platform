@@ -22,20 +22,8 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install redis httpx2
 
-      - name: 下载 Embedding 模型
-        run: |
-          python -c "
-          from sentence_transformers import SentenceTransformer
-          SentenceTransformer('BAAI/bge-small-zh-v1.5', cache_folder='./data/models')
-          "
-
-      - name: 运行单元测试
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          CHROMA_PERSIST_DIR: /tmp/chroma_test
-          LOCAL_MODEL_PATH: ./data/models/BAAI/bge-small-zh-v1___5
+      - name: 运行单元测试（轻量，跳过GPU和LLM依赖测试）
         run: |
           python -m pytest backend/tests/ \
             --ignore=backend/tests/test_table_extraction.py \
@@ -43,12 +31,5 @@ jobs:
             --ignore=backend/tests/test_evaluator.py \
             --ignore=backend/tests/test_mcp_tools.py \
             --ignore=backend/tests/test_entity_router.py \
-            -v \
-            --tb=short \
-            --timeout=60
-
-      - name: 运行集成测试
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: |
-          python -m pytest backend/tests/test_integration.py -v --tb=short --timeout=120
+            --ignore=backend/tests/test_query_processor.py \
+            -q --tb=short
