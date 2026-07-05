@@ -80,6 +80,9 @@ def expand_financial_terms(query: str) -> str:
     for abbr, full in sorted_terms:
         if abbr == full:
             continue
+        # 全称已在 query 中 → 不需要展开（防止"资产负债率"被"负债率"映射展开为"资产负债率(资产负债率)"）
+        if full in query:
+            continue
 
         # 在原 query 中查找缩写
         idx = query.find(abbr)
