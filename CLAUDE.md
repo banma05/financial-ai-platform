@@ -47,12 +47,20 @@ financial-ai-platform/
 │       ├── evaluator.py     # 评测体系（R@k/MRR/NDCG+数字归一化）
 │       ├── model_router.py  # LLM 调用路由
 │       └── retriever.py     # 完整 RAG 问答入口
-├── frontend/app.py          # Streamlit 前端
+├── evaluation/
+│   ├── rag/quick_eval.py     # RAG 50题全量评测
+│   ├── agent/bench_agent.py  # Agent 子任务拆解评测
+│   ├── bench_speed.py        # 检索速度基准
+│   ├── data/                 # 评测数据集
+│   │   ├── rag_questions.json
+│   │   └── agent_questions.json
+│   └── reports/              # 评测报告输出
 ├── data/
 │   ├── documents/           # 原始文档（年报PDF/摘要MD）
 │   ├── chroma_db/           # ChromaDB 持久化
-│   ├── models/              # 本地 Embedding/Reranker 模型
-│   └── test_questions.json  # 23 题标准测试集
+│   └── models/              # 本地 Embedding/Reranker 模型
+├── logs/                    # 应用日志（JSON轮转）
 ├── scripts/rebuild_index.py # 一键重建向量索引
+├── scripts/run_tests.py     # 测试运行器
 └── PROGRESS.md              # 项目进度存档
 ```

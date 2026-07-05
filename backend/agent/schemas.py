@@ -51,31 +51,9 @@ class ChartConfig(BaseModel):
     y_label: str = Field(default="", description="Y 轴标签")
 
 
-# ============ 分析模板模型 ============
-
-class TemplateInfo(BaseModel):
-    """分析模板信息"""
-    name: str = Field(..., description="模板标识（英文）")
-    display_name: str = Field(..., description="模板展示名（中文）")
-    description: str = Field(..., description="模板说明")
-    category: str = Field(..., description="模板分类")
-
-
-# ============ API 请求/响应模型（与 models/schemas.py 共享）============
-
-class AgentRequest(BaseModel):
-    """Agent 分析请求"""
-    query: str = Field(..., description="用户分析需求", min_length=1)
-    session_id: str = Field(default="default", description="会话 ID")
-    template: Optional[str] = Field(default=None, description="预设模板名称")
-
-
-class AgentResponse(BaseModel):
-    """Agent 分析响应"""
-    report: str = Field(default="", description="Markdown 报告")
-    charts: List[str] = Field(default_factory=list, description="图表 base64 列表")
-    processing_time: float = Field(default=0.0, description="总耗时（秒）")
-    task_count: int = Field(default=0, description="执行子任务数")
+# 分析模板模型 → 已迁移至 models/schemas.py（TemplateInfo）
+# API 请求/响应模型 → 已迁移至 models/schemas.py（AgentRequest/AgentResponse）
+# 此处只保留 Agent 内部编排所需的数据模型（AnalysisTask/TaskResult/AnalysisPlan/ChartConfig）
 
 
 class ClarifyRequest(BaseModel):
