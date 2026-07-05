@@ -260,13 +260,8 @@ class Planner:
 - chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
-# MCP 外部数据工具（以下 6 个用于获取实时/外部数据，注意与 data_query 的区别）：
-- mcp_stock_price: 查询股票实时行情/历史K线（参数：symbol=代码如600519, period=realtime/daily/weekly/monthly）
-- mcp_financial_statements: 获取财务报表原始数据（参数：symbol=代码, statement_type=income/balance/cashflow/all）
-- mcp_calculate_ratio: 批量计算财务比率，返回行业解读（参数：symbol=代码, ratios=[roe,roa,debt_ratio,...]）
-- mcp_industry_comparison: 同行业可比公司关键指标对比（参数：symbol=代码, metrics=[pe,pb,roe,revenue_growth]）
-- mcp_market_index: 查询大盘/行业指数（参数：index=sh000001/sz399001/sh000819等）
-- mcp_financial_calendar: 查询财报日历/分红/股东大会日期（参数：symbol=代码, year=年份）
+# MCP外部工具（6种，用于获取实时/外部数据。简单查询优先用 data_query，需要实时行情/行业对比/财报日历时用 MCP）：
+- mcp_stock_price / mcp_financial_statements / mcp_calculate_ratio / mcp_industry_comparison / mcp_market_index / mcp_financial_calendar
 
 ## 可用财务公式（共 19 个）
 # 盈利能力
@@ -328,50 +323,54 @@ class Planner:
 8. 任务数量控制在 3-7 个，不要过度拆分
 """
 
+        # 🔧 复杂查询自动切 pro 模型保质量
+        task_type = TaskType.COMPLEX if self._is_complex(user_input) else TaskType.SIMPLE
+        messages = [{"role": "user", "content": prompt}]
+
+        plan_dict = self._try_llm_parse(messages, user_input, task_type)
+        if plan_dict is None:
+            # 🔧 flash 失败 → pro 重试（与 data_query 的 flash→pro 策略一致）
+            logger.warning("Flash 拆解失败，重试 pro 模型...")
+            plan_dict = self._try_llm_parse(messages, user_input, TaskType.COMPLEX)
+
+        if plan_dict is None:
+            logger.warning("LLM 拆解彻底失败，回退为单任务直接分析")
+            fallback_tasks = [
+                AnalysisTask(task_id="1", task_type="data_query",
+                             description=f"查询与「{user_input}」相关的财务数据",
+                             params={"query": user_input}),
+                AnalysisTask(task_id="2", task_type="analyze",
+                             description=f"基于查询结果分析「{user_input}」",
+                             params={}, depends_on=["1"]),
+            ]
+            return AnalysisPlan(tasks=fallback_tasks)
+
+        tasks = []
+        for t in plan_dict.get("tasks", []):
+            tasks.append(AnalysisTask(
+                task_id=str(t["task_id"]),
+                task_type=t.get("task_type", "data_query"),
+                description=t.get("description", ""),
+                params=t.get("params", {}),
+                depends_on=t.get("depends_on", []),
+            ))
+        clarification = plan_dict.get("requires_clarification")
+        return AnalysisPlan(tasks=tasks, requires_clarification=clarification)
+
+    def _try_llm_parse(self, messages, user_input, task_type):
+        """尝试 LLM 拆解，失败返回 None（不抛异常）"""
+        model_hint = "pro" if task_type == TaskType.COMPLEX else "flash"
+        logger.info(f"LLM 自由拆解模式（{model_hint}）")
         try:
-            # 🔧 复杂查询自动切 pro 模型保质量
-            task_type = TaskType.COMPLEX if self._is_complex(user_input) else TaskType.SIMPLE
-            model_hint = "pro" if task_type == TaskType.COMPLEX else "flash"
-            logger.info(f"LLM 自由拆解模式（{model_hint}）")
-            messages = [{"role": "user", "content": prompt}]
             text = chat(messages, query=user_input, task_type=task_type)
             text = text.strip()
             if text.startswith("```"):
                 lines = text.split("\n")
                 text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-
-            plan_dict = json.loads(text)
-
-            tasks = []
-            for t in plan_dict.get("tasks", []):
-                tasks.append(AnalysisTask(
-                    task_id=str(t["task_id"]),
-                    task_type=t.get("task_type", "data_query"),
-                    description=t.get("description", ""),
-                    params=t.get("params", {}),
-                    depends_on=t.get("depends_on", []),
-                ))
-
-            clarification = plan_dict.get("requires_clarification")
-            return AnalysisPlan(tasks=tasks, requires_clarification=clarification)
-
-        except (json.JSONDecodeError, KeyError, AttributeError) as e:
-            logger.warning(f"LLM 任务拆解失败: {e}，回退为单任务直接分析")
-            # 回退：创建一个简单的 data_query + analyze 任务对
-            fallback_tasks = [
-                AnalysisTask(
-                    task_id="1", task_type="data_query",
-                    description=f"查询与「{user_input}」相关的财务数据",
-                    params={"query": user_input},
-                ),
-                AnalysisTask(
-                    task_id="2", task_type="analyze",
-                    description=f"基于查询结果分析「{user_input}」",
-                    params={},
-                    depends_on=["1"],
-                ),
-            ]
-            return AnalysisPlan(tasks=fallback_tasks)
+            return json.loads(text)
+        except Exception as e:
+            logger.warning(f"LLM 拆解失败({model_hint}): {type(e).__name__}: {str(e)[:80]}")
+            return None
 
     def _detect_ambiguity(self, user_input: str) -> Optional[str]:
         """检测是否需要追问（简单规则版，V3.0 升级为 LLM 判断）"""

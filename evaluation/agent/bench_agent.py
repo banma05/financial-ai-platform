@@ -8,6 +8,11 @@ import json
 from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+# 🔧 必须在所有 import 之前预加载 sentence_transformers（防止 CUDA segfault）
+import sentence_transformers  # noqa
 
 # 🔧 修复 Windows GBK 编码下 emoji 打印崩溃
 if sys.platform == "win32":

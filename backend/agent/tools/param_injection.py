@@ -152,7 +152,7 @@ class ParamInjector:
     EDIT_DISTANCE_THRESHOLD = 2
 
     # Level3 LLM 批量匹配的最大键名数（一次调用不超过此数，控制 token 消耗）
-    LLM_BATCH_MAX_KEYS = 20
+    LLM_BATCH_MAX_KEYS = 60
 
     def __init__(self):
         self._stats: Dict[str, int] = {"level1": 0, "level2": 0, "level3": 0, "miss": 0}
