@@ -29,8 +29,8 @@ def _create_test_app(api_key: str = "test-secret-key", rate_limit_enabled: bool 
     config.RATE_LIMIT_CHAT_PER_MINUTE = 3
 
     # 重置全局限流器（避免测试间污染）
-    from middleware.auth import _limiter
-    _limiter.reset()
+    from utils.redis_client import get_limiter
+    get_limiter().reset()
 
     app = FastAPI()
 

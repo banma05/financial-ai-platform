@@ -3,7 +3,7 @@
 
 > 📅 最后更新：2026-07-05
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段二 ✅ 完成 → 阶段三待启动**
+> 📌 当前阶段：**阶段四 ✅ 完成 → 阶段五待启动**
 > 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
 
 ---
@@ -14,8 +14,8 @@
 |------|------|:----:|------|
 | **阶段一** | 修复6个关键Bug + 清理死代码 | ✅ 完成 (7/4) | 稳定Agent基础 |
 | **阶段二** | 智能依赖注入 + 重试机制 + 结构化日志 | ✅ 完成 (7/5) | Agent工程化升级 |
-| **阶段三** | MCP模块从零开发（6+工具） | ⏳ | 外部数据源接入 |
-| **阶段四** | Docker + Redis + MySQL + CI/CD | ⏳ | 生产级工程补齐 |
+| **阶段三** | MCP模块从零开发（6+工具）+ AKShare | ✅ 完成 (7/5) | 外部数据源接入 |
+| **阶段四** | Docker + Redis + CI/CD + 集成测试 | ✅ 完成 (7/5) | 生产级工程补齐 |
 | **阶段五** | 三模块联动整合 + 统一评测 | ⏳ | 端到端数据流打通 |
 
 ### 核心架构决策（2026-07-04）
@@ -326,6 +326,47 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-05 — 阶段四完成：Docker + Redis + CI/CD + 集成测试 ✅
+
+#### Docker 容器化
+- `Dockerfile.backend` + `Dockerfile.frontend`：Python 3.12-slim，GPU 可选
+- `docker-compose.yml`：backend + frontend + redis 三服务编排，数据卷持久化
+
+#### Redis 集成
+- `utils/redis_client.py`：Redis/内存双模式
+- RateLimiter：Redis sorted set 滑动窗口 + 内存回退
+- SessionStore：Redis TTL 会话 + 内存回退
+- 中间件改造：auth.py 删除旧内存 RateLimiter，切换到 get_limiter()
+
+#### CI/CD
+- `.github/workflows/test.yml`：GitHub Actions 自动测试（push/PR 触发）
+
+#### 集成测试（13 用例）
+- RAG 全链路(3) + Agent 模板/报告(2) + MCP 工具注册(2)
+- 依赖注入管道(1) + 工具层(2) + 健康检查(3)
+- 220 测试全过
+
+### 2026-07-05 — 阶段三完成：MCP 6工具 + AKShare 真实数据 ✅
+
+#### MCP 模块（12 文件）
+- 6 个工具：stock_price / financial_statements / calculate_ratio / industry_comparison / market_index / financial_calendar
+- AKShare 数据源：新浪(行情/报表/指数) + 巨潮(分红) 真实数据，东财不可用时 Mock 兜底
+- calculate_ratio 复用 financial_calc 公式库（零重复）
+
+#### 知识库扩容
+- 从 3 份 → 9 份文档（+茅台2023/比亚迪2023/五粮液/宁德时代/白酒研报）
+- 4066 chunks，SEM-R@5=95.2% 纹丝不动
+- 多轮对话改写 + 术语展开 bug 修复 + 引用格式 [^N] 脚注
+
+#### GPU 全链路
+- BGE Embedding CPU→GPU，单题 10s→2.6s（3.8x）
+- CrossEncoder 已在 GPU，全链路 GPU 化
+
+#### 知识库管理 + 可观测性
+- corpus_manager：增量更新 + 质量检查 + 版本快照
+- monitor：RequestTracker(P50/P95/P99) + 健康检查 + 告警阈值
+- 前端文档管理页升级为管理面板
 
 ### 2026-07-05 — 阶段二完成：智能依赖注入 + 重试机制 + 结构化日志 ✅
 
