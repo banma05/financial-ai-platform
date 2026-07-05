@@ -31,52 +31,80 @@
 ### 实际目录结构
 
 ```
-backend/
-├── rag/              ← 模块一：知识库 RAG（检索+索引+评估）
-│   ├── loader.py          文档加载（PDF/Word/MD/TXT + 表格提取）
-│   ├── semantic_splitter.py  语义动态切分
-│   ├── embedder.py        BGE 向量化
-│   ├── vector_store.py    ChromaDB 管理
-│   ├── hybrid_search.py   混合检索（BM25+语义→RRF→LambdaMART）
-│   ├── query_processor.py Query 理解（术语展开+LLM扩写+校验）
-│   ├── entity_router.py   实体识别+文档路由
-│   ├── jieba_tokenizer.py 中文分词+138财务词典
-│   ├── retriever.py       完整 RAG 问答入口（prompt构建+溯源）
-│   ├── evaluator.py       评测体系（50题+R@k/MRR/NDCG+LLM评测）
-│   ├── model_router.py    LLM 统一调用（chat/chat_stream/flash-pro分层）
-│   ├── experiments.py     参数实验记录
-│   └── quick_tune.py      快速调优工具
+financial-ai-platform/
+├── backend/
+│   ├── rag/              ← 模块一：知识库 RAG（检索+索引+评估）
+│   │   ├── loader.py          文档加载（PDF/Word/MD/TXT + 表格提取）
+│   │   ├── semantic_splitter.py  语义动态切分
+│   │   ├── embedder.py        BGE 向量化
+│   │   ├── vector_store.py    ChromaDB 管理
+│   │   ├── hybrid_search.py   混合检索（BM25+语义→RRF→LambdaMART）
+│   │   ├── query_processor.py Query 理解（术语展开+LLM扩写+校验）
+│   │   ├── entity_router.py   实体识别+文档路由
+│   │   ├── jieba_tokenizer.py 中文分词+138财务词典
+│   │   ├── retriever.py       完整 RAG 问答入口（prompt构建+溯源）
+│   │   ├── evaluator.py       评测库（被 API/retriever/experiments 使用）
+│   │   ├── model_router.py    LLM 统一调用（chat/chat_stream/flash-pro分层）
+│   │   ├── experiments.py     参数实验
+│   │   └── quick_tune.py      快速调优
+│   │
+│   ├── agent/             ← 模块二：数据分析 Agent（LangGraph 编排）
+│   │   ├── graph.py            LangGraph StateGraph 顶层编排
+│   │   ├── planner.py          任务拆解 + 5模板
+│   │   ├── executor.py         ToolRegistry + 依赖注入
+│   │   ├── reporter.py         报告生成（5章节Markdown）
+│   │   ├── schemas.py          内部数据模型（AnalysisTask/TaskResult 等）
+│   │   └── tools/
+│   │       ├── data_query.py    RAG检索→结构化提取
+│   │       ├── financial_calc.py 19财务公式（7大类）
+│   │       ├── chart.py         5种图表（line/bar/pie/radar/dual_axis）
+│   │       └── param_injection.py  三层回退依赖注入
+│   │
+│   ├── utils/             ← 公共工具层
+│   │   ├── retry.py            tenacity重试 + CircuitBreaker
+│   │   └── logger.py           结构化日志（trace_id + JSON + 轮转）
+│   │
+│   ├── api/               ← FastAPI 路由层
+│   │   ├── rag.py              RAG 问答 API（上传/对话/评测）
+│   │   └── agent.py            Agent 分析 API（同步+SSE流式）
+│   │
+│   ├── middleware/         ← 中间件层
+│   │   └── auth.py             X-API-Key 鉴权 + 滑动窗口限流
+│   │
+│   ├── models/            ← Pydantic 数据模型（API 契约）
+│   │   └── schemas.py          AgentRequest/AgentResponse/TemplateInfo 等
+│   │
+│   ├── db/                ← 数据库（预留，阶段四启用）
+│   ├── tests/             ← 单元测试（130+ 用例）
+│   ├── config.py          ← 全局配置
+│   └── main.py            ← FastAPI 入口
 │
-├── agent/             ← 模块二：数据分析 Agent（LangGraph 编排）
-│   ├── graph.py            LangGraph StateGraph 顶层编排
-│   ├── planner.py          任务拆解 + 5模板
-│   ├── executor.py         ToolRegistry + 依赖注入
-│   ├── reporter.py         报告生成（5章节Markdown）
-│   ├── schemas.py          数据模型
-│   └── tools/
-│       ├── data_query.py    RAG检索→结构化提取
-│       ├── financial_calc.py 19财务公式（7大类）
-│       ├── chart.py         5种图表（line/bar/pie/radar/dual_axis）
-│       └── param_injection.py  三层回退依赖注入
+├── evaluation/            ← 评测脚本 + 数据集 + 报告
+│   ├── rag/quick_eval.py       RAG 50题双轨评测
+│   ├── agent/bench_agent.py    Agent 子任务拆解评测
+│   ├── bench_speed.py          检索速度基准
+│   ├── data/                   评测数据集
+│   │   ├── rag_questions.json
+│   │   └── agent_questions.json
+│   └── reports/                评测报告输出
 │
-├── utils/             ← 公共工具层（阶段二新建）
-│   ├── retry.py            重试机制（tenacity + CircuitBreaker）
-│   └── logger.py           结构化日志（trace_id + JSON + 轮转）
+├── scripts/               ← 运维脚本
+│   ├── run_tests.py            测试运行器
+│   └── rebuild_index.py        一键重建向量索引
 │
-├── api/               ← FastAPI 路由层
-│   ├── rag.py              RAG 问答 API（上传/对话/评测）
-│   └── agent.py            Agent 分析 API（同步+SSE流式）
+├── frontend/              ← Streamlit 前端
+│   └── app.py
 │
-├── middleware/         ← 中间件层
-│   └── auth.py             X-API-Key 鉴权 + 滑动窗口限流
+├── data/                  ← 运行时数据
+│   ├── documents/              原始文档
+│   ├── chroma_db/              ChromaDB 持久化
+│   └── models/                 本地 Embedding 模型
 │
-├── models/            ← Pydantic 数据模型
-│   └── schemas.py
-│
-├── db/                ← 数据库（预留，阶段四启用）
-├── tests/             ← 130 个单元测试
-├── config.py          ← 全局配置（API Key/模型/参数）
-└── main.py            ← FastAPI 入口
+├── logs/                  ← 应用日志（trace_id + JSON 按天轮转）
+├── docs/                  ← 文档（BRD/架构图）
+├── requirements.txt
+├── PROGRESS.md
+└── README.md
 ```
 
 ### 按 RAG 标准能力域对照
