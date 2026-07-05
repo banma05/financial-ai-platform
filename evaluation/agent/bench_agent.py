@@ -14,14 +14,14 @@ if sys.platform == "win32":
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
 from loguru import logger
 from agent.planner import Planner, BUILTIN_TEMPLATES
 from agent.schemas import AnalysisPlan, AnalysisTask
 from agent.graph import run_agent_sync
 
-TEST_SET = Path(__file__).parent.parent / "evaluation" / "data" / "agent_questions.json"
+TEST_SET = Path(__file__).parent.parent / "data" / "agent_questions.json"
 
 with open(TEST_SET, "r", encoding="utf-8") as f:
     data = json.load(f)
