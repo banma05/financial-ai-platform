@@ -128,7 +128,7 @@ financial-ai-platform/
 | 模块 | 定位 | 状态 | 完善度 | 核心基线 |
 |------|------|:----:|:------:|----------|
 | **rag/** | 知识库 RAG（检索+索引+评估） | ✅ | 🟢 85% | SEM-R@5=95.2%, MRR=89.5%, GPU加速6.7x |
-| **agent/** | 数据分析 Agent（编排+工具+报告） | ✅ | 🟢 80% | LangGraph+5模板+19公式+三层注入+重试+trace_id |
+| **agent/** | 数据分析 Agent（编排+工具+报告） | ✅ | 🟢 85% | LangGraph+5模板+19公式+注入+重试+trace_id+评测基线77.4% |
 | **utils/** | 公共工具层（重试+日志） | ✅ | 🟢 90% | tenacity重试+CircuitBreaker+trace_id+JSON轮转 |
 | **api/** | FastAPI 路由 | ✅ | 🟢 85% | 7端点+SSE流式+鉴权限流 |
 | **middleware/** | 鉴权限流 | ✅ | 🟢 85% | X-API-Key+滑动窗口(30/min通用,10/min Chat) |
@@ -306,7 +306,9 @@ financial-ai-platform/
 | V1.5 | 前端流式 + BRD + 架构图 + PROGRESS 三模块化 + 多轮对话 + 33题测试集 | ✅ |
 | V2.0 | 鉴权 + 多轮对话 + PDF表格结构化 + 测试防线 + 性能优化 | ✅ |
 | V2.5 | 模块二 MVP：Agent 框架 + NL查询 + 基础报告 | ✅ 已完成 |
-| V3.0 | 模块二完整：LangGraph DAG并行 + 模板库 + 追问澄清 | ✅ 阶段二完成，阶段三待启动 |
+| V3.0 | 模块二完整：LangGraph DAG并行 + 模板库 + 追问澄清 | ✅ 阶段四完成，阶段五待启动 |
+| V3.5 | 模块三：MCP Server + AKShare真实数据 | ✅ 阶段三完成 |
+| V4.0 | 全平台联调 + Docker + CI/CD + 集成测试 | ✅ 阶段四完成 |
 | V3.5 | 模块三：MCP Server + Wind/同花顺 + 财务公式库 | ⏳ |
 | V4.0 | 全平台联调 + 端到端智能分析 + 多租户 | ⏳ |
 
@@ -367,6 +369,27 @@ streamlit run frontend\app.py
 - corpus_manager：增量更新 + 质量检查 + 版本快照
 - monitor：RequestTracker(P50/P95/P99) + 健康检查 + 告警阈值
 - 前端文档管理页升级为管理面板
+
+### 2026-07-05 — 阶段四完成：Docker + Redis + CI/CD + 集成测试 ✅
+
+#### Docker 容器化
+- `Dockerfile.backend` + `Dockerfile.frontend`：Python 3.12-slim，GPU 可选
+- `docker-compose.yml`：backend + frontend + redis 三服务编排，数据卷持久化
+
+#### Redis 集成
+- `utils/redis_client.py`：Redis/内存双模式（限流器 + 会话存储）
+- 中间件改造：auth.py 切换到 get_limiter()
+
+#### CI/CD
+- `.github/workflows/test.yml`：GitHub Actions 自动测试
+- `requirements-ci.txt`：CI 轻量依赖（无 GPU/LLM/ChromaDB）
+- agent/__init__.py + tools/__init__.py 懒加载（CI 兼容）
+- Agent 评测 3 轮迭代：63.2% → 72.9% → 77.4%
+
+#### 增量索引
+- `vector_store.py`：新增 `delete_document()` 按文档名删除
+- `corpus_manager.py`：incremental_rebuild() 端到端可用
+- 新增文件时 2 分钟增量 vs 20 分钟全量
 
 ### 2026-07-05 — 阶段二完成：智能依赖注入 + 重试机制 + 结构化日志 ✅
 
