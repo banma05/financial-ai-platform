@@ -16,6 +16,7 @@ MCP 工具：财务比率批量计算
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from agent.tools.financial_calc import FORMULA_REGISTRY
+from agent.tools.param_injection import FINANCIAL_TERM_TO_PARAM, parse_financial_value
 from mcp import mock_data
 
 
@@ -39,21 +40,6 @@ class CalculateRatioTool:
         "pe_ratio": "pe_ratio", "pb_ratio": "pb_ratio",
         "fcf": "free_cash_flow", "cf_to_net_profit": "cf_to_net_profit",
         "dupont": "dupont",
-    }
-
-    # 参数名映射：财务数据键名 → 公式参数名
-    PARAM_MAP = {
-        "营业收入": "revenue", "营业成本": "cost",
-        "净利润": "net_profit",
-        "总资产": "total_assets", "总负债": "total_liabilities",
-        "净资产": "equity",
-        "流动资产": "current_assets", "流动负债": "current_liabilities",
-        "存货": "inventory",
-        "财务费用": "interest_expense",
-        "经营活动现金流净额": "operating_cf",
-        "投资活动现金流净额": "investing_cf",
-        "资本支出": "capital_expenditure",
-        "基本每股收益": "eps", "股价": "stock_price",
     }
 
     def run(
@@ -155,31 +141,44 @@ class CalculateRatioTool:
         stmt: Dict[str, Any],
         price_data: Dict[str, Any],
     ) -> Dict[str, float]:
-        """从财务报表和行情数据组装公式参数"""
-        params = {}
+        """从财务报表和行情数据组装公式参数（复用 ParamInjector 的 60+ 中英映射）"""
+        params: Dict[str, float] = {}
 
-        # 展开财务报表数据
+        # 展开财务报表所有科目，通过 FINANCIAL_TERM_TO_PARAM 做中→英映射
         for section_key in ("income", "balance", "cashflow"):
             section = stmt.get(section_key)
             if isinstance(section, dict):
                 for k, v in section.items():
-                    mapped_key = self.PARAM_MAP.get(k, k)
-                    if isinstance(v, (int, float)):
-                        params[mapped_key] = float(v)
+                    parsed = parse_financial_value(v)
+                    if parsed is None:
+                        continue
+                    # 1) 精确匹配
+                    mapped = FINANCIAL_TERM_TO_PARAM.get(k)
+                    # 2) 子串包含匹配（AKShare 科目名带括号后缀如 "股东权益(不含少数股东权益)"）
+                    if mapped is None:
+                        for term, eng in FINANCIAL_TERM_TO_PARAM.items():
+                            if term in k:
+                                mapped = eng
+                                break
+                    if mapped is None:
+                        mapped = k  # 兜底：保留原始键名
+                    params[mapped] = parsed
+                    if k != mapped:
+                        params[k] = parsed
 
-        # 添加股价和 EPS
+        # 股价
         if "price" in price_data:
             params["stock_price"] = float(price_data["price"])
-        if "pe_ttm" in price_data and params.get("stock_price") and params.get("net_profit"):
-            # 从 PE 反推 EPS（简化：PE=价格/EPS）
-            pass  # EPS 已在报表中
+        if "eps" in price_data.get("data", {}):
+            pass  # EPS 在报表数据中
 
-        # 衍生参数
-        if "net_profit" in params and "equity" in params:
-            params["avg_equity"] = params["equity"]  # 简化：直接用期末值
-        if "net_profit" in params and "revenue" in params:
-            # 往期数据已在报表中
-            pass
+        # 衍生参数（公式可能需要平均值等）
+        if "equity" in params:
+            params["avg_equity"] = params["equity"]
+        if "total_assets" in params:
+            params["avg_total_assets"] = params["total_assets"]
+        if "revenue" in params:
+            params["avg_receivables"] = 0  # 应收款默认值，防止公式崩溃
 
         return params
 
