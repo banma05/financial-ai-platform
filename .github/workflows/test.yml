@@ -23,13 +23,16 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 运行单元测试（轻量，跳过GPU和LLM依赖测试）
+      - name: 运行单元测试（纯逻辑，无需GPU/LLM）
         run: |
-          python -m pytest backend/tests/ \
-            --ignore=backend/tests/test_table_extraction.py \
-            --ignore=backend/tests/test_hybrid_search.py \
-            --ignore=backend/tests/test_evaluator.py \
-            --ignore=backend/tests/test_mcp_tools.py \
-            --ignore=backend/tests/test_entity_router.py \
-            --ignore=backend/tests/test_query_processor.py \
+          cd backend
+          python -m pytest tests/test_agent_planner.py \
+            tests/test_agent_financial_calc.py \
+            tests/test_param_injection.py \
+            tests/test_retry.py \
+            tests/test_logger.py \
+            tests/test_corpus_monitor.py \
+            tests/test_integration.py \
+            tests/test_auth.py \
+            tests/test_dataset.py \
             -q --tb=short
