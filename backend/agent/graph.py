@@ -58,6 +58,17 @@ def _init_components():
         _tool_registry.register(DataQueryTool())
         _tool_registry.register(FinancialCalcTool())
         _tool_registry.register(ChartTool())
+        # ── MCP 工具（阶段三）──
+        from mcp import (
+            StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
+            IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,
+        )
+        _tool_registry.register(StockPriceTool())
+        _tool_registry.register(FinancialStatementsTool())
+        _tool_registry.register(CalculateRatioTool())
+        _tool_registry.register(IndustryComparisonTool())
+        _tool_registry.register(MarketIndexTool())
+        _tool_registry.register(FinancialCalendarTool())
         _planner = Planner()
         _executor = Executor(_tool_registry)
         _reporter = Reporter()

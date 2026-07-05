@@ -260,6 +260,13 @@ class Planner:
 - chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
+# MCP 外部数据工具（以下 6 个用于获取实时/外部数据，注意与 data_query 的区别）：
+- mcp_stock_price: 查询股票实时行情/历史K线（参数：symbol=代码如600519, period=realtime/daily/weekly/monthly）
+- mcp_financial_statements: 获取财务报表原始数据（参数：symbol=代码, statement_type=income/balance/cashflow/all）
+- mcp_calculate_ratio: 批量计算财务比率，返回行业解读（参数：symbol=代码, ratios=[roe,roa,debt_ratio,...]）
+- mcp_industry_comparison: 同行业可比公司关键指标对比（参数：symbol=代码, metrics=[pe,pb,roe,revenue_growth]）
+- mcp_market_index: 查询大盘/行业指数（参数：index=sh000001/sz399001/sh000819等）
+- mcp_financial_calendar: 查询财报日历/分红/股东大会日期（参数：symbol=代码, year=年份）
 
 ## 可用财务公式（共 19 个）
 # 盈利能力

@@ -70,6 +70,13 @@ class ToolRegistry:
             "chart": "chart",
             "analyze": None,    # analyze 不调用工具，由 Reporter 处理
             "compare": None,    # compare 由 Reporter 处理
+            # ── MCP 工具（阶段三）──
+            "mcp_stock_price": "mcp_stock_price",
+            "mcp_financial_statements": "mcp_financial_statements",
+            "mcp_calculate_ratio": "mcp_calculate_ratio",
+            "mcp_industry_comparison": "mcp_industry_comparison",
+            "mcp_market_index": "mcp_market_index",
+            "mcp_financial_calendar": "mcp_financial_calendar",
         }
 
         tool_name = tool_map.get(task.task_type)
@@ -121,13 +128,30 @@ class ToolRegistry:
                     data=result,
                     error=result.get("error"),
                 )
-            else:
-                # data_query
+            elif task.task_type == "data_query":
                 return TaskResult(
                     task_id=task.task_id,
                     task_type=task.task_type,
                     success=result.get("found", False),
                     summary=result.get("summary", ""),
+                    data=result,
+                )
+            elif task.task_type.startswith("mcp_"):
+                # MCP 工具统一格式化：{success, data, summary, error}
+                return TaskResult(
+                    task_id=task.task_id,
+                    task_type=task.task_type,
+                    success=result.get("success", False),
+                    summary=result.get("summary", ""),
+                    data=result.get("data", result),
+                    error=result.get("error"),
+                )
+            else:
+                return TaskResult(
+                    task_id=task.task_id,
+                    task_type=task.task_type,
+                    success=True,
+                    summary=result.get("summary", str(result)) if isinstance(result, dict) else str(result),
                     data=result,
                 )
 
