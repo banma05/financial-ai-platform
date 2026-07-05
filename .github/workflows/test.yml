@@ -23,16 +23,16 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 运行单元测试（纯逻辑，无需GPU/LLM）
+      - name: 运行单元测试
         run: |
-          cd backend
-          python -m pytest tests/test_agent_planner.py \
-            tests/test_agent_financial_calc.py \
-            tests/test_param_injection.py \
-            tests/test_retry.py \
-            tests/test_logger.py \
-            tests/test_corpus_monitor.py \
-            tests/test_integration.py \
-            tests/test_auth.py \
-            tests/test_dataset.py \
+          python scripts/run_tests.py \
+            backend/tests/test_agent_planner.py \
+            backend/tests/test_agent_financial_calc.py \
+            backend/tests/test_param_injection.py \
+            backend/tests/test_retry.py \
+            backend/tests/test_logger.py \
+            backend/tests/test_corpus_monitor.py \
+            backend/tests/test_integration.py \
+            backend/tests/test_auth.py \
+            backend/tests/test_dataset.py \
             -q --tb=short
