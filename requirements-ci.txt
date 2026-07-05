@@ -1,0 +1,10 @@
+# CI 轻量依赖 — 仅核心测试所需（无 GPU/LLM/ChromaDB 依赖）
+pytest
+pytest-cov
+loguru
+pydantic
+tenacity
+httpx
+fastapi
+python-dotenv
+redis
