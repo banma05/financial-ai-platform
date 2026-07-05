@@ -552,3 +552,85 @@ elif menu == "📁 文档管理":
         st.warning("⚠️ 后端服务未启动，无法获取文档列表")
     except Exception as e:
         st.error(f"获取文档列表出错：{e}")
+
+    # ── 知识库统计面板 ──
+    st.markdown("---")
+    st.markdown("### 📊 知识库统计")
+    try:
+        resp = requests.get(f"{API_BASE.replace('/api/v1/rag', '')}/api/v1/admin/stats/corpus", timeout=10)
+        if resp.status_code == 200:
+            stats = resp.json()
+            if "error" not in stats:
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📚 文档数", stats.get("document_count", "?"))
+                with col2:
+                    st.metric("🧩 总Chunks", stats.get("total_chunks", "?"))
+                with col3:
+                    st.metric("💾 总大小", f"{stats.get('total_size_mb', '?')}MB")
+                with col4:
+                    st.metric("🕐 最近更新", stats.get("last_modified", "?")[:10] if stats.get("last_modified") else "?")
+
+                # 文件类型分布
+                if stats.get("by_type"):
+                    types = ", ".join(f"{k}({v})" for k, v in stats["by_type"].items())
+                    st.caption(f"文件类型: {types}")
+
+                # 质量检查
+                resp2 = requests.get(f"{API_BASE.replace('/api/v1/rag', '')}/api/v1/admin/corpus/validate", timeout=10)
+                if resp2.status_code == 200:
+                    quality = resp2.json()
+                    if quality.get("is_healthy"):
+                        st.success(f"✅ 质量检查通过 — {quality.get('summary', '')}")
+                    else:
+                        st.warning(f"⚠️ {quality.get('summary', '')}")
+                        for issue in quality.get("issues", []):
+                            st.error(f"❌ {issue['file']}: {issue['issue']}")
+    except Exception:
+        pass
+
+    # ── 系统健康 + 监控 ──
+    st.markdown("---")
+    st.markdown("### 🩺 系统健康 + 请求监控")
+
+    try:
+        # 健康检查
+        resp = requests.get(f"{API_BASE.replace('/api/v1/rag', '')}/api/v1/admin/health", timeout=5)
+        if resp.status_code == 200:
+            health = resp.json()
+            status_icon = "✅" if health.get("status") == "healthy" else "⚠️"
+            st.caption(f"{status_icon} 系统状态: **{health.get('status', '?')}** | "
+                       f"GPU: {'✅' if health.get('checks', {}).get('gpu', {}).get('available') else '❌'} | "
+                       f"ChromaDB: {'✅' if health.get('checks', {}).get('chromadb', {}).get('status') == 'connected' else '❌'} | "
+                       f"AKShare: {'✅' if health.get('checks', {}).get('akshare', {}).get('status') == 'available' else '❌'}")
+
+        # 请求统计
+        resp = requests.get(f"{API_BASE.replace('/api/v1/rag', '')}/api/v1/admin/stats/monitor", timeout=5)
+        if resp.status_code == 200:
+            mon = resp.json()
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📨 请求总数", mon.get("total_requests", 0))
+            with col2:
+                st.metric("✅ 成功率", f"{mon.get('success_rate', 100)}%")
+            with col3:
+                st.metric("⏱ P95延迟", f"{mon.get('latency_p95_ms', 0)}ms")
+            with col4:
+                uptime = mon.get("uptime_readable", "?")
+                st.metric("🕐 运行时间", uptime)
+
+            # 告警
+            alerts = mon.get("alerts", [])
+            if alerts:
+                st.warning(f"🚨 {len(alerts)} 个告警")
+                for a in alerts:
+                    st.error(f"[{a['level'].upper()}] {a['message']}")
+
+            # 端点统计
+            if mon.get("endpoints"):
+                with st.expander("📋 端点统计详情"):
+                    for ep, s in mon["endpoints"].items():
+                        st.caption(f"**{ep}**: {s['count']}次 | "
+                                   f"平均{s['avg_latency_ms']}ms | 错误率{s['error_rate']}%")
+    except Exception:
+        pass

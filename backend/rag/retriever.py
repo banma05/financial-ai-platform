@@ -19,8 +19,10 @@ from .model_router import chat as routed_chat
 def build_prompt(query: str, sources: List[dict], history: Optional[List[dict]] = None) -> str:
     context_parts = []
     for i, s in enumerate(sources, start=1):
+        # 结构化引用格式：[^1] 来源 | 文件名 | 页码 | 相似度
+        score_pct = f"{s.get('score', 0) * 100:.0f}%" if s.get('score') else "N/A"
         context_parts.append(
-            f"[参考文档 {i}]（来源：{s['source']}，第 {s['page']} 页）\n{s['content']}"
+            f"[^{i}] **{s['source']}** (第{s['page']}页, 相似度{score_pct})\n{s['content']}"
         )
     context = "\n\n".join(context_parts)
 
@@ -42,7 +44,8 @@ def build_prompt(query: str, sources: List[dict], history: Optional[List[dict]] 
 2. 如果参考文档中没有相关信息，请明确说"文档中未找到相关信息"
 3. 结合历史对话上下文理解用户问题（如"它"指代的对象、追问的隐含前提）
 4. 回答要专业、准确，适合金融专业人士阅读
-5. 在回答末尾列出你引用的文档来源和页码
+5. 文中引用数据时使用 [^N] 脚注标记（N 为参考文档编号）
+6. 回答末尾用 `---` 分隔后列出引用清单，格式为 `[^N]: 文件名, 第X页`
 
 {history_text}## 参考文档
 {context}
