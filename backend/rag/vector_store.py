@@ -162,4 +162,23 @@ def reset_database():
 
     # 3. 重建（触发懒加载，创建全新 collection）
     _get_chroma()
+
+
+def delete_document(source_name: str) -> int:
+    """
+    按文档名删除向量库中的 chunks。
+
+    返回: 删除的 chunk 数量
+    """
+    store = _get_chroma()
+    try:
+        results = store.get(where={"source": source_name})
+        ids = results.get("ids", [])
+        if ids:
+            store.delete(ids=ids)
+            logger.info(f"已删除文档「{source_name}」: {len(ids)} chunks")
+        return len(ids)
+    except Exception as e:
+        logger.warning(f"删除文档「{source_name}」失败: {e}")
+        return 0
     logger.warning("向量数据库已完全重置（物理删除 + 重建）")

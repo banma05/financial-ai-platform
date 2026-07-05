@@ -323,13 +323,14 @@ class Planner:
 8. 任务数量控制在 3-7 个，不要过度拆分
 """
 
-        # 🔧 复杂查询自动切 pro 模型保质量
+        # 🔧 复杂查询用 pro 保质量，简单查询用 flash 提速
+        # 硬题 flash 频繁 JSON 空返回（浪费 20s+ 再切 pro），不值得
         task_type = TaskType.COMPLEX if self._is_complex(user_input) else TaskType.SIMPLE
         messages = [{"role": "user", "content": prompt}]
 
         plan_dict = self._try_llm_parse(messages, user_input, task_type)
-        if plan_dict is None:
-            # 🔧 flash 失败 → pro 重试（与 data_query 的 flash→pro 策略一致）
+        if plan_dict is None and task_type == TaskType.SIMPLE:
+            # 仅 flash 解析失败时切 pro（JSON 格式错误，不是空返回）
             logger.warning("Flash 拆解失败，重试 pro 模型...")
             plan_dict = self._try_llm_parse(messages, user_input, TaskType.COMPLEX)
 
