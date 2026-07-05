@@ -115,11 +115,11 @@ financial-ai-platform/
 |--------|---------|---------|:------:|------|
 | **retrieval** 检索 | Query理解/改写/混合检索/重排 | query_processor + hybrid_search + LambdaMART | 🟢 85% | 缺意图分类、HyDE、多轮改写 |
 | **indexing** 索引 | 文档加载/分块/向量化/索引构建 | loader + semantic_splitter + embedder + ChromaDB | 🟢 85% | **缺 metadata 独立管理层** |
-| **knowledge-base** 知识库 | 数据源/语料管理/更新同步/质量/版本 | 手动文件管理 + rebuild_index | 🔴 25% | **全部缺失：语料管理UI、增量更新、质量检查、版本回滚** |
-| **generation** 生成 | Prompt模板/上下文组装/LLM生成/引用/幻觉控制 | retriever + model_router + reporter | 🟡 65% | **缺幻觉检测**、引用格式不够结构化 |
+| **knowledge-base** 知识库 | 数据源/语料管理/更新同步/质量/版本 | corpus_manager + 前端面板 | 🟡 60% | ✅增量 ✅质量检查 ✅语料UI ✅版本快照；缺自动回滚 |
+| **generation** 生成 | Prompt模板/上下文组装/LLM生成/引用/幻觉控制 | retriever(结构化引用) + reporter | 🟡 70% | ✅[^N]脚注式引用；缺幻觉检测 |
 | **evaluation** 评估 | 检索评估/生成评估/端到端/指标/基准 | evaluator(50题+R@k/MRR/NDCG+LLM) | 🟢 85% | 缺生成质量专项评估( faithfulness / relevancy 完整版) |
-| **observability** 可观测 | 日志/追踪/监控/告警/仪表盘 | utils/logger (trace_id+JSON) | 🟡 35% | **全部缺失：监控Dashboard、告警、延迟统计** |
-| **integration** 集成部署 | API/Agent/工作流/工具化/部署 | FastAPI+Streamlit+LangGraph | 🟡 60% | 缺 Docker/CI/CD（阶段四）、缺 MCP（阶段三） |
+| **observability** 可观测 | 日志/追踪/监控/告警/仪表盘 | logger(trace_id) + monitor(追踪+告警) + 前端面板 | 🟢 80% | ✅Dashboard ✅告警 ✅P50/P95/P99延迟；缺外部门槛告警 |
+| **integration** 集成部署 | API/Agent/工作流/工具化/部署 | FastAPI+Streamlit+LangGraph | 🟡 65% | 缺 Docker/CI/CD（阶段四）；MCP 已完成 |
 
 > **结论**：我们的 RAG 在 **检索** 和 **索引** 两个核心域已达到生产级，但 **知识库管理** 和 **可观测性** 是最大短板。这两个域不需要复杂算法，主要是工程规范化——适合在阶段四统一补齐。
 
