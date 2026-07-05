@@ -70,8 +70,8 @@ def rag_query(
     start_time = time.time()
     original_query = query
 
-    # 第二步：Query 处理（短句扩写 + 余弦校验 <0.8 废弃）
-    processed_query = process_query(query)
+    # 第二步：Query 处理（术语展开 → 多轮改写 → 扩写 → 校验）
+    processed_query = process_query(query, history=history)
     if processed_query != original_query:
         logger.info(f"Query processed: '{original_query[:30]}...' -> '{processed_query[:30]}...'")
 
