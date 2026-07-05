@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
 from loguru import logger
 from rag.hybrid_search import hybrid_search
@@ -16,7 +16,7 @@ from rag.evaluator import recall_at_k, mrr, ndcg_at_k, semantic_recall_at_k
 from rag.query_processor import process_query
 import json
 
-TEST_SET = Path(__file__).parent.parent / "evaluation" / "data" / "rag_questions.json"
+TEST_SET = Path(__file__).parent.parent / "data" / "rag_questions.json"
 TOP_K = 5
 
 with open(TEST_SET, "r", encoding="utf-8") as f:
