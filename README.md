@@ -19,9 +19,9 @@
 
 | 模块 | 功能 | 核心指标 | 状态 |
 |------|------|------|:--:|
-| **一 RAG** | 财报/公告/研报 智能问答+溯源 | SEM-R@5=95.2%, GPU 3.8x | ✅ |
-| **二 Agent** | NL需求 → 多步推理 → 分析报告 | LangGraph DAG, 5模板, 19公式, 152测试 | ✅ |
-| **三 MCP** | 外部金融数据源（6工具） | AKShare 真实行情+财报, 22测试 | ✅ |
+| **一 RAG** | 财报/公告/研报 智能问答+溯源 | SEM-R@5=95.2%, GPU可选加速 | ✅ |
+| **二 Agent** | NL需求 → 多步推理 → 分析报告 | LangGraph DAG, 5模板, 19公式, 惰性加载 | ✅ |
+| **三 MCP** | 外部金融数据源（6工具） | AKShare 真实行情+财报, Mock兜底 | ✅ |
 
 ---
 
@@ -71,8 +71,8 @@
 ### 环境要求
 
 - Python 3.12+
-- NVIDIA GPU（可选，CPU 也可运行但慢 ~4x）
 - DeepSeek API Key（[申请地址](https://platform.deepseek.com)）
+- NVIDIA GPU（可选——有则 6.7x 加速，无则 CPU 正常运行）
 
 ### 1. 安装依赖
 
@@ -117,6 +117,7 @@ financial-ai-platform/
 │   │   └── model_router.py       LLM统一调用（flash/pro分层）
 │   │
 │   ├── agent/                  # 模块二：Agent 分析
+│   │   ├── api.py                 公共 API 显式导出（惰性加载）
 │   │   ├── graph.py              LangGraph StateGraph 编排
 │   │   ├── planner.py            任务拆解 + 5模板
 │   │   ├── executor.py           ToolRegistry + 依赖注入
@@ -138,11 +139,12 @@ financial-ai-platform/
 │   │
 │   ├── api/                    # FastAPI 路由
 │   ├── middleware/              # 鉴权限流
-│   ├── tests/                  # 152 单元测试
+│   ├── tests/                  # 370 单元测试（CI 299）
 │   ├── config.py
 │   └── main.py
 │
 ├── evaluation/                 # 评测脚本+数据集+报告
+│   ├── full_eval.py            三模块一键全量评测
 │   ├── rag/quick_eval.py        50题双轨评测
 │   ├── agent/bench_agent.py     Agent拆解评测
 │   └── data/                    评测数据集
@@ -173,19 +175,22 @@ financial-ai-platform/
 | Agent 指标 | 状态 |
 |-----------|:--:|
 | 财务公式计算准确率 | ✅ 19公式/40测试 |
-| Agent单元测试 | ✅ 152全过 |
-| 子任务拆解准确率 | 76.9%（目标≥85%） |
+| 全量单元测试 | ✅ 370全过（CI: 299/11文件） |
+| 子任务拆解准确率 | 77.4%（easy 87%/med 86%/hard 43%, 目标≥85%） |
+| 指标覆盖率 | ✅ 86.6%（目标≥80%） |
+| 端到端耗时 | 54.9s（目标≤30s，阶段六优化） |
 
 ---
 
 ## 🔑 核心亮点
 
-1. **混合检索 + GPU全链路**：BM25+语义双路 → RRF → LambdaMART(CrossEncoder GPU) + BGE Embedding GPU，单题2.6s
-2. **LangGraph DAG 并行**：StateGraph 顶层编排 + ThreadPoolExecutor 层内并行，8任务3层并行执行
-3. **三层依赖注入**：精确映射(60对) → 编辑距离模糊匹配 → LLM语义匹配，命中率可统计
-4. **AKShare 真实数据**：6个MCP工具，新浪/巨潮实时行情+财务报表，Mock兜底
-5. **全链路可追溯**：trace_id 贯穿 Planner→Executor→Reporter，JSON按天轮转日志
-6. **引用溯源**：每个回答追溯源文件+页码，满足合规审计
+1. **混合检索 + GPU 可选加速**：BM25+语义双路 → RRF → LambdaMART，GPU 6.7x 加速，CPU 正常运行
+2. **LangGraph DAG 并行**：StateGraph 顶层编排 + ThreadPoolExecutor 层内并行
+3. **模块惰性加载**：agent/rag 双模块按需导入，import 不再触发全家桶依赖，CI 兼容
+4. **三层依赖注入**：精确映射(60对) → 编辑距离模糊匹配 → LLM语义匹配
+5. **AKShare 真实数据**：6个MCP工具，新浪/巨潮实时行情+财务报表，Mock兜底
+6. **全链路可追溯**：trace_id 贯穿 Planner→Executor→Reporter，JSON按天轮转日志
+7. **引用溯源**：每个回答追溯源文件+页码，满足合规审计
 
 ---
 
@@ -197,7 +202,8 @@ financial-ai-platform/
 | 二 | 依赖注入 + 重试 + 结构化日志 | ✅ |
 | 三 | MCP 6工具 + AKShare真实数据 | ✅ |
 | 四 | Docker + Redis + CI/CD + 集成测试 | ✅ |
-| 五 | 三模块联动 + 统一评测 | ⏳ |
+| 五 | 模块惰性加载 + 统一评测 + P1清零 + CI 299 | ✅ |
+| 六 | 上下文管理 + 成本追踪 + 人机协同 | ⏳ |
 
 ---
 
