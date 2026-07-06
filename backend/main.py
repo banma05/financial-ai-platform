@@ -1,6 +1,7 @@
 """
 智能财务分析平台 - FastAPI 入口
 """
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
@@ -18,10 +19,13 @@ app = FastAPI(
     version="0.4.0",
 )
 
-# CORS 配置（允许前端跨域访问）
+# CORS 配置（前端跨域访问）
+# 生产环境应通过 CORS_ORIGINS 环境变量指定具体域名（如 "http://localhost:8501,https://app.example.com"）
+# 开发环境默认允许本地 Streamlit（8501）和 localhost
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _cors_origins if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
