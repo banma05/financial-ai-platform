@@ -1,9 +1,9 @@
 
 # 项目进度存档
 
-> 📅 最后更新：2026-07-05
+> 📅 最后更新：2026-07-06
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段五进行中（5.1 ✅）→ 阶段六待启动**
+> 📌 当前阶段：**阶段五 ✅ + P1 清零 → 阶段六待启动**
 > 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
 
 ---
@@ -331,21 +331,47 @@ streamlit run frontend\app.py
 
 ## 历史记录
 
-### 2026-07-06 — 阶段五 5.1 完成：Agent 公共 API 重构 ✅
+### 2026-07-06 — 阶段五完成 + P1 清零 + rag 惰性加载 ✅
 
-#### agent/api.py 显式导出（新建）
-- `agent/api.py`：所有公共接口集中定义，不再散落在 `__init__.py` 的 `__getattr__` 魔法中
-- `BUILTIN_TEMPLATES` 改为显式导入（planner → openai 包，非重依赖）
-- `run_agent_stream/sync` 保留惰性包装函数（避免触发 langgraph + matplotlib）
-- `agent/__init__.py`：42行 → 9行，`from .api import *` 一行重导出
-- `agent/tools/__init__.py`：文档重写，保留必要的 `__getattr__`（DataQueryTool/ChartTool 确需惰性加载）
+#### 5.1 agent/api.py 重构
+- `agent/api.py`（新建）：公共接口集中定义，`BUILTIN_TEMPLATES` 惰性加载（CI 兼容）
+- `agent/__init__.py`：42行 → 22行，`__getattr__` 仅用于 BUILTIN_TEMPLATES
+- `agent/tools/__init__.py`：文档重写
 
-#### 六维 Agent 审计
-- 对照业界 6 项含金量标准审计项目 Agent，得分 **7.5/10**
-- 强项：企业级工程（9分）、业务场景（8分）、任务规划（8分）
-- 短板：人机协同（4分）、上下文管理（6分）
-- 审计结果 → 待办清单新增阶段六（P0-P3 改进项）
-- 370 测试全过 ✅
+#### 5.2 统一评测
+- `evaluation/full_eval.py`（新建）：一键跑 RAG + Agent + MCP + 写 JSON 报告
+
+#### 六维 Agent 审计 → 待办清单阶段六
+- 对照 6 项含金量标准审计，得分 **7.5/10**
+- 产出 P0-P3 改进项：上下文管理(P0)、成本追踪(P1)、人机协同(P2) 等
+
+#### P1 修复（6 项全部清零）
+| 问题 | 修复 | 文件 |
+|------|------|------|
+| SSE task_start 缺失 | graph.py 发出事件 | `graph.py` |
+| 20 处 except:pass | → logger.warning/debug | 9 文件 |
+| 流式 API 异常断连 | event_generator 加 try/except | `api/agent.py` |
+| vector_store 死代码 | 删除 return 后不可达行 | `vector_store.py` |
+| 评测分歧分析空壳 | per_question 存储 + 分类输出 | `quick_eval.py` |
+| CI 测试覆盖不足 | 7→11 文件, 171→299 tests | `test.yml` |
+
+#### GPU 可选化
+- `hybrid_search.py`: `CrossEncoder(device="cuda")` 写死 → `torch.cuda.is_available()` 自动检测
+- `rag/__init__.py`: `import sentence_transformers` → `try/except ImportError`
+- `embedder.py`: 已有自动检测，注释更新
+- 效果：有 GPU 加速，无 GPU 正常运行，不崩溃
+
+#### rag/__init__.py 惰性加载
+- 28 个导出：9 行 from import → `__getattr__` + 模块映射表
+- `import rag` 不再触发 pymupdf/chromadb/sentence_transformers
+- 370 测试全过，零功能回归
+
+#### CI 演进
+```
+改前:  5 文件, 132 tests, 36% 覆盖
+改后: 11 文件, 299 tests, 81% 覆盖 (+2.3x)
+```
+- 仍排除 4 个（运行时需要 chromadb/pymupdf/sentence_transformers）
 
 ### 2026-07-05 — 阶段四完成：Docker + Redis + CI/CD + 集成测试 ✅
 
