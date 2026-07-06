@@ -16,13 +16,15 @@
 | **阶段二** | 智能依赖注入 + 重试机制 + 结构化日志 | ✅ 完成 (7/5) | Agent工程化升级 |
 | **阶段三** | MCP模块从零开发（6+工具）+ AKShare | ✅ 完成 (7/5) | 外部数据源接入 |
 | **阶段四** | Docker + Redis + CI/CD + 集成测试 | ✅ 完成 (7/5) | 生产级工程补齐 |
-| **阶段五** | 三模块联动整合 + 统一评测 | ⏳ 进行中 (7/6) | 端到端数据流打通 |
-| **阶段六** | 六维审计优化（上下文/成本/人机协同） | ⏳ 待启动 | Agent 含金量提升 |
+| **阶段五** | 惰性加载 + 统一评测 + P1/P2清零 + GPU可选 | ✅ 完成 (7/6) | 代码工程化 + 质量防线 |
+| **阶段六** | 性能优化 + 上下文管理 + 人机协同 | ⏳ 待启动 | 指标达标 + 含金量提升 |
 
-### 核心架构决策（2026-07-04）
+### 核心架构决策（持续更新）
 - ✅ **采用 LangGraph StateGraph**：业界标准 Agent 编排框架，StateGraph 做顶层编排 + ThreadPoolExecutor 做层内并行
 - ✅ **LLM 统一调用**：全部走 `chat()`，删除 `get_langchain_llm()`
-- ✅ **MCP 先内置后独立**：阶段三复用 ToolRegistry，阶段四 Docker 化拆独立进程
+- ✅ **模块惰性加载**：agent + rag 双模块 `__getattr__` 按需导入，CI 兼容
+- ✅ **GPU 可选化**：`device="cuda"` 写死 → `torch.cuda.is_available()` 自动检测，CPU 正常降级
+- ✅ **MCP 先内置后独立**：阶段三复用 ToolRegistry，server.py 预留独立进程骨架
 - ✅ **高并发路线**：短期 Lock+TTL+重试 → 中期 Redis+MySQL → 长期 Milvus+K8s
 
 ---
@@ -129,14 +131,16 @@ financial-ai-platform/
 
 | 模块 | 定位 | 状态 | 完善度 | 核心基线 |
 |------|------|:----:|:------:|----------|
-| **rag/** | 知识库 RAG（检索+索引+评估） | ✅ | 🟢 85% | SEM-R@5=95.2%, MRR=89.5%, GPU加速6.7x |
-| **agent/** | 数据分析 Agent（编排+工具+报告） | ✅ | 🟢 85% | LangGraph+5模板+19公式+注入+重试+trace_id+评测基线77.4% |
-| **utils/** | 公共工具层（重试+日志） | ✅ | 🟢 90% | tenacity重试+CircuitBreaker+trace_id+JSON轮转 |
-| **api/** | FastAPI 路由 | ✅ | 🟢 85% | 7端点+SSE流式+鉴权限流 |
-| **middleware/** | 鉴权限流 | ✅ | 🟢 85% | X-API-Key+滑动窗口(30/min通用,10/min Chat) |
-| **tests/** | 单元测试 | ✅ | 🟢 85% | 130用例，agent 96 + rag 196 = 覆盖核心路径 |
-| **MCP** | 外部数据源接入 | ⏳ | — | 阶段三开发（6+工具） |
-| **工程化** | Docker/Redis/CI/CD | ⏳ | — | 阶段四统一补齐 |
+| **rag/** | 知识库 RAG（检索+索引+评估） | ✅ | 🟢 90% | SEM-R@5=95.2%, GPU可选, 惰性加载, 50题双轨评测 |
+| **agent/** | 数据分析 Agent（编排+工具+报告） | ✅ | 🟢 80% | LangGraph+5模板+19公式+评测基线77.2% |
+| **mcp/** | 外部数据源接入（6工具） | ✅ | 🟢 80% | AKShare+Mock, Agent透明桥接, server骨架 |
+| **utils/** | 公共工具层（重试+日志+监控） | ✅ | 🟢 90% | tenacity+CircuitBreaker+trace_id+RequestTracker |
+| **api/** | FastAPI 路由 | ✅ | 🟢 90% | 7端点+SSE流式+异常包装+鉴权限流 |
+| **middleware/** | 鉴权限流 | ✅ | 🟢 90% | X-API-Key+滑动窗口(通用30/min,Chat10/min) |
+| **tests/** | 单元测试 | ✅ | 🟢 85% | 370用例全过, CI 299(81%覆盖) |
+| **工程化** | Docker/Redis/CI/CD | ✅ | 🟢 85% | docker-compose+Redis双模+GitHub Actions |
+| **惰性加载** | agent+rag 模块入口 | ✅ | 🟢 95% | 按需导入, CI兼容, 零功能回归 |
+| **GPU 可选** | 加速不强制 | ✅ | 🟢 95% | CUDA自动检测, CPU正常降级 |
 
 ---
 
@@ -160,7 +164,9 @@ financial-ai-platform/
 | 参数实验 | 🟢 90% | chunk/overlap/阈值调优，索引精简71% |
 | FastAPI 后端 | 🟢 90% | 5接口+流式SSE+鉴权限流，缺Docker化 |
 | Streamlit 前端 | 🟢 80% | 流式输出+对话历史+三模块导航，缺图表展示 |
-| **GPU 加速** | 🟢 90% | CrossEncoder(RTX4060) GPU推理，检索提速6.7x |
+| **GPU 加速** | 🟢 95% | CrossEncoder GPU 自动检测，CUDA→6.7x，CPU→正常降级 |
+| **惰性加载** | 🟢 95% | rag/__init__.py 按需导入，import 不触发全家桶 |
+| **CI 测试** | 🟢 85% | 11文件 299测试，81%覆盖，GitHub Actions 自动运行 |
 
 ### 评测基线
 
@@ -216,24 +222,29 @@ financial-ai-platform/
 | 错误恢复 | chat() @retry 退避 + 429自动延长 + CircuitBreaker | ✅ |
 | 全链路追踪 | trace_id 贯穿 planner→executor→reporter + 计时 | ✅ |
 
-### 验收指标
+### 验收指标（2026-07-06 正式评测）
 
-| 指标 | 目标 | 当前 
-|------|:----:|:----:|
-| 子任务拆解准确率 | ≥85% | 待评测（76.9%，阶段三后重测） |
-| 指标计算准确率 | ≥98% | ✅ 105测试通过（公式40+注入41+Planner15+重试19+日志15=130） |
-| 端到端分析耗时 | ≤30s | 待基准测试 |
-| 单元测试覆盖 | — | 130 全部通过 |
+| 指标 | 目标 | 当前值 | 达标? |
+|------|:----:|:--:|:--:|
+| 子任务拆解准确率 | ≥85% | **77.2%** (easy 82%/med 90%/hard 40%) | ❌ |
+| 指标覆盖率 | ≥80% | **78.6%** | ❌ |
+| 报告结构完整性 | ≥80% | **67.0%** | ❌ |
+| 端到端平均耗时 | ≤30s | **54.5s** (easy 40s/med 61s/hard 77s) | ❌ |
+| 单元测试 | — | **370** 全部通过 (CI 299) | ✅ |
+| Flash JSON 提取成功率 | — | ~60% (40%触发Pro重试) | ❌ |
 
-### 待办
+### 待办（阶段六）
 
-- [ ] 子任务拆解准确率评测（76.9% → ≥85%）
-- [ ] 端到端耗时基准测试（目标 ≤30s）
-- [ ] DataQuery 完善度提升（60%→80%，改善结构化提取准确率）
+- [ ] **性能**: Flash JSON 提取 Prompt 优化 → 40%失败率降至<10%
+- [ ] **性能**: Calculator 支持多公式批量计算 → 覆盖率 78.6%→87%+
+- [ ] **性能**: 评测切换到 DAG 并行执行 → 耗时 54.5s→~22s
+- [ ] **准确率**: Hard 题模板优先拆解策略 → 拆解 39.6%→65%+
+- [ ] **上下文**: 用户记忆 + 多轮对话持久化
+- [ ] **人机协同**: 中断/跳过 + 置信度标注
 
 ---
 
-## 模块三：MCP 工具集成 🚧（7/5 已完成核心开发）
+## 模块三：MCP 工具集成 ✅（7/5 完成，7/6 server 骨架）
 
 > 财务公式库已在模块二的 `financial_calc.py` 中实现（19公式/7大类）。
 > MCP 聚焦**外部数据源接入**，不重复造公式轮子。
@@ -272,17 +283,20 @@ financial-ai-platform/
 
 ## 技术栈
 
-| 层级 | 选型 |
-|------|------|
-| 大模型 | DeepSeek v4（flash 简单 / pro 复杂） |
-| Embedding | BAAI/bge-base-zh-v1.5（本地免费） |
-| Reranker | BAAI/bge-reranker-v2-m3（本地免费） |
-| 向量库 | ChromaDB（HNSW） |
-| 分词 | jieba + 138 财务术语词典 |
-| 后端 | Python 3.12 + FastAPI |
-| 前端 | Streamlit |
-| Agent 框架 | LangGraph StateGraph（顶层编排 + 层内 ThreadPoolExecutor 并行） |
-| 业务数据库 | MySQL（V2 计划） |
+| 层级 | 选型 | 备注 |
+|------|------|------|
+| 大模型 | DeepSeek v4（flash 简单 / pro 复杂） | 成本优化：简单任务走 flash |
+| Embedding | BAAI/bge-base-zh-v1.5 | 本地免费，数据不出本地 |
+| Reranker | BAAI/bge-reranker-v2-m3 | GPU/CPU 自适应 |
+| 向量库 | ChromaDB（HNSW） | 轻量免运维 |
+| 分词 | jieba + 138 财务术语词典 | 精确模式 |
+| 后端 | Python 3.12 + FastAPI | 异步 + SSE 流式 |
+| 前端 | Streamlit | 三模块单页应用 |
+| Agent 框架 | LangGraph StateGraph | 顶层编排 + ThreadPoolExecutor 层内并行 |
+| 容器化 | Docker + docker-compose | backend+frontend+redis 三服务 |
+| CI/CD | GitHub Actions | push/PR 触发，11文件 299测试 |
+| 缓存 | Redis + 内存回退 | 限流 + 会话双模式 |
+| 业务数据库 | SQLite → MySQL | 预留切换接口 |
 
 ---
 
@@ -305,14 +319,14 @@ financial-ai-platform/
 | 版本 | 交付 | 状态 |
 |------|------|:----:|
 | V1.0 | 模块一：RAG 知识库 + 评测体系 | ✅ |
-| V1.5 | 前端流式 + BRD + 架构图 + PROGRESS 三模块化 + 多轮对话 + 33题测试集 | ✅ |
-| V2.0 | 鉴权 + 多轮对话 + PDF表格结构化 + 测试防线 + 性能优化 | ✅ |
-| V2.5 | 模块二 MVP：Agent 框架 + NL查询 + 基础报告 | ✅ 已完成 |
-| V3.0 | 模块二完整：LangGraph DAG并行 + 模板库 + 追问澄清 | ✅ 阶段四完成，阶段五待启动 |
-| V3.5 | 模块三：MCP Server + AKShare真实数据 | ✅ 阶段三完成 |
-| V4.0 | 全平台联调 + Docker + CI/CD + 集成测试 | ✅ 阶段四完成 |
-| V3.5 | 模块三：MCP Server + Wind/同花顺 + 财务公式库 | ⏳ |
-| V4.0 | 全平台联调 + 端到端智能分析 + 多租户 | ⏳ |
+| V1.5 | 前端流式 + 鉴权 + PDF 表格 + 测试防线 | ✅ |
+| V2.0 | 模块二 MVP：Agent 框架 + NL查询 + 报告 | ✅ |
+| V2.5 | 模块二完整：LangGraph DAG + 模板库 + 公式 | ✅ |
+| V3.0 | 模块三：MCP 6工具 + AKShare + GPU 全链路 | ✅ |
+| V3.5 | 阶段二：依赖注入 + 重试 + 结构化日志 | ✅ |
+| V4.0 | 阶段四：Docker + Redis + CI/CD + 集成测试 | ✅ |
+| V5.0 | 阶段五：惰性加载 + GPU可选 + P1/P2清零 + CI 299 | ✅ (7/6) |
+| V6.0 | 阶段六：性能优化 + 上下文 + 成本 + 人机协同 | ⏳ |
 
 ---
 
