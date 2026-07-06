@@ -372,7 +372,18 @@ def run_agent_stream(
             # 任务执行进度
             results = combined_state.get("task_results", [])
             if len(results) > prev_result_count:
-                for r in results[prev_result_count:]:
+                for i, r in enumerate(results[prev_result_count:]):
+                    task_idx = prev_result_count + i + 1
+                    # 先发 task_start（前端进度条依赖此事件）
+                    task_info = next((t for t in tasks if t["task_id"] == r["task_id"]), None)
+                    yield AgentEvent(
+                        "task_start",
+                        task_id=r["task_id"],
+                        description=task_info.get("description", "") if task_info else "",
+                        task_idx=task_idx,
+                        total=task_count,
+                        message=f"开始执行任务 [{task_idx}/{task_count}]",
+                    ).to_sse()
                     if r.get("chart_base64"):
                         yield AgentEvent(
                             "chart",

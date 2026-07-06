@@ -6,6 +6,7 @@ import streamlit as st
 import requests
 import json
 import time
+from loguru import logger
 
 # ============ 页面配置 ============
 st.set_page_config(
@@ -57,9 +58,10 @@ def refresh_backend_status():
                 docs_resp = requests.get(f"{API_BASE}/documents", timeout=5)
                 if docs_resp.status_code == 200:
                     st.session_state.doc_count = docs_resp.json().get("total", 0)
-            except Exception:
-                pass
-    except Exception:
+            except Exception as e:
+                logger.debug(f"获取文档列表失败: {e}")
+    except Exception as e:
+        logger.debug(f"后端状态检查失败: {e}")
         st.session_state.backend_ok = False
     st.session_state.last_api_check = now
 
@@ -186,8 +188,8 @@ if menu == "💬 知识库问答":
                     params={"session_id": st.session_state.session_id},
                     timeout=3,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"清空会话失败: {e}")
             # 生成新的会话ID（避免旧历史残留）
             import uuid
             st.session_state.session_id = str(uuid.uuid4())[:8]
@@ -586,8 +588,8 @@ elif menu == "📁 文档管理":
                         st.warning(f"⚠️ {quality.get('summary', '')}")
                         for issue in quality.get("issues", []):
                             st.error(f"❌ {issue['file']}: {issue['issue']}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"知识库统计获取失败: {e}")
 
     # ── 系统健康 + 监控 ──
     st.markdown("---")
@@ -632,5 +634,5 @@ elif menu == "📁 文档管理":
                     for ep, s in mon["endpoints"].items():
                         st.caption(f"**{ep}**: {s['count']}次 | "
                                    f"平均{s['avg_latency_ms']}ms | 错误率{s['error_rate']}%")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"系统监控数据获取失败: {e}")

@@ -150,7 +150,8 @@ def get_health_status() -> Dict:
     try:
         from config import DEEPSEEK_API_KEY
         checks["llm"] = {"status": "configured" if DEEPSEEK_API_KEY else "missing_key"}
-    except Exception:
+    except Exception as e:
+        logger.warning(f"LLM 健康检查失败: {e}")
         checks["llm"] = {"status": "unknown"}
 
     # AKShare 检查

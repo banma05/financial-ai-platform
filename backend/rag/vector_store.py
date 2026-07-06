@@ -155,8 +155,8 @@ def reset_database():
                         shutil.rmtree(item)
                     else:
                         item.unlink()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"删除持久化目录失败: {e}")
 
     gc.collect()
 
@@ -181,4 +181,3 @@ def delete_document(source_name: str) -> int:
     except Exception as e:
         logger.warning(f"删除文档「{source_name}」失败: {e}")
         return 0
-    logger.warning("向量数据库已完全重置（物理删除 + 重建）")
