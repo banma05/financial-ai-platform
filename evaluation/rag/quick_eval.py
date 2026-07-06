@@ -38,6 +38,8 @@ by_difficulty = {}
 
 start_all = time.time()
 
+per_question = []  # 每题评测结果缓存，供分歧分析使用
+
 for i, q in enumerate(questions, 1):
     qid = q["id"]
     cat = q.get("category", "unknown")
@@ -104,6 +106,12 @@ for i, q in enumerate(questions, 1):
     if sem_r5 == 0.0:
         failed_sem.append(qid)
 
+    # 保存每题结果供分歧分析
+    per_question.append({
+        "qid": qid, "query": query[:60], "cat": cat, "diff": diff,
+        "kw_r5": r5, "sem_r5": sem_r5, "mrr": mr, "status": status,
+    })
+
 elapsed = time.time() - start_all
 n = len(questions)
 
@@ -129,15 +137,33 @@ print()
 
 # 差异分析：找出关键词和语义分歧的题
 print(f"### 关键词-语义分歧分析（标注质量信号）")
-diverged = []
-for i, q in enumerate(questions):
-    # 我们在循环里没有存储 per-question 的 sem_r5，需要重新标记
-    pass  # 简化为在循环中标记
+diverged_kw = [q for q in per_question if q["status"] == "[KW?]"]
+diverged_sem = [q for q in per_question if q["status"] == "[SEM?]"]
 
 print(f"| 含义 |")
 print(f"|------|")
 print(f"| [KW?] 关键词低+语义高 → expected_keywords 标注不全，检索实际 OK |")
 print(f"| [SEM?] 关键词高+语义低 → 关键词太宽泛或无区分度 |")
+print()
+
+if diverged_kw:
+    print(f"**关键词标注不全 ({len(diverged_kw)} 题)：**")
+    print(f"| 题号 | 类别 | KW-R@5 | SEM-R@5 | 问题 |")
+    print(f"|------|------|:--:|:--:|------|")
+    for q in diverged_kw:
+        print(f"| {q['qid']} | {q['cat']} | {q['kw_r5']:.0%} | {q['sem_r5']:.0%} | {q['query']} |")
+    print()
+
+if diverged_sem:
+    print(f"**关键词过于宽泛 ({len(diverged_sem)} 题)：**")
+    print(f"| 题号 | 类别 | KW-R@5 | SEM-R@5 | 问题 |")
+    print(f"|------|------|:--:|:--:|------|")
+    for q in diverged_sem:
+        print(f"| {q['qid']} | {q['cat']} | {q['kw_r5']:.0%} | {q['sem_r5']:.0%} | {q['query']} |")
+    print()
+
+if not diverged_kw and not diverged_sem:
+    print("无显著分歧题。✅")
 print()
 
 print(f"### 按难度")
