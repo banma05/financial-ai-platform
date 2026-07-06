@@ -30,20 +30,24 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 
 # ============ 会话管理（内存缓存，用于多轮对话） ============
 # 生产环境应迁移到 Redis 或 chat_history 表
+import threading
 from collections import defaultdict
 _session_store: dict = defaultdict(list)  # {session_id: [{role, content}, ...]}
+_session_lock = threading.Lock()
 MAX_HISTORY_TURNS = 10  # 每个会话最多保留 10 轮对话
 
 
 def _get_history(session_id: str) -> list:
-    return _session_store.get(session_id, [])
+    with _session_lock:
+        return list(_session_store.get(session_id, []))
 
 
 def _save_turn(session_id: str, role: str, content: str):
-    _session_store[session_id].append({"role": role, "content": content})
-    # 超过上限时保留最近 N 轮
-    if len(_session_store[session_id]) > MAX_HISTORY_TURNS * 2:
-        _session_store[session_id] = _session_store[session_id][-(MAX_HISTORY_TURNS * 2):]
+    with _session_lock:
+        _session_store[session_id].append({"role": role, "content": content})
+        # 超过上限时保留最近 N 轮
+        if len(_session_store[session_id]) > MAX_HISTORY_TURNS * 2:
+            _session_store[session_id] = _session_store[session_id][-(MAX_HISTORY_TURNS * 2):]
 
 
 def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, processing_time: float):
@@ -84,13 +88,25 @@ async def upload_document(file: UploadFile = File(...)):
     上传文档到知识库
     支持 PDF / Word / Markdown / TXT 格式
     """
-    # 1. 校验文件类型
+    # 1. 校验文件类型（扩展名 + MIME 双重检查）
     allowed_exts = {".pdf", ".docx", ".doc", ".md", ".txt"}
+    allowed_mimes = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+        "application/msword",                    # .doc
+        "text/markdown", "text/plain",           # .md / .txt
+        "application/octet-stream",              # 浏览器有时无法识别 → 靠扩展名兜底
+    }
     file_ext = os.path.splitext(file.filename or "")[1].lower()
     if file_ext not in allowed_exts:
         raise HTTPException(
             status_code=400,
             detail=f"不支持的文件格式 [{file_ext}]，仅支持: {', '.join(allowed_exts)}",
+        )
+    if file.content_type and file.content_type not in allowed_mimes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件 MIME 类型不匹配 ({file.content_type})，仅支持 PDF/Word/Markdown/TXT",
         )
 
     # 2. 校验文件大小
@@ -102,8 +118,11 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"文件过大 ({file_size_mb:.1f}MB)，限制 {MAX_FILE_SIZE_MB}MB",
         )
 
-    # 3. 保存文件
-    file_path = UPLOAD_DIR / file.filename
+    # 3. 保存文件（防路径遍历：只取文件名部分，拒绝 "../" 等）
+    safe_name = os.path.basename(file.filename or "upload")
+    file_path = (UPLOAD_DIR / safe_name).resolve()
+    if not str(file_path).startswith(str(UPLOAD_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="非法文件路径")
     with open(file_path, "wb") as f:
         f.write(content)
     logger.info(f"文件已保存: {file_path} ({file_size_mb:.1f}MB)")

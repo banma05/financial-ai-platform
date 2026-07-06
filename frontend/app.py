@@ -6,6 +6,8 @@ import streamlit as st
 import requests
 import json
 import time
+import sys
+from pathlib import Path
 from loguru import logger
 
 # ============ 页面配置 ============
@@ -15,9 +17,11 @@ st.set_page_config(
     layout="wide",
 )
 
-# API 地址
-API_BASE = "http://localhost:8001/api/v1/rag"
-AGENT_API_BASE = "http://localhost:8001/api/v1/agent"
+# API 地址（环境变量配置，默认本地开发地址）
+import os as _os
+_BACKEND = _os.getenv("BACKEND_URL", "http://localhost:8001")
+API_BASE = f"{_BACKEND}/api/v1/rag"
+AGENT_API_BASE = f"{_BACKEND}/api/v1/agent"
 
 # ============ 会话状态初始化 ============
 CACHE_TTL = 30
@@ -436,6 +440,9 @@ elif menu == "🔧 MCP 工具集成":
 
     if st.button("🚀 调用工具", type="primary"):
         try:
+            # ⚠️ P2 技术债：直接导入后端 mcp 模块，打破前后端分层
+            # 理想方案：后端新增 /api/v1/mcp/tools 端点，前端 HTTP 调用
+            sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
             from mcp import (
                 StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
                 IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,

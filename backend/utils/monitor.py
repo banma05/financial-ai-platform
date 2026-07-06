@@ -38,7 +38,7 @@ class RequestTracker:
 
         # 按端点统计: {endpoint: {"count": N, "total_latency": T, "errors": E}}
         self._endpoint_stats: Dict[str, Dict] = defaultdict(
-            lambda: {"count": 0, "total_latency": 0.0, "errors": 0}
+            lambda: {"count": 0, "total_latency": 0.0, "max_latency": 0.0, "errors": 0}
         )
 
         # 最近 N 次请求的延迟（毫秒）
@@ -59,6 +59,8 @@ class RequestTracker:
             stats = self._endpoint_stats[endpoint]
             stats["count"] += 1
             stats["total_latency"] += latency_ms
+            if latency_ms > stats["max_latency"]:
+                stats["max_latency"] = latency_ms
             if not success:
                 stats["errors"] += 1
 
@@ -83,7 +85,7 @@ class RequestTracker:
                 endpoints[ep] = {
                     "count": stats["count"],
                     "avg_latency_ms": round(stats["total_latency"] / stats["count"], 1) if stats["count"] > 0 else 0,
-                    "max_latency_ms": round(stats["total_latency"] / stats["count"] * 2, 1) if stats["count"] > 0 else 0,  # 简化估算
+                    "max_latency_ms": round(stats["max_latency"], 1),
                     "error_rate": round(stats["errors"] / stats["count"] * 100, 1) if stats["count"] > 0 else 0,
                 }
 
