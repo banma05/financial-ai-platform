@@ -420,7 +420,8 @@ def _sem_chunk_with_threshold(
         try:
             embeddings = model.embed_documents(sentences)
             embeddings = np.array(embeddings)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Embedding 失败, 回退滑动窗口切分: {e}")
             for i in range(0, len(text), max_chunk_size - overlap_size):
                 chunk = text[i:i + max_chunk_size]
                 if chunk.strip():

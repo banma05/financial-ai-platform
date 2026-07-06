@@ -76,8 +76,8 @@ def retry(
         if on_retry:
             try:
                 on_retry(exc, attempt, max_retries)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"retry 回调异常: {e}")
 
     def _after_attempt(retry_state):
         """最后一次也失败时记录日志（tenacity 的 after 回调）"""

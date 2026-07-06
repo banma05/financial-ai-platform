@@ -10,6 +10,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
+import json
 
 from models.schemas import AgentRequest, AgentResponse, TemplateInfo
 from agent import run_agent_stream, run_agent_sync, BUILTIN_TEMPLATES, FORMULA_REGISTRY
@@ -59,12 +60,16 @@ async def analyze_stream(request: AgentRequest):
     """
 
     def event_generator():
-        for sse_event in run_agent_stream(
-            user_input=request.query,
-            session_id=request.session_id,
-            template_name=request.template,
-        ):
-            yield sse_event
+        try:
+            for sse_event in run_agent_stream(
+                user_input=request.query,
+                session_id=request.session_id,
+                template_name=request.template,
+            ):
+                yield sse_event
+        except Exception as e:
+            logger.error(f"Agent SSE 流异常: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'分析服务异常: {str(e)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

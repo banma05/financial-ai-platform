@@ -73,8 +73,8 @@ def list_snapshots() -> List[Dict]:
                 "document_count": data.get("document_count", 0),
                 "total_chunks": data.get("total_chunks", 0),
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"快照文件加载跳过: {e}")
     return snaps
 
 
@@ -121,7 +121,8 @@ def get_corpus_stats() -> Dict:
     try:
         doc_list = get_document_list()
         total_chunks = sum(d.get("chunks", 0) for d in doc_list)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"ChromaDB 信息获取失败, 回退空列表: {e}")
         doc_list = []
         total_chunks = 0
 
@@ -228,8 +229,8 @@ def incremental_rebuild() -> Dict:
             if doc in changes["modified"]:
                 try:
                     delete_document(doc["name"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"删除旧文档失败({doc['name']}): {e}")
 
             # 加载和分块
             file_path = doc["path"]
@@ -318,8 +319,8 @@ def _load_metadata() -> Dict[str, str]:
     if METADATA_FILE.exists():
         try:
             return json.loads(METADATA_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"元数据文件读取失败: {e}")
     return {}
 
 

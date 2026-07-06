@@ -86,8 +86,8 @@ def _akshare_stock_price(norm: str, name: str, period: str) -> Dict[str, Any]:
         result["pe_ttm"] = info.get("pe_ttm", 0)
         result["pb"] = info.get("pb", 0)
         result["market_cap"] = info.get("market_cap", 0)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"AKShare 股票信息获取失败({symbol}), 使用 Mock 兜底: {e}")
 
     if period != "realtime":
         days = {"daily": 30, "weekly": 12, "monthly": 24}.get(period, 30)
@@ -213,8 +213,8 @@ def get_industry_comparison(
                     # PE = 市值/净利, 简化：用实时价格更新 PE 估算
                     if peer.get("pe", 0) > 0 and not isinstance(peer["pe"], str):
                         pass  # PE 保留 Mock（年报数据更准确）
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"行业对比-个股价格获取失败({code}): {e}")
 
     target_name = SYMBOLS.get(norm, symbol)
     target_peer = next((p for p in peers if p["name"] == target_name), None)
@@ -241,8 +241,8 @@ def _akshare_latest_price(code: str) -> Optional[float]:
         )
         if not df.empty:
             return round(float(df.iloc[-1]["close"]), 2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"AKShare 最新价获取失败: {e}")
     return None
 
 
@@ -317,7 +317,8 @@ def _akshare_dividends(norm: str, year: int) -> List[Dict]:
                     desc += f"，10股派{amount}元"
                 desc += "）"
                 events.append({"date": div_date, "event_type": "dividend", "description": desc})
-        except Exception:
+        except Exception as e:
+            logger.debug(f"分红记录解析跳过: {e}")
             continue
     logger.debug(f"[AKShare] {norm} {year}年分红: {len(events)} 条")
     return events
