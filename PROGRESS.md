@@ -3,7 +3,7 @@
 
 > 📅 最后更新：2026-07-05
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段四 ✅ 完成 → 阶段五待启动**
+> 📌 当前阶段：**阶段五进行中（5.1 ✅）→ 阶段六待启动**
 > 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
 
 ---
@@ -16,7 +16,8 @@
 | **阶段二** | 智能依赖注入 + 重试机制 + 结构化日志 | ✅ 完成 (7/5) | Agent工程化升级 |
 | **阶段三** | MCP模块从零开发（6+工具）+ AKShare | ✅ 完成 (7/5) | 外部数据源接入 |
 | **阶段四** | Docker + Redis + CI/CD + 集成测试 | ✅ 完成 (7/5) | 生产级工程补齐 |
-| **阶段五** | 三模块联动整合 + 统一评测 | ⏳ | 端到端数据流打通 |
+| **阶段五** | 三模块联动整合 + 统一评测 | ⏳ 进行中 (7/6) | 端到端数据流打通 |
+| **阶段六** | 六维审计优化（上下文/成本/人机协同） | ⏳ 待启动 | Agent 含金量提升 |
 
 ### 核心架构决策（2026-07-04）
 - ✅ **采用 LangGraph StateGraph**：业界标准 Agent 编排框架，StateGraph 做顶层编排 + ThreadPoolExecutor 做层内并行
@@ -49,6 +50,7 @@ financial-ai-platform/
 │   │   └── quick_tune.py      快速调优
 │   │
 │   ├── agent/             ← 模块二：数据分析 Agent（LangGraph 编排）
+│   │   ├── api.py              公共 API 显式导出（V5.1 新增）
 │   │   ├── graph.py            LangGraph StateGraph 顶层编排
 │   │   ├── planner.py          任务拆解 + 5模板
 │   │   ├── executor.py         ToolRegistry + 依赖注入
@@ -216,7 +218,7 @@ financial-ai-platform/
 
 ### 验收指标
 
-| 指标 | 目标 | 当前 |
+| 指标 | 目标 | 当前 
 |------|:----:|:----:|
 | 子任务拆解准确率 | ≥85% | 待评测（76.9%，阶段三后重测） |
 | 指标计算准确率 | ≥98% | ✅ 105测试通过（公式40+注入41+Planner15+重试19+日志15=130） |
@@ -328,6 +330,22 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-06 — 阶段五 5.1 完成：Agent 公共 API 重构 ✅
+
+#### agent/api.py 显式导出（新建）
+- `agent/api.py`：所有公共接口集中定义，不再散落在 `__init__.py` 的 `__getattr__` 魔法中
+- `BUILTIN_TEMPLATES` 改为显式导入（planner → openai 包，非重依赖）
+- `run_agent_stream/sync` 保留惰性包装函数（避免触发 langgraph + matplotlib）
+- `agent/__init__.py`：42行 → 9行，`from .api import *` 一行重导出
+- `agent/tools/__init__.py`：文档重写，保留必要的 `__getattr__`（DataQueryTool/ChartTool 确需惰性加载）
+
+#### 六维 Agent 审计
+- 对照业界 6 项含金量标准审计项目 Agent，得分 **7.5/10**
+- 强项：企业级工程（9分）、业务场景（8分）、任务规划（8分）
+- 短板：人机协同（4分）、上下文管理（6分）
+- 审计结果 → 待办清单新增阶段六（P0-P3 改进项）
+- 370 测试全过 ✅
 
 ### 2026-07-05 — 阶段四完成：Docker + Redis + CI/CD + 集成测试 ✅
 
