@@ -9,9 +9,7 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与 CUDA 冲突
 
-# 🔧 必须在所有 sentence-transformers 相关 import 之前导入 CrossEncoder
-# 原因：langchain_huggingface → sentence_transformers 初始化后，
-# 再 CrossEncoder(device='cuda') 会导致 segfault
+# CrossEncoder 提前导入（_get_lambda_mart 中自动检测 GPU 可用性）
 from sentence_transformers import CrossEncoder as _CrossEncoder  # noqa: E402
 
 from typing import List, Tuple, Optional
@@ -217,8 +215,14 @@ def _get_lambda_mart():
     if _reranker is None:
         local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
         model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
-        _reranker = _CrossEncoder(model_name, device="cuda", cache_folder="D:/Python312/huggingface-cache")
-        logger.info(f"LambdaMART（Cross-Encoder GPU）已加载: {model_name}")
+        # 自动选择设备：GPU 优先，不可用则回退 CPU
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+        _reranker = _CrossEncoder(model_name, device=device)
+        logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
     return _reranker
 
 

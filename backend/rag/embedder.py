@@ -23,8 +23,7 @@ def get_embedding_model() -> HuggingFaceEmbeddings:
         model_path = LOCAL_MODEL_PATH
         if not Path(model_path).exists():
             model_path = EMBEDDING_MODEL  # 回退到 HuggingFace 在线下载
-        # 🔧 GPU 加速：RTX4060 8GB，BGE ~400MB + CrossEncoder ~1.5GB 绰绰有余
-        # CUDA 上下文由 hybrid_search 的 CrossEncoder(GPU) 预加载，不会 segfault
+        # 自动检测设备：GPU 可用则加速，不可用则 CPU（无需手动干预）
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _embedding_model = HuggingFaceEmbeddings(
