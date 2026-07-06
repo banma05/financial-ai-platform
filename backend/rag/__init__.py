@@ -1,9 +1,9 @@
-# CUDA 预热：Windows 上提前初始化 CUDA 上下文，防止 CrossEncoder segfault
-# Linux / CI 环境无 GPU，跳过此步骤（否则触发 torch/sentence_transformers 安装要求）
-import sys as _sys
-if _sys.platform == "win32":
+# GPU 预热：防止 HuggingFaceEmbeddings → CrossEncoder 混合设备初始化导致 segfault
+# 已安装 sentence_transformers → 预初始化；未安装 → 静默跳过（CI/CPU 环境无需）
+try:
     import sentence_transformers  # noqa: F401
-
+except ImportError:
+    pass
 from .loader import load_document
 from .splitter import split_documents
 from .vector_store import add_documents, search_similar, get_document_list, reset_database
