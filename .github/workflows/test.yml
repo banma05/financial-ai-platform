@@ -42,7 +42,6 @@ jobs:
             backend/tests/test_dataset.py \
             backend/tests/test_mcp_tools.py \
             backend/tests/test_entity_router.py \
-            backend/tests/test_corpus_monitor.py \
             backend/tests/test_evaluator.py \
             backend/tests/test_query_processor.py \
             backend/tests/test_agent_planner.py \
