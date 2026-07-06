@@ -68,8 +68,13 @@ def score_task_decomposition(plan: AnalysisPlan, golden: dict) -> dict:
     actual_formulas = set()
     for t in tasks:
         formula = t.params.get("formula", "")
-        if formula:
-            actual_formulas.add(formula)
+        if not formula:
+            continue
+        # Planner 可能返回单个公式(str)或多个公式(list)
+        if isinstance(formula, list):
+            actual_formulas.update(formula)
+        else:
+            actual_formulas.add(str(formula))
     required = set(gt.get("required_formulas", []))
     scores["formula_coverage"] = len(actual_formulas & required) / len(required) if required else 1.0
 
