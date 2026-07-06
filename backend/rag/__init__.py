@@ -1,7 +1,8 @@
-# 🔧 必须在所有其他 import 之前导入 sentence_transformers
-# langchain_chroma/langchain_huggingface 会触发 sentence_transformers 初始化
-# 在它初始化后 CrossEncoder(device='cuda') 会导致 segfault
-import sentence_transformers  # noqa: F401
+# CUDA 预热：Windows 上提前初始化 CUDA 上下文，防止 CrossEncoder segfault
+# Linux / CI 环境无 GPU，跳过此步骤（否则触发 torch/sentence_transformers 安装要求）
+import sys as _sys
+if _sys.platform == "win32":
+    import sentence_transformers  # noqa: F401
 
 from .loader import load_document
 from .splitter import split_documents

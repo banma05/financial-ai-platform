@@ -9,3 +9,4 @@ fastapi
 python-dotenv
 redis
 openai
+numpy
