@@ -125,18 +125,19 @@ def get_tracker() -> RequestTracker:
 # ==================== 健康检查 ====================
 
 def get_health_status() -> Dict:
-    """系统健康检查"""
-    import torch
-    import chromadb
-
+    """系统健康检查（GPU/ChromaDB 不可用时优雅降级）"""
     checks = {}
 
     # GPU 检查
-    checks["gpu"] = {
-        "available": torch.cuda.is_available(),
-        "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
-        "memory_mb": round(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024) if torch.cuda.is_available() else 0,
-    }
+    try:
+        import torch
+        checks["gpu"] = {
+            "available": torch.cuda.is_available(),
+            "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
+            "memory_mb": round(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024) if torch.cuda.is_available() else 0,
+        }
+    except ImportError:
+        checks["gpu"] = {"available": False, "note": "torch 未安装"}
 
     # ChromaDB 检查
     try:
