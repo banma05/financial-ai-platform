@@ -27,9 +27,16 @@ jobs:
         env:
           PYTHONPATH: backend
         run: |
-          python -m pytest backend/tests/test_agent_financial_calc.py \
+          # ✅ 能安全运行的测试（不触发 rag/__init__.py → sentence_transformers）：
+          # 🔒 排除（函数体/模块级触发 rag.* → GPU/ChromaDB/sentence-transformers）：
+          #   test_integration, test_evaluator, test_hybrid_search, test_query_processor,
+          #   test_entity_router, test_corpus_monitor, test_table_extraction, test_agent_planner
+          python -m pytest \
+            backend/tests/test_agent_financial_calc.py \
             backend/tests/test_param_injection.py \
             backend/tests/test_retry.py \
             backend/tests/test_logger.py \
             backend/tests/test_auth.py \
+            backend/tests/test_dataset.py \
+            backend/tests/test_mcp_tools.py \
             -q --tb=short
