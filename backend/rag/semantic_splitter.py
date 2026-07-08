@@ -87,15 +87,30 @@ def semantic_chunk_per_page(
     for page in pages:
         text = page.get("text", "")
 
-        # —— 大表格注入：真正的财务报表（≥4行×3列）以 Markdown 形式
-        #     附加到页面文本，参与语义切分。小表格（目录、公司信息等）跳过。
+        # ── V7.1: 大表格独立成 chunk（不参与语义切分，保持完整性）──
+        # 财务报表（≥4行×3列）单独存为一个 chunk，附加页面上下文
         big_tables = [
-            t["markdown"] for t in page.get("tables", [])
+            t for t in page.get("tables", [])
             if t.get("rows", 0) >= 4 and t.get("cols", 0) >= 3
         ]
-        if big_tables:
-            text = text.strip() + "\n\n" + "\n\n".join(big_tables) if text.strip() else "\n\n".join(big_tables)
+        # 提取页面首行作为表格上下文（如"合并利润表"）
+        page_context = text.strip().split("\n")[0] if text.strip() else ""
+        for i, t in enumerate(big_tables):
+            md = t["markdown"]
+            if len(md.strip()) < 50:
+                continue  # 空表格跳过
+            # 上下文 + 表格内容
+            content = f"{page_context}\n\n{md}" if page_context else md
+            all_chunks.append({
+                "content": content,
+                "source": page["source"],
+                "page": page["page"],
+                "chunk_type": "table",
+                "rows": t.get("rows", 0),
+                "cols": t.get("cols", 0),
+            })
 
+        # 文本语义切分（不含表格，用原来逻辑）
         sentences = _split_sentences(text)
 
         # 短页不切
