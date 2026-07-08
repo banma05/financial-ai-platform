@@ -12,9 +12,13 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与
 # CrossEncoder 提前导入（_get_lambda_mart 中自动检测 GPU 可用性）
 from sentence_transformers import CrossEncoder as _CrossEncoder  # noqa: E402
 
+import threading
 from typing import List, Tuple, Optional
 from loguru import logger
 from rank_bm25 import BM25Okapi
+
+# ── V6.0: GPU 推理互斥锁（防止 DAG 并行时多线程争抢 CUDA 导致性能暴跌）──
+_cross_encoder_lock = threading.Lock()
 
 from .embedder import get_embedding_model
 from .vector_store import _get_chroma
@@ -240,7 +244,9 @@ def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> Li
     try:
         model = _get_lambda_mart()
         pairs = [[query, c["content"]] for c in candidates]
-        scores = model.predict(pairs)
+        # ── V6.0: GPU 推理加锁（DAG 并行时避免多线程 GPU 争抢）──
+        with _cross_encoder_lock:
+            scores = model.predict(pairs)
 
         for item, score in zip(candidates, scores):
             item["rerank_score"] = float(score)
