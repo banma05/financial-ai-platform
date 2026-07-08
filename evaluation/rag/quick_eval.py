@@ -4,6 +4,11 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与 CUDA 冲突导致 segfault
 
+# ── 轻量模式：必须在所有 import 之前禁用 CUDA ──
+_LIGHT_MODE = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+if _LIGHT_MODE:
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""  # PyTorch 初始化前禁用 GPU
+
 import sys
 import time
 import argparse
@@ -24,8 +29,8 @@ with open(TEST_SET, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 questions = data["questions"]
-# ── 轻量模式：跳过 CrossEncoder 重排（省 2-3GB 内存）──
-LIGHT_MODE = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+# 复用模块顶部已读取的轻量模式标记
+LIGHT_MODE = _LIGHT_MODE
 
 logger.info(f"开始评测: {len(questions)} 题, top_k={TOP_K}, light={LIGHT_MODE}")
 

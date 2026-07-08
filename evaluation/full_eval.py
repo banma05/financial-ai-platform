@@ -25,6 +25,8 @@ REPORTS_DIR.mkdir(exist_ok=True)
 
 # 轻量模式环境变量（默认开启，避免 GPU OOM）
 _light_mode = os.environ.get("EVAL_LIGHT", "1").lower() in ("1", "true", "yes")
+if _light_mode:
+    os.environ["EVAL_LIGHT"] = "1"  # 写回环境变量，确保子进程和下游模块可见
 
 
 def _subprocess_env():

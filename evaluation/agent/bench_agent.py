@@ -17,6 +17,7 @@ LIGHT_MODE = os.environ.get("EVAL_LIGHT", "1").lower() in ("1", "true", "yes")
 if LIGHT_MODE:
     # 必须在 PyTorch 初始化前禁用 CUDA，否则 GPU 显存溢出会映射到系统内存
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ["EVAL_LIGHT"] = "1"      # 写回环境变量，确保下游模块（hybrid_search等）也能感知
 
 # 🔧 必须在所有 import 之前预加载 sentence_transformers（防止 CUDA segfault）
 import sentence_transformers  # noqa
