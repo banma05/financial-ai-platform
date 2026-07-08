@@ -11,9 +11,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-# ── 轻量模式：通过 EVAL_LIGHT 环境变量跳过 CrossEncoder（省 2-3GB 内存）──
-LIGHT_MODE = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
-# 注意：EVAL_LIGHT 在 hybrid_search 内部也会被检查，无需手动透传
+# ── 轻量模式（默认开启）：跳过 CrossEncoder + 强制 CPU（省 3-4GB 总内存）──
+# 设置 EVAL_LIGHT=0 可关闭轻量模式（GPU 加速，但需要足够显存）
+LIGHT_MODE = os.environ.get("EVAL_LIGHT", "1").lower() in ("1", "true", "yes")
+if LIGHT_MODE:
+    # 必须在 PyTorch 初始化前禁用 CUDA，否则 GPU 显存溢出会映射到系统内存
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # 🔧 必须在所有 import 之前预加载 sentence_transformers（防止 CUDA segfault）
 import sentence_transformers  # noqa
