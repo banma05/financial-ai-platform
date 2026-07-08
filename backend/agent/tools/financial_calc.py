@@ -422,10 +422,10 @@ class FinancialCalcTool:
         计算公式并返回结果。
 
         参数:
-            formula: FORMULA_REGISTRY 中的公式名
+            formula: 公式名或逗号分隔的多公式（如 "roe" 或 "roe,net_profit_margin"）
             **data_values: 公式所需的参数值（如 revenue=1709.90, cost=...）
 
-        返回:
+        返回（单公式）:
             {
                 "success": True/False,
                 "result": float or dict,
@@ -435,8 +435,30 @@ class FinancialCalcTool:
                 "unit": str,
                 "error": None or str,
             }
+
+        返回（多公式批量）:
+            {
+                "success": True,    # 所有公式全部成功才为 True
+                "results": [        # 每个公式的独立结果
+                    {"formula": "roe", "success": True, "result": 32.08, ...},
+                    {"formula": "net_profit_margin", "success": True, "result": 49.45, ...},
+                ],
+                "summary": "2/2 公式计算成功",
+                "is_batch": True,   # 标记为批量结果
+            }
         """
         params = data_values  # 从 executor 依赖注入的数据值
+
+        # ── V6.0: 多公式批量计算 ──
+        formula_names = [f.strip() for f in formula.split(",") if f.strip()]
+        if len(formula_names) > 1:
+            return self._batch_calculate(formula_names, params)
+
+        # ── 单公式模式（原有逻辑）──
+        return self._single_calculate(formula, params)
+
+    def _single_calculate(self, formula: str, params: dict) -> dict:
+        """单个公式计算（原有逻辑）"""
         entry = FORMULA_REGISTRY.get(formula)
         if not entry:
             return {
@@ -483,6 +505,44 @@ class FinancialCalcTool:
                 "unit": "",
                 "error": str(e),
             }
+
+    def _batch_calculate(self, formula_names: list, params: dict) -> dict:
+        """
+        批量计算多个公式。
+
+        对每个公式调用 _single_calculate，汇总结果。
+        注意：不同公式可能需要不同参数——每个公式独立尝试，缺参数则单独标记失败。
+        """
+        results = []
+        success_count = 0
+        for name in formula_names:
+            r = self._single_calculate(name, params)
+            r["formula"] = name
+            if r["success"]:
+                success_count += 1
+            results.append(r)
+
+        all_success = success_count == len(formula_names)
+        summary_parts = [f"{r['formula']}: {r['result']}{r.get('unit','')}" for r in results if r["success"]]
+        failed = [r["formula"] for r in results if not r["success"]]
+
+        summary = f"批量计算 {success_count}/{len(formula_names)} 成功"
+        if summary_parts:
+            summary += ": " + "; ".join(summary_parts[:3])
+        if failed:
+            summary += f"；失败: {', '.join(failed)}"
+
+        return {
+            "success": all_success,
+            "results": results,
+            "summary": summary,
+            "is_batch": True,
+            "display_name": ", ".join(
+                FORMULA_REGISTRY.get(n, {}).get("display_name", n) for n in formula_names
+            ),
+            "category": "批量计算",
+            "error": None if all_success else f"部分公式失败: {', '.join(failed)}",
+        }
 
     def list_formulas(self) -> List[dict]:
         """列出所有可用公式及参数"""
