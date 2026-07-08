@@ -358,7 +358,7 @@ class Executor:
                 return result
 
             # 层内并行执行
-            with ThreadPoolExecutor(max_workers=min(4, len(layer))) as pool:
+            with ThreadPoolExecutor(max_workers=min(2, len(layer))) as pool:
                 futures = {
                     pool.submit(_execute_one_task, t): t["task_id"]
                     for t in layer

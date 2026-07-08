@@ -223,7 +223,7 @@ def executor_node(state: AgentState) -> dict:
 
             # 层内并行执行
             layer_start = time.time()
-            with ThreadPoolExecutor(max_workers=min(4, len(layer))) as pool:
+            with ThreadPoolExecutor(max_workers=min(2, len(layer))) as pool:
                 futures = {pool.submit(_execute_one, t): t["task_id"] for t in layer}
                 for future in as_completed(futures):
                     task_id = futures[future]
