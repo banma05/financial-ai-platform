@@ -234,7 +234,7 @@ class DataPopulator:
             db.close()
 
     def _retrieve_chunks(self, company: str, year: int,
-                          target_chunks: int = 15) -> List[dict]:
+                          target_chunks: int = 25) -> List[dict]:
         """
         通过 RAG 检索该公司+年份的财务数据相关 chunks。
 
@@ -243,18 +243,19 @@ class DataPopulator:
         from rag.query_processor import process_query
         from rag.hybrid_search import hybrid_search
 
-        # 构建多个检索 query，提高覆盖面
+        # 构建多个检索 query，提高覆盖面（针对性命中财务报表章节）
         search_queries = [
-            f"{company} {year}年 营业收入 营业成本 净利润",
-            f"{company} {year}年 总资产 总负债 净资产",
-            f"{company} {year}年 经营活动现金流 投资活动 筹资活动",
+            f"{company} {year}年 合并利润表 营业收入 营业成本 净利润",
+            f"{company} {year}年 合并资产负债表 总资产 总负债 净资产 流动资产 流动负债",
+            f"{company} {year}年 现金流量表 经营活动 投资活动 筹资活动",
+            f"{company} {year} 利润表 营业总收入 归属于母公司",
         ]
 
         all_chunks = []
         seen = set()
         for q in search_queries:
             processed = process_query(q)
-            results = hybrid_search(processed, top_k=8)  # BM25实体加权已足够，enable_entity_routing有bug会返回空
+            results = hybrid_search(processed, top_k=10)
             for r in results:
                 key = r["content"][:100]
                 if key not in seen:
