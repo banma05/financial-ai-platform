@@ -7,11 +7,8 @@ Executor（工具执行编排器）+ ToolRegistry（工具注册中心）
 3. 将前置任务的结果注入到后续任务参数中
 
 V3.0: 依赖注入升级为三层回退（ParamInjector）
-V6.0: execute() 升级为 DAG 拓扑层内并行（评测耗时 -40%）
 """
 from typing import List, Dict, Any, Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 from loguru import logger
 
 from .schemas import AnalysisTask, TaskResult
@@ -21,10 +18,6 @@ from .tools.param_injection import (
     parse_financial_value,
     FINANCIAL_TERM_TO_PARAM,
 )
-
-
-# DAG 拓扑排序 — 统一使用 utils.topological
-from utils.topological import topological_layers as _topological_layers
 
 
 class ToolRegistry:
@@ -262,6 +255,7 @@ class Executor:
 
     V2.5 MVP：线性执行（按 task_id 顺序）
     V3.0 增强：DAG 拓扑排序 + 并行执行同层任务
+    V6.1 回退：execute() 退回线性执行（DAG 并行导致全局单例竞态条件 → GPU 双重加载 → OOM）
     """
 
     def __init__(self, tool_registry: ToolRegistry):
@@ -269,91 +263,56 @@ class Executor:
 
     def execute(self, tasks: List[AnalysisTask]) -> List[TaskResult]:
         """
-        按 DAG 拓扑层并行执行所有任务（V6.0 升级）。
+        按顺序线性执行所有任务。
 
-        同一层的任务（无相互依赖）通过 ThreadPoolExecutor 并行提交，
-        每层完成后才进入下一层（保证依赖关系）。
+        流程：
+        1. 按 task_id 排序
+        2. 依次执行
+        3. 失败的任务不阻塞后续任务，但标记依赖它的任务为失败
 
         返回:
-            List[TaskResult]（按 task_id 排序）
+            List[TaskResult]
         """
         if not tasks:
             return []
 
-        # 转为 dict 格式（拓扑排序需要）
-        tasks_dict = [t.model_dump() for t in tasks]
-        # 构建 AnalysisTask 索引
-        task_map = {t.task_id: t for t in tasks}
-        # 存储所有结果
-        results_by_id: Dict[str, TaskResult] = {}
-        # 存储所有结果列表
-        all_results: List[TaskResult] = []
+        # 按 task_id 排序
+        sorted_tasks = sorted(tasks, key=lambda t: int(t.task_id) if t.task_id.isdigit() else 0)
 
-        # DAG 拓扑分层
-        layers = _topological_layers(tasks_dict)
-        logger.info(f"[Executor] DAG 执行: {len(tasks)} 任务, {len(layers)} 层并行")
+        results: List[TaskResult] = []
 
-        for layer_idx, layer in enumerate(layers):
-            layer_start = time.time()
+        for task in sorted_tasks:
+            # 检查依赖是否都已成功
+            dep_failed = False
+            for dep_id in task.depends_on:
+                dep_result = next((r for r in results if r.task_id == dep_id), None)
+                if dep_result and not dep_result.success:
+                    dep_failed = True
+                    break
 
-            def _execute_one_task(task_dict: dict) -> TaskResult:
-                """执行单个任务（线程安全）"""
-                task = task_map.get(task_dict["task_id"])
-                if not task:
-                    # 从 dict 重建
-                    task = AnalysisTask(**task_dict)
+            if dep_failed:
+                results.append(TaskResult(
+                    task_id=task.task_id,
+                    task_type=task.task_type,
+                    success=False,
+                    summary="",
+                    error=f"前置任务失败，跳过「{task.description}」",
+                ))
+                continue
 
-                # 检查依赖是否都已成功
-                for dep_id in task.depends_on:
-                    dep_result = results_by_id.get(dep_id)
-                    if dep_result and not dep_result.success:
-                        return TaskResult(
-                            task_id=task.task_id, task_type=task.task_type,
-                            success=False,
-                            error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
-                        )
+            # 准备依赖结果列表（用于参数注入）
+            dep_results = [r for r in results if r.task_id in task.depends_on and r.success]
 
-                # 准备依赖结果列表
-                dep_results = [
-                    results_by_id[dep_id]
-                    for dep_id in task.depends_on
-                    if dep_id in results_by_id
-                ]
+            # 标记为运行中
+            task.status = "running"
 
-                # 执行
-                task.status = "running"
-                result = self.tools.execute_task(task, dep_results)
-                task.status = "completed" if result.success else "failed"
-                return result
+            # 执行
+            result = self.tools.execute_task(task, dep_results)
+            task.status = "completed" if result.success else "failed"
+            results.append(result)
 
-            # 层内并行执行
-            with ThreadPoolExecutor(max_workers=min(2, len(layer))) as pool:
-                futures = {
-                    pool.submit(_execute_one_task, t): t["task_id"]
-                    for t in layer
-                }
-                for future in as_completed(futures):
-                    task_id = futures[future]
-                    try:
-                        result = future.result()
-                        results_by_id[task_id] = result
-                        all_results.append(result)
-                    except Exception as e:
-                        logger.error(f"[Executor] 任务 {task_id} 异常: {e}")
-                        err_result = TaskResult(
-                            task_id=task_id, task_type="unknown",
-                            success=False, error=str(e),
-                        )
-                        results_by_id[task_id] = err_result
-                        all_results.append(err_result)
-
-            layer_elapsed = time.time() - layer_start
-            layer_tasks = [t["task_id"] for t in layer]
-            logger.debug(
-                f"[Executor] DAG 层 {layer_idx+1}/{len(layers)} "
-                f"({', '.join(layer_tasks)}) 耗时 {layer_elapsed:.2f}s"
+            logger.info(
+                f"任务 [{task.task_id}/{len(sorted_tasks)}] {task.status}: {task.description}"
             )
 
-        # 按 task_id 排序返回
-        all_results.sort(key=lambda r: int(r.task_id) if r.task_id.isdigit() else 0)
-        return all_results
+        return results
