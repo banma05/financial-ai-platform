@@ -242,7 +242,7 @@ class DataPopulator:
         seen = set()
         for q in search_queries:
             processed = process_query(q)
-            results = hybrid_search(processed, top_k=8, enable_entity_routing=True)
+            results = hybrid_search(processed, top_k=8)  # BM25实体加权已足够，enable_entity_routing有bug会返回空
             for r in results:
                 key = r["content"][:100]
                 if key not in seen:
