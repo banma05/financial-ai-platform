@@ -1,9 +1,9 @@
 
 # 项目进度存档
 
-> 📅 最后更新：2026-07-08
+> 📅 最后更新：2026-07-09
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段六回退修复 + 全项目系统性审计**
+> 📌 当前阶段：**V7.0 结构化数据层 + PDF表格提取优化**
 
 ---
 
@@ -343,6 +343,26 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-09 (凌晨) — PDF表格提取+切分优化 ✅
+
+#### 诊断过程
+通过 diagnose skill 系统排查 populator 数据提取失败：
+1. 发现 Flash LLM 返回 `{'利润表':..., '资产负债表':...}` 分类名而非指标名 → prompt 加负例修复
+2. 发现五粮液/宁德时代 RAG 搜到其他公司文档 → entity_router 注册缺公司 → 补全5家公司
+3. 发现 `enable_entity_routing=True` 有 bug（返回0结果）→ 改用 BM25 实体加权
+4. 发现表格 chunk 被句子切分拆碎 → 大表格独立成 chunk
+5. 发现 `to_markdown()` 合并单元格生成 ColN 占位符 → 改用 `extract()` + 过滤
+
+#### 改动文件
+- `rag/semantic_splitter.py` — 大表格(≥4行×3列)独立chunk，不参与语义切分
+- `rag/loader.py` — table提取 `extract()`优先，过滤ColN占位符
+- `rag/entity_router.py` — COMPANY_REGISTRY 新增五粮液/宁德时代，补全2023文档
+- `data_layer/populator.py` — prompt+搜索词+检索量优化，指标名别名映射
+
+#### 待续
+- 五粮液/宁德时代自动提取仍不稳定，需 seed 脚本手动补核心数据
+- 结构化数据当前覆盖率：3/5 公司（茅台/比亚迪/腾讯），47 指标
 
 ### 2026-07-08 (深夜) — V7.0 结构化数据层交付 ✅
 
