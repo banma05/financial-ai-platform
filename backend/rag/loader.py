@@ -9,26 +9,45 @@ import pymupdf  # fitz
 
 def _table_to_markdown(pymupdf_table) -> str:
     """
-    将 PyMuPDF Table 对象转为 Markdown 表格字符串
-    LLM 对 Markdown 表格的理解能力远超展平纯文本
+    将 PyMuPDF Table 对象转为干净的 Markdown 表格。
+
+    优先级：table.extract() → to_markdown() 兜底。
+    extract() 对合并单元格的处理更好（重复值而非乱码 ColN）。
     """
+    # ── 优先用 extract() 手动构建，避免 to_markdown() 的合并单元格乱码 ──
+    try:
+        data = pymupdf_table.extract()
+        if data:
+            lines = []
+            for i, row in enumerate(data):
+                cells = []
+                for c in row:
+                    cell_text = str(c).replace("\n", " ").replace("|", "/").strip() if c else ""
+                    # 过滤 PyMuPDF 合并单元格生成的 ColN 占位符
+                    if cell_text and not cell_text.startswith("Col"):
+                        cells.append(cell_text)
+                    else:
+                        cells.append("")
+                # 跳过全是 ColN 占位符的行
+                if any(c for c in cells if c):
+                    lines.append("| " + " | ".join(cells) + " |")
+                    if i == 0:  # 表头分隔行
+                        lines.append("|" + "|".join(["---"] * len(cells)) + "|")
+            if len(lines) > 2:  # 至少有表头+分隔行+一行数据
+                return "\n".join(lines)
+    except Exception:
+        pass
+
+    # ── 兜底：to_markdown() ──
     try:
         md = pymupdf_table.to_markdown()
-        # 清理：替换 <br> 为空格（PyMuPDF 用 <br> 表示单元格内换行）
         md = md.replace("<br>", " ")
+        # 清理 ColN 占位符（合并单元格残留）
+        import re
+        md = re.sub(r'\bCol\d+\b', '', md)
         return md
     except Exception:
-        # 降级：手动构建
-        data = pymupdf_table.extract()
-        if not data:
-            return ""
-        lines = []
-        for i, row in enumerate(data):
-            cells = [str(c).replace("\n", " ").strip() if c else "" for c in row]
-            lines.append("| " + " | ".join(cells) + " |")
-            if i == 0:  # 表头分隔行
-                lines.append("|" + "|".join(["---"] * len(cells)) + "|")
-        return "\n".join(lines)
+        return ""
 
 
 def load_pdf(file_path: str) -> List[dict]:
