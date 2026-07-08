@@ -137,31 +137,9 @@ class DataQueryTool:
                 )},
                 {"role": "user", "content": extract_prompt},
             ]
+            from utils.text import parse_llm_json
             response = chat(messages, query=query, task_type=TaskType.SIMPLE)
-
-            # 尝试解析 JSON（增强容错）
-            import json
-            import re as regex
-            json_str = response.strip()
-            # 处理 LLM 可能包裹的 ```json ... ``` 格式
-            if json_str.startswith("```"):
-                lines = json_str.split("\n")
-                json_str = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-            # 移除尾部多余字符（截断的 JSON 常见问题）
-            json_str = json_str.rstrip().rstrip(",").rstrip()
-            # 尝试找到最后一个完整的 }，截断后面的多余内容
-            brace_count = 0
-            last_valid_pos = 0
-            for pos, ch in enumerate(json_str):
-                if ch == "{":
-                    brace_count += 1
-                elif ch == "}":
-                    brace_count -= 1
-                    if brace_count == 0:
-                        last_valid_pos = pos + 1
-            if last_valid_pos > 0 and last_valid_pos < len(json_str):
-                json_str = json_str[:last_valid_pos]
-            result = json.loads(json_str)
+            result = parse_llm_json(response)
             return result
 
         except Exception as e:
@@ -170,13 +148,9 @@ class DataQueryTool:
             try:
                 logger.warning(f"Flash JSON 提取失败 ({first_error[:60]})，重试 pro 模型...")
                 messages[0]["content"] = "你是一个精确的财务数据提取专家。只返回严格 JSON，不解释，不输出任何其他内容。"
+                from utils.text import parse_llm_json
                 response_pro = chat(messages, query=query, task_type=TaskType.COMPLEX)
-                json_str = response_pro.strip()
-                if json_str.startswith("```"):
-                    lines = json_str.split("\n")
-                    json_str = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-                json_str = json_str.rstrip().rstrip(",").rstrip()
-                result = json.loads(json_str)
+                result = parse_llm_json(response_pro)
                 logger.info("Pro 模型重试成功")
                 return result
             except Exception as retry_e:

@@ -6,6 +6,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与
 
 import sys
 import time
+import argparse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
@@ -23,7 +24,10 @@ with open(TEST_SET, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 questions = data["questions"]
-logger.info(f"开始评测: {len(questions)} 题, top_k={TOP_K}")
+# ── 轻量模式：跳过 CrossEncoder 重排（省 2-3GB 内存）──
+LIGHT_MODE = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+
+logger.info(f"开始评测: {len(questions)} 题, top_k={TOP_K}, light={LIGHT_MODE}")
 
 # 关键词评测累计
 total_r1, total_r3, total_r5 = 0.0, 0.0, 0.0
@@ -50,7 +54,7 @@ for i, q in enumerate(questions, 1):
     q_start = time.time()
     try:
         processed = process_query(query)
-        chunks = hybrid_search(processed, top_k=TOP_K)
+        chunks = hybrid_search(processed, top_k=TOP_K, force_rerank=not LIGHT_MODE)
     except Exception as e:
         logger.error(f"{qid} 检索失败: {e}")
         failed_kw.append(qid)
@@ -65,10 +69,13 @@ for i, q in enumerate(questions, 1):
     mr = mrr(expected, chunks)["mrr"]
     nd = ndcg_at_k(expected, chunks, k=5)["ndcg@k"]
 
-    # 语义指标
-    sem = semantic_recall_at_k(query, chunks, k=TOP_K)
-    sem_r5 = sem["semantic_recall@k"]
-    sem_sim = sem["avg_similarity"]
+    # 语义指标（轻量模式下跳过，省 Embedding 调用）
+    if LIGHT_MODE:
+        sem_r5, sem_sim = 0.0, 0.0
+    else:
+        sem = semantic_recall_at_k(query, chunks, k=TOP_K)
+        sem_r5 = sem["semantic_recall@k"]
+        sem_sim = sem["avg_similarity"]
 
     total_r1 += r1
     total_r3 += r3
@@ -120,8 +127,11 @@ print("\n" + "=" * 70)
 print(">>> 50 题全量评测报告（双轨制：关键词 + 语义）<<<")
 print("=" * 70)
 print(f"题目数: {n}")
+if LIGHT_MODE:
+    print("⚡ 轻量模式：已跳过 CrossEncoder 重排 + 语义评测")
 print(f"关键词失败题 (KW-R@5=0): {len(failed_kw)} — {failed_kw if failed_kw else '无'}")
-print(f"语义失败题   (SEM-R@5=0): {len(failed_sem)} — {failed_sem if failed_sem else '无'}")
+if not LIGHT_MODE:
+    print(f"语义失败题   (SEM-R@5=0): {len(failed_sem)} — {failed_sem if failed_sem else '无'}")
 print(f"总耗时: {elapsed:.1f}s | 平均单题: {total_time/n:.1f}s")
 print()
 

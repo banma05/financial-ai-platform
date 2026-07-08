@@ -11,6 +11,10 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+# ── 轻量模式：通过 EVAL_LIGHT 环境变量跳过 CrossEncoder（省 2-3GB 内存）──
+LIGHT_MODE = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+# 注意：EVAL_LIGHT 在 hybrid_search 内部也会被检查，无需手动透传
+
 # 🔧 必须在所有 import 之前预加载 sentence_transformers（防止 CUDA segfault）
 import sentence_transformers  # noqa
 
@@ -242,6 +246,8 @@ print("\n" + "=" * 70)
 print(">>> Agent 20 题全量评测报告 <<<")
 print("=" * 70)
 print(f"题目数: {n} | 总耗时: {elapsed:.1f}s | 追问: {clarification_count} | 失败: {len(failed)}")
+if LIGHT_MODE:
+    print("⚡ 轻量模式：CrossEncoder 重排已跳过")
 if clarification_count > 0:
     print(f"⚠️ 追问不计入拆解平均分（共 {clarification_count} 题）")
 print()

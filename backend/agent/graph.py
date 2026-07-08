@@ -77,42 +77,8 @@ def _init_components():
         _reporter = Reporter()
 
 
-# ==================== DAG 拓扑排序 ====================
-
-def _topological_layers(tasks: List[dict]) -> List[List[dict]]:
-    """
-    Kahn 算法分层拓扑排序。
-
-    返回：[[layer0_tasks], [layer1_tasks], ...]
-    同层任务之间无依赖关系，可并行执行。
-    """
-    task_map = {t["task_id"]: t for t in tasks}
-    in_degree = {t["task_id"]: len(t.get("depends_on", [])) for t in tasks}
-    adjacency = {t["task_id"]: [] for t in tasks}
-    for t in tasks:
-        for dep_id in t.get("depends_on", []):
-            if dep_id in adjacency:
-                adjacency[dep_id].append(t["task_id"])
-
-    layers = []
-    while in_degree:
-        # 找到所有入度为 0 的节点（当前层）
-        current = [tid for tid, deg in in_degree.items() if deg == 0]
-        if not current:
-            # 存在循环依赖，剩余任务全部放入最后一层
-            remaining = [task_map[tid] for tid in in_degree]
-            if remaining:
-                layers.append(remaining)
-            break
-        layers.append([task_map[tid] for tid in current])
-        # 移除当前层节点，更新入度
-        for tid in current:
-            del in_degree[tid]
-            for neighbor in adjacency[tid]:
-                if neighbor in in_degree:
-                    in_degree[neighbor] -= 1
-
-    return layers
+# DAG 拓扑排序 — 统一使用 utils.topological
+from utils.topological import topological_layers as _topological_layers
 
 
 # ==================== 节点函数 ====================

@@ -23,6 +23,17 @@ EVAL_DIR = Path(__file__).parent
 REPORTS_DIR = EVAL_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
 
+# 轻量模式环境变量
+_light_mode = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+
+
+def _subprocess_env():
+    """构造子进程环境变量，轻量模式下添加 EVAL_LIGHT"""
+    env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "backend")}
+    if _light_mode:
+        env["EVAL_LIGHT"] = "1"
+    return env
+
 
 def run_rag_eval() -> dict:
     """运行 RAG 50 题评测"""
@@ -34,7 +45,7 @@ def run_rag_eval() -> dict:
         [sys.executable, str(EVAL_DIR / "rag" / "quick_eval.py")],
         cwd=str(PROJECT_ROOT),
         capture_output=True, text=True, timeout=600,
-        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "backend")},
+        env=_subprocess_env(),
     )
     elapsed = time.time() - start
     print(result.stdout)
@@ -62,7 +73,7 @@ def run_agent_eval() -> dict:
         [sys.executable, str(EVAL_DIR / "agent" / "bench_agent.py")],
         cwd=str(PROJECT_ROOT),
         capture_output=True, text=True, timeout=900,
-        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "backend")},
+        env=_subprocess_env(),
     )
     elapsed = time.time() - start
     print(result.stdout)
@@ -174,9 +185,18 @@ def main():
     parser.add_argument("--rag", action="store_true", help="仅 RAG")
     parser.add_argument("--agent", action="store_true", help="仅 Agent")
     parser.add_argument("--mcp", action="store_true", help="仅 MCP")
+    parser.add_argument("--light", action="store_true",
+                        help="轻量模式：跳过 CrossEncoder 重排，省 2-3GB 内存")
     args = parser.parse_args()
 
     run_all = not (args.rag or args.agent or args.mcp)
+
+    # ── 轻量模式：设置环境变量供子进程和 hybrid_search 内部检查 ──
+    global _light_mode
+    if args.light:
+        _light_mode = True
+        os.environ["EVAL_LIGHT"] = "1"
+        print("⚡ 轻量模式已启用：将跳过 CrossEncoder 重排，省 2-3GB 内存\n")
 
     results = {}
     total_start = time.time()

@@ -9,13 +9,8 @@
 from typing import Optional
 from loguru import logger
 
-
-KNOWN_COMPANIES = ["贵州茅台", "茅台", "比亚迪", "腾讯控股", "腾讯",
-                   "五粮液", "宁德时代", "宁德", "阿里巴巴", "阿里", "京东", "美团"]
-
-KNOWN_METRICS = ["毛利率", "净利率", "ROE", "ROA", "营收", "净利润", "现金流",
-                 "资产负债率", "流动比率", "存货周转率", "营收增长率", "净利润增长率",
-                 "杜邦分析", "每股收益", "市盈率", "市净率"]
+# ── 统一使用 rag.keywords 作为公司和指标的唯一真实来源 ──
+from rag.keywords import KNOWN_COMPANIES, FINANCIAL_METRICS as KNOWN_METRICS
 
 
 class UserMemory:
