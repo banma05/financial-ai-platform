@@ -96,33 +96,31 @@ class DataPopulator:
         """
         批量填充所有已知的 (公司, 年份) 对。
 
-        优先尝试 ChromaDB 动态检测，失败时回退硬编码列表。
+        以硬编码列表为主（来自 data/documents/ 目录已知文档），
+        ChromaDB 动态检测为辅（发现新文档时自动追加）。
         """
-        # 尝试 ChromaDB 动态检测
-        pairs = []
+        # ── 主列表：已知文档对应的 (公司, 年份) 对 ──
+        pairs = [
+            ("贵州茅台", 2023), ("贵州茅台", 2024),
+            ("比亚迪", 2023), ("比亚迪", 2024),
+            ("腾讯控股", 2023), ("腾讯控股", 2024),
+            ("五粮液", 2024),
+            ("宁德时代", 2024),
+        ]
+
+        # ── 动态补充：ChromaDB 中可能有新文档，合并去重 ──
         try:
             from rag.vector_store import get_document_list
             docs = get_document_list()
-            seen = set()
+            seen = set(pairs)
             for doc in docs:
-                company, year = self._parse_filename(doc["filename"])
-                if company and year:
-                    key = (company, year)
-                    if key not in seen:
-                        seen.add(key)
-                        pairs.append(key)
+                pair = self._parse_filename(doc["filename"])
+                if pair[0] and pair[1] and pair not in seen:
+                    seen.add(pair)
+                    pairs.append(pair)
+                    logger.info(f"[Populator] 新发现: {pair}")
         except Exception as e:
-            logger.debug(f"ChromaDB 文档列表检测失败: {e}")
-
-        # 回退：硬编码已知列表
-        if not pairs:
-            pairs = [
-                ("贵州茅台", 2023), ("贵州茅台", 2024),
-                ("比亚迪", 2023), ("比亚迪", 2024),
-                ("腾讯控股", 2023), ("腾讯控股", 2024),
-                ("五粮液", 2024),
-                ("宁德时代", 2024),
-            ]
+            logger.debug(f"ChromaDB 动态检测跳过（使用主列表）: {e}")
 
         logger.info(f"[Populator] 发现 {len(pairs)} 个 (公司, 年份) 对: {pairs}")
 
@@ -301,18 +299,49 @@ class DataPopulator:
             logger.warning(f"[Populator] Pro 重试也失败: {e}")
             return None
 
+    # ── 指标名别名（LLM 可能返回非标准名称）──
+    METRIC_ALIASES = {
+        "营业总收入": "营业收入", "营收": "营业收入", "收入": "营业收入",
+        "营业总成本": "营业成本",
+        "归母净利润": "净利润", "归属于母公司股东的净利润": "净利润",
+        "利润总额": "净利润", "净利": "净利润",
+        "资产总计": "总资产",
+        "负债合计": "总负债", "负债": "总负债",
+        "权益": "净资产", "股东权益": "净资产", "所有者权益": "净资产",
+        "流动资产合计": "流动资产",
+        "流动负债合计": "流动负债",
+        "存货净额": "存货",
+        "经营现金流": "经营活动产生的现金流量净额",
+        "经营活动现金流净额": "经营活动产生的现金流量净额",
+        "投资现金流": "投资活动产生的现金流量净额",
+        "筹资现金流": "筹资活动产生的现金流量净额",
+        "固定资产": "资本支出",
+        "基本每股收益": "基本每股收益", "EPS": "基本每股收益",
+        "研发投入": "研发费用",
+        "期初资产总计": "期初总资产", "期初总资产": "期初总资产",
+        "期初所有者权益": "期初净资产",
+    }
+
+    def _normalize_metric(self, name: str) -> str:
+        """标准化指标名（别名 → 标准名）"""
+        return self.METRIC_ALIASES.get(name, name)
+
     def _save_metrics(self, company_id: int, year: int,
                        data: dict) -> int:
         """
         将提取的指标写入 FinancialData 表（INSERT OR REPLACE）。
+        自动标准化 LLM 返回的非标准指标名。
         """
         db = SessionLocal()
         count = 0
         try:
-            for metric_name, value in data.items():
+            for raw_name, value in data.items():
                 if not isinstance(value, (int, float)):
                     continue
+                # 标准化指标名
+                metric_name = self._normalize_metric(raw_name)
                 if metric_name not in STANDARD_METRICS:
+                    logger.debug(f"[Populator] 跳过非标准指标: {raw_name}→{metric_name}")
                     continue
 
                 # INSERT OR REPLACE
