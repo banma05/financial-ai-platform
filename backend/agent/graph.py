@@ -122,6 +122,17 @@ def planner_node(state: AgentState) -> dict:
     _init_components()
     user_input = state["user_input"]
     template = state.get("template_name")
+    session_id = state.get("session_id", "default")
+
+    # ── V6.0: 加载用户偏好（长时记忆）──
+    from .memory import UserMemory
+    preferences = UserMemory().get_preferences(session_id)
+    if preferences.get("preferred_company") and not template:
+        # 有偏好公司且未指定模板：自动补全到查询中
+        pref_company = preferences["preferred_company"]
+        if pref_company not in user_input:
+            user_input = f"{pref_company} {user_input}"
+            logger.info(f"[Planner] 偏好注入: +{pref_company}")
 
     logger.info(f"[Planner] 开始拆解: {user_input[:50]}...")
 
@@ -367,8 +378,10 @@ def save_analysis_log(
     写入失败不影响主流程（静默降级）。
     """
     from db import SessionLocal, AnalysisLog
-    # ── V6.0: 同步写入 token 用量（与 analysis_log 一起落盘）──
+    # ── V6.0: 同步写入 token 用量 + 更新用户偏好（与 analysis_log 一起落盘）──
     save_token_usage(session_id, f"agent_{status}")
+    from .memory import UserMemory
+    UserMemory().update_from_query(session_id, user_input)
     db = SessionLocal()
     try:
         log_entry = AnalysisLog(

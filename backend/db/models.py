@@ -74,6 +74,18 @@ class QueryLog(Base):
     created_at = Column(DateTime, default=datetime.now, comment="查询时间")
 
 
+class UserPreference(Base):
+    """跨会话用户偏好（V6.0 新增）—— 长时记忆，记住常用公司和指标"""
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(100), nullable=False, unique=True, comment="会话ID")
+    preferred_company = Column(String(100), default="", comment="常查询的公司")
+    preferred_metrics = Column(String(500), default="", comment="常关注的指标，逗号分隔")
+    last_active = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class TokenUsageLog(Base):
     """LLM Token 用量明细（V6.0 新增）—— 每次 API 调用一条记录"""
     __tablename__ = "token_usage_log"
