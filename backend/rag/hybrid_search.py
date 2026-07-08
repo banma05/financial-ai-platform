@@ -276,8 +276,9 @@ def hybrid_search(
     返回:
         [{"content": "...", "source": "...", "page": 1, "score": 0.95}, ...]
     """
-    # ── 轻量评测模式：跳过 CrossEncoder 重排，省 2-3GB 内存 ──
-    if os.environ.get("EVAL_LIGHT"):
+    # ── 轻量评测模式：完全跳过 CrossEncoder 重排，省 2-3GB 内存 ──
+    _light_mode = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+    if _light_mode:
         force_rerank = False
 
     # 实体路由：自动检测公司名 → 限定文档
@@ -288,16 +289,16 @@ def hybrid_search(
     strategy = route_query(query)
 
     # 实体路由命中时，强制走重排序（搜索空间已缩小，重排性价比高）
-    if applied_filter and strategy == "simple":
+    # ── 轻量模式例外：跳过重排 ──
+    if applied_filter and strategy == "simple" and not _light_mode:
         strategy = "complex"
         logger.info(f"实体路由命中 → 自动升级为 complex（启用重排序）")
 
     # 🔧 GPU 预热：必须在 Embedding 模型加载前初始化 CrossEncoder
-    # 原因：HuggingFaceEmbeddings(CPU) → CrossEncoder(GPU) 会触发 segfault
-    # 先加载 GPU 模型再加载 CPU 模型则正常
+    # 轻量模式下完全跳过（不加载 CrossEncoder 模型）
     use_rerank = force_rerank or (strategy == "complex")
-    if use_rerank:
-        _get_lambda_mart()  # 提前初始化 GPU 模型
+    if use_rerank and not _light_mode:
+        _get_lambda_mart()
 
     # 并行召回（带文档过滤）
     bm25_results = bm25_search(query, top_k=10, filter_sources=applied_filter)
@@ -306,8 +307,8 @@ def hybrid_search(
     # RRF 融合
     fused = reciprocal_rank_fusion(bm25_results, semantic_results)
 
-    # 决定是否 LambdaMART 精排
-    use_rerank = force_rerank or (strategy == "complex" and len(fused) > top_k)
+    # 决定是否 LambdaMART 精排（轻量模式彻底跳过）
+    use_rerank = (force_rerank or (strategy == "complex" and len(fused) > top_k)) and not _light_mode
 
     if use_rerank:
         final = lambda_mart_rerank(query, fused, top_k=top_k)
