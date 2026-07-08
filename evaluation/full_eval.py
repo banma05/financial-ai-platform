@@ -23,15 +23,16 @@ EVAL_DIR = Path(__file__).parent
 REPORTS_DIR = EVAL_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
 
-# 轻量模式环境变量
-_light_mode = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+# 轻量模式环境变量（默认开启，避免 GPU OOM）
+_light_mode = os.environ.get("EVAL_LIGHT", "1").lower() in ("1", "true", "yes")
 
 
 def _subprocess_env():
-    """构造子进程环境变量，轻量模式下添加 EVAL_LIGHT"""
+    """构造子进程环境变量，轻量模式下添加 EVAL_LIGHT + 禁用 CUDA"""
     env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "backend")}
     if _light_mode:
         env["EVAL_LIGHT"] = "1"
+        env["CUDA_VISIBLE_DEVICES"] = ""  # 强制 CPU，防止 GPU→RAM 内存溢出
     return env
 
 
