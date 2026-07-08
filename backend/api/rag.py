@@ -23,7 +23,7 @@ from models.schemas import (
 )
 from rag import load_document, split_documents, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
-from rag.model_router import chat_stream
+from rag.model_router import chat_stream, init_usage, save_token_usage
 from db import SessionLocal, Document, ChatHistory, QueryLog
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
@@ -42,12 +42,17 @@ def _get_history(session_id: str) -> list:
         return list(_session_store.get(session_id, []))
 
 
-def _save_turn(session_id: str, role: str, content: str):
+def _save_turn(session_id: str, role: str, content: str, processing_time: float = 0.0,
+               sources: list = None):
+    """双写：内存缓存（读加速）+ chat_history 表（持久化）"""
     with _session_lock:
         _session_store[session_id].append({"role": role, "content": content})
         # 超过上限时保留最近 N 轮
         if len(_session_store[session_id]) > MAX_HISTORY_TURNS * 2:
             _session_store[session_id] = _session_store[session_id][-(MAX_HISTORY_TURNS * 2):]
+    # ── V6.0: 同时写入 DB 持久化 ──
+    from rag.retriever import save_chat_turn
+    save_chat_turn(session_id, role, content, processing_time=processing_time, sources=sources)
 
 
 def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, processing_time: float):
@@ -74,11 +79,22 @@ def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, 
 @router.post("/session/clear")
 async def clear_session(session_id: str = "default"):
     """
-    清除指定会话的对话历史（用于"清空对话"功能）
+    清除指定会话的对话历史（内存 + 数据库）
     """
+    # 内存清除
     if session_id in _session_store:
         del _session_store[session_id]
-        logger.info(f"会话 {session_id} 已清除")
+    # ── V6.0: 同步清除 DB 记录 ──
+    db = SessionLocal()
+    try:
+        deleted = db.query(ChatHistory).filter(ChatHistory.session_id == session_id).delete()
+        db.commit()
+        logger.info(f"会话 {session_id} 已清除（内存 + DB {deleted} 条）")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"清除 DB 会话记录失败: {e}")
+    finally:
+        db.close()
     return {"message": "会话已清除", "session_id": session_id}
 
 
@@ -179,11 +195,15 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="问题不能为空")
 
     session_id = request.session_id or "default"
+    init_usage()  # V6.0: 初始化 token 计数
     history = _get_history(session_id)
     result = rag_query(query=request.query, top_k=request.top_k, history=history)
-    # 保存到会话历史
+    save_token_usage(session_id, "rag_chat")  # V6.0: 持久化用量
+    # 保存到会话历史（V6.0：双写内存+DB）
     _save_turn(session_id, "user", request.query)
-    _save_turn(session_id, "assistant", result.get("answer", ""))
+    _save_turn(session_id, "assistant", result.get("answer", ""),
+               processing_time=result.get("processing_time", 0),
+               sources=result.get("sources", []))
     return ChatResponse(**result)
 
 
@@ -203,6 +223,7 @@ async def chat_stream_endpoint(request: ChatRequest):
         raise HTTPException(status_code=400, detail="问题不能为空")
 
     session_id = request.session_id or "default"
+    init_usage()  # V6.0: 初始化 token 计数
 
     async def event_stream():
         import time
@@ -254,12 +275,15 @@ async def chat_stream_endpoint(request: ChatRequest):
 
                 yield f"data: {json.dumps({'type': 'done', 'sources': source_list, 'processing_time': processing_time, 'processed_query': processed_query if processed_query != request.query else None}, ensure_ascii=False)}\n\n"
 
-            # Step 4: 保存到会话历史
+            # Step 4: 保存到会话历史（V6.0：双写内存+DB）
             _save_turn(session_id, "user", request.query)
-            _save_turn(session_id, "assistant", full_answer)
+            _save_turn(session_id, "assistant", full_answer,
+                       processing_time=processing_time, sources=source_list)
 
             # Step 5: 写入查询日志
             _log_query(request.query, processed_query, request.top_k, len(sources) if sources else 0, processing_time)
+            # V6.0: 持久化 token 用量
+            save_token_usage(session_id, "rag_chat_stream")
 
         except Exception as e:
             logger.error(f"流式输出失败: {e}")

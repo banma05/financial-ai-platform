@@ -3,7 +3,7 @@
 
 > 📅 最后更新：2026-07-08
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段六进行中 — 6.1 性能优化完成**
+> 📌 当前阶段：**阶段六进行中 — 6.1/6.2/6.3/6.4/6.5 完成，剩余前端+评测**
 > 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
 
 ---
@@ -345,7 +345,43 @@ streamlit run frontend\app.py
 
 ## 历史记录
 
-### 2026-07-08 — 阶段六启动：5项性能优化 + 2项存量修复 ✅
+### 2026-07-08 (下午) — 阶段六 6.2-6.5 核心功能交付 ✅
+
+#### 6.2 上下文管理 (P0)
+- **6.2a RAG 对话持久化**：`retriever.py` 新增 `save_chat_turn()` 写 `chat_history` 表；`api/rag.py` 双写（内存+DB），`clear_session` 同步清 DB
+- **6.2b Agent 分析持久化**：`graph.py` 新增 `save_analysis_log()` 写 `analysis_log` 表；3 个入口接入（流式主/兜底/同步）
+- **6.2c 指代消解**：`query_processor.py` 新增 `_fast_anaphora_resolve()` 纯规则（零延迟），处理"那X呢？"/"它"/"该"追问
+
+#### 6.3 成本追踪 (P1)
+- **6.3a Token 捕获**：`model_router.py` contextvar 无侵入捕获 `chat()`/`chat_stream()` 的 `response.usage`
+- **6.3b 用量记录**：`db/models.py` 新增 `TokenUsageLog` 表；`save_token_usage()` 写入会话+模型+tokens+费用
+- **6.3c API**：`main.py` 新增 `GET /api/v1/admin/stats/cost` 端点（汇总+按模型分组）
+- 接入点：`api/rag.py`（RAG 对话）+ `agent/graph.py`（Agent 分析，写入 `save_analysis_log` 时同步调用）
+
+#### 6.4 人机协同 (P2)
+- **6.4a SSE 中断检测**：`api/agent.py` SSE 端点异步化 + `request.is_disconnected()` 检测
+- **6.4b 置信度标注**：`schemas.py` `TaskResult` 新增 `confidence` 字段；`reporter.py` prompt 要求每条发现标注 `[置信度: XX%]`
+
+#### 6.5 多智能体协同 (P2)
+- **6.5a 校验 Agent**：`verifier.py`（新建）纯规则检查（完整性/成功率/一致性）；`graph.py` executor→verifier→reporter 链路
+
+#### 改动文件
+- `backend/db/models.py` — 新增 TokenUsageLog 表
+- `backend/rag/model_router.py` — contextvar 用量捕获
+- `backend/rag/retriever.py` — save_chat_turn()
+- `backend/rag/query_processor.py` — _fast_anaphora_resolve()
+- `backend/api/rag.py` — 双写DB + token wiring
+- `backend/api/agent.py` — SSE disconnect检测
+- `backend/agent/graph.py` — AnalysisLog + token + verifier_node
+- `backend/agent/schemas.py` — TaskResult.confidence
+- `backend/agent/reporter.py` — 置信度 prompt
+- `backend/agent/verifier.py`（新）— 校验Agent
+- `backend/main.py` — /admin/stats/cost 端点
+
+#### 验证
+- 370/370 单元测试全过
+
+### 2026-07-08 (上午) — 阶段六启动：5项性能优化 + 2项存量修复 ✅
 
 #### 方案A：修复 Flash JSON 提取（`data_query.py`）
 - `_extract_structured_data()` System prompt 从1行 → 4行铁律

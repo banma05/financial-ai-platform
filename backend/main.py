@@ -126,6 +126,37 @@ async def admin_corpus_snapshots():
     return {"snapshots": list_snapshots()}
 
 
+@app.get("/api/v1/admin/stats/cost")
+async def admin_cost_stats():
+    """Token 用量和费用统计（V6.0 新增）"""
+    from db import SessionLocal, TokenUsageLog
+    from sqlalchemy import func
+    db = SessionLocal()
+    try:
+        total_tokens = db.query(func.sum(TokenUsageLog.total_tokens)).scalar() or 0
+        total_cost = db.query(func.sum(TokenUsageLog.estimated_cost)).scalar() or 0
+        total_calls = db.query(func.count(TokenUsageLog.id)).scalar() or 0
+        # 按模型分组
+        rows = db.query(
+            TokenUsageLog.model,
+            func.sum(TokenUsageLog.total_tokens),
+            func.sum(TokenUsageLog.estimated_cost),
+            func.count(TokenUsageLog.id),
+        ).group_by(TokenUsageLog.model).all()
+        by_model = [
+            {"model": m, "tokens": int(t or 0), "cost": round(c or 0, 4), "calls": n}
+            for m, t, c, n in rows
+        ]
+        return {
+            "total_tokens": int(total_tokens),
+            "total_cost": round(total_cost, 4),
+            "total_calls": total_calls,
+            "by_model": by_model,
+        }
+    finally:
+        db.close()
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

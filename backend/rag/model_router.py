@@ -5,7 +5,10 @@
 - 如果后续想加 flash 来省钱，只需改 MODEL_CONFIG 即可
 - classify() 函数可自动判断任务复杂度
 - 架构预留了多模型切换能力
+
+V6.0: contextvar 追踪 Token 用量（chat/chat_stream 无侵入捕获）
 """
+import contextvars
 from enum import Enum
 from typing import Optional
 from loguru import logger
@@ -13,6 +16,52 @@ from openai import OpenAI
 
 from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, AGENT_LLM_MODEL
 from utils.retry import llm_retry
+
+# ── V6.0: Token 用量追踪（contextvar，线程安全）──
+# 用法：请求开始时 _init_usage()，结束时 get_usage() + save_token_usage()
+_usage_ctx: contextvars.ContextVar = contextvars.ContextVar("llm_usage", default=None)
+
+
+def init_usage():
+    """初始化当前请求的 token 用量计数器（在请求入口调用）"""
+    _usage_ctx.set({"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "model": ""})
+
+
+def get_usage() -> dict:
+    """获取当前请求累计的 token 用量"""
+    return _usage_ctx.get() or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "model": ""}
+
+
+def save_token_usage(session_id: str, endpoint: str = "rag_chat"):
+    """将累计的 token 用量写入 token_usage_log 表（失败不影响主流程）"""
+    usage = _usage_ctx.get()
+    if not usage or not usage.get("total_tokens"):
+        return
+    # DeepSeek 官方定价（元/百万 tokens）：flash ~1元, pro ~4元
+    cost_per_million = {"deepseek-v4-flash": 1.0, "deepseek-v4-pro": 4.0}
+    model = usage.get("model", "deepseek-v4-flash")
+    rate = cost_per_million.get(model, 2.0)
+    cost = (usage["prompt_tokens"] + usage["completion_tokens"]) / 1_000_000 * rate
+
+    from db import SessionLocal, TokenUsageLog
+    db = SessionLocal()
+    try:
+        log_entry = TokenUsageLog(
+            session_id=session_id, model=model,
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
+            estimated_cost=round(cost, 6),
+            endpoint=endpoint,
+        )
+        db.add(log_entry)
+        db.commit()
+        logger.debug(f"Token用量已写入: {usage['total_tokens']} tokens, ¥{cost:.4f}, endpoint={endpoint}")
+    except Exception as e:
+        db.rollback()
+        logger.debug(f"Token用量写入失败（静默降级）: {e}")
+    finally:
+        db.close()
 
 
 class TaskType(str, Enum):
@@ -93,6 +142,8 @@ def chat(
         temperature=cfg["temperature"],
         max_tokens=cfg["max_tokens"],
     )
+    # ── V6.0: 捕获用量 ──
+    _capture_usage(response, cfg["model"])
     return response.choices[0].message.content
 
 
@@ -119,10 +170,30 @@ def chat_stream(
         temperature=cfg["temperature"],
         max_tokens=cfg["max_tokens"],
         stream=True,
+        stream_options={"include_usage": True},
     )
     for chunk in response:
-        if chunk.choices[0].delta.content:
+        if chunk.choices and chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
+        # ── V6.0: 流式最后 chunk 可能包含 usage ──
+        if hasattr(chunk, 'usage') and chunk.usage:
+            _capture_usage(chunk, cfg["model"])
+
+
+def _capture_usage(response_or_chunk, model: str):
+    """从 API 响应/流式 chunk 中累计 token 用量（V6.0）"""
+    usage_attr = getattr(response_or_chunk, 'usage', None)
+    if not usage_attr:
+        return
+    current = _usage_ctx.get()
+    if current is None:
+        current = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "model": model}
+        _usage_ctx.set(current)
+    current["prompt_tokens"] += getattr(usage_attr, 'prompt_tokens', 0) or 0
+    current["completion_tokens"] += getattr(usage_attr, 'completion_tokens', 0) or 0
+    current["total_tokens"] += getattr(usage_attr, 'total_tokens', 0) or 0
+    current["model"] = model
+    _usage_ctx.set(current)
 
 
 # ============ LangChain ChatOpenAI 包装器（模块二 Agent 使用）============

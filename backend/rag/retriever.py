@@ -123,3 +123,37 @@ def rag_query(
         )
 
     return result
+
+
+def save_chat_turn(
+    session_id: str,
+    role: str,
+    content: str,
+    query: str = "",
+    processing_time: float = 0.0,
+    sources: list = None,
+):
+    """
+    将对话轮次持久化到 chat_history 表（V6.0 新增）。
+
+    与 api/rag.py 中的内存缓存并行写入，实现"读从内存、写落DB"双写模式。
+    写入失败不影响主流程（静默降级）。
+    """
+    from db import SessionLocal, ChatHistory
+    db = SessionLocal()
+    try:
+        record = ChatHistory(
+            session_id=session_id,
+            role=role,
+            query=query if role == "assistant" else content,
+            answer=content if role == "assistant" else "",
+            sources_json=sources or [],
+            processing_time=processing_time,
+        )
+        db.add(record)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.debug(f"ChatHistory 写入失败（静默降级）: {e}")
+    finally:
+        db.close()
