@@ -3,7 +3,7 @@
 
 > 📅 最后更新：2026-07-08
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段六全部完成 ✅ — 等待评测验证**
+> 📌 当前阶段：**阶段六回退修复 + 全项目系统性审计**
 
 ---
 
@@ -344,7 +344,42 @@ streamlit run frontend\app.py
 
 ## 历史记录
 
-### 2026-07-08 (续) — 前端成本卡片 + 评测成本 + 对比Agent ✅
+### 2026-07-08 (晚) — Executor DAG 并行回退修复 + 全项目审计启动 ✅
+
+#### 问题发现
+- Agent 20题测评运行时电脑内存爆炸、系统卡死
+- 根因分析：阶段六方案C（`Executor.execute()` DAG 并行）引入的全局单例竞态条件
+
+#### 根因详解
+阶段六方案C将 `Executor.execute()` 从线性串行改为 ThreadPoolExecutor 层内并行。
+大多数分析模板第一层有 2 个无依赖的 data_query 任务并行执行，
+两个线程同时进入懒加载单例的 `if _x is None` 分支：
+
+| 竞态点 | 位置 | 模型大小 | 后果 |
+|--------|------|---------|------|
+| `_get_lambda_mart()` | `hybrid_search.py:210` | ~1.5GB GPU | CrossEncoder 双重加载 |
+| `get_embedding_model()` | `embedder.py:20` | ~400MB GPU | BGE 双重加载 |
+| `_get_chroma()` | `vector_store.py:19` | ChromaDB client | 连接重复 |
+| `_get_bm25_index()` | `hybrid_search.py:74` | 全量文档索引 | 双重建索引 |
+
+GPU 双重分配 ~4GB → CUDA OOM → Windows WDDM 溢出到系统 RAM → 硬盘 swap → 整机卡死。
+
+之前的三次修复（14fc75c/c9330e9/4f992a9）只加了推理阶段的锁和降 worker，
+没有保护模型的加载（初始化）阶段，所以没修到根因。
+
+#### 修复方案
+- `executor.py`：`execute()` 退回按 task_id 排序的线性执行
+- 移除 ThreadPoolExecutor、拓扑排序依赖
+- 保留方案B的批量计算兼容逻辑
+- **376/376 测试全过**
+
+#### 改动文件
+- `backend/agent/executor.py` — execute() DAG并行→线性
+
+#### 下一步：全项目系统性审计
+从线程安全、内存泄漏、错误处理、配置风险等维度逐模块审查。
+
+### 2026-07-08 (下午) — 阶段六核心功能交付 ✅ (原始记录，见下文)
 
 #### 6.3c 前端成本仪表盘
 - `frontend/app.py` 侧边栏新增"💰 Token 用量统计"卡片
