@@ -7,7 +7,7 @@
 - GET  /api/v1/agent/templates      分析模板列表
 - GET  /api/v1/agent/formulas       财务公式列表
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 import json
@@ -44,7 +44,7 @@ async def analyze(request: AgentRequest):
 
 
 @router.post("/analyze/stream")
-async def analyze_stream(request: AgentRequest):
+async def analyze_stream(req: AgentRequest, request: Request):
     """
     SSE 流式分析（主要端点）— 实时推送分析进度。
 
@@ -57,16 +57,22 @@ async def analyze_stream(request: AgentRequest):
     - done:           {"type":"done","report":"...","charts":[...],"processing_time":12.5}
     - error:          {"type":"error","message":"..."}
     - clarification:  {"type":"clarification","question":"..."}
+
+    V6.0: 支持客户端断开检测（request.is_disconnected()）
     """
 
-    def event_generator():
+    async def event_generator():
         try:
             for sse_event in run_agent_stream(
-                user_input=request.query,
-                session_id=request.session_id,
-                template_name=request.template,
+                user_input=req.query,
+                session_id=req.session_id,
+                template_name=req.template,
             ):
                 yield sse_event
+                # ── V6.0: 客户端断开则停止推送 ──
+                if await request.is_disconnected():
+                    logger.info(f"客户端断开连接: {req.session_id}")
+                    break
         except Exception as e:
             logger.error(f"Agent SSE 流异常: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': f'分析服务异常: {str(e)}'}, ensure_ascii=False)}\n\n"

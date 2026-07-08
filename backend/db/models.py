@@ -74,6 +74,21 @@ class QueryLog(Base):
     created_at = Column(DateTime, default=datetime.now, comment="查询时间")
 
 
+class TokenUsageLog(Base):
+    """LLM Token 用量明细（V6.0 新增）—— 每次 API 调用一条记录"""
+    __tablename__ = "token_usage_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(100), default="", comment="会话ID")
+    model = Column(String(50), default="", comment="模型名（flash/pro）")
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    estimated_cost = Column(Float, default=0.0, comment="估算费用（元）")
+    endpoint = Column(String(50), default="", comment="调用端点：rag_chat/agent/planner/reporter")
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class AnalysisLog(Base):
     """分析任务日志（模块二 Agent）—— 记录每次分析请求的执行情况"""
     __tablename__ = "analysis_log"

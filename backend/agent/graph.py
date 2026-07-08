@@ -23,6 +23,7 @@ from .tools.data_query import DataQueryTool
 from .tools.financial_calc import FinancialCalcTool
 from .tools.chart import ChartTool
 from utils.logger import TraceTimer, set_trace_id
+from rag.model_router import init_usage, save_token_usage
 
 
 # ==================== State 定义 ====================
@@ -40,6 +41,7 @@ class AgentState(TypedDict, total=False):
     clarification: Optional[str]
     processing_time: float
     error: Optional[str]
+    verification: Optional[dict]  # V6.0: 校验结果
 
 
 # ==================== 全局单例 ====================
@@ -259,6 +261,25 @@ def reporter_node(state: AgentState) -> dict:
             return {"final_report": f"## 分析报告生成失败\n\n错误: {e}"}
 
 
+def verifier_node(state: AgentState) -> dict:
+    """V6.0: 校验 Agent — 在报告生成前独立审查执行结果"""
+    if state.get("clarification"):
+        return {}
+    tasks_dict = state.get("tasks", [])
+    results_dict = state.get("task_results", [])
+    if not results_dict:
+        return {"verification": None}
+
+    from .verifier import Verifier
+    verifier = Verifier()
+    result = verifier.verify(
+        state["user_input"], tasks_dict, results_dict,
+    )
+    logger.info(f"[Verifier] 校验完成: passed={result['passed']}, "
+                f"issues={len(result['issues'])}, warnings={len(result['warnings'])}")
+    return {"verification": result}
+
+
 # ==================== 条件路由 ====================
 
 def _route_after_planner(state: AgentState) -> str:
@@ -276,6 +297,7 @@ def _build_agent_graph() -> StateGraph:
 
     builder.add_node("planner", planner_node)
     builder.add_node("executor", executor_node)
+    builder.add_node("verifier", verifier_node)    # V6.0: 校验Agent
     builder.add_node("reporter", reporter_node)
 
     builder.set_entry_point("planner")
@@ -283,7 +305,8 @@ def _build_agent_graph() -> StateGraph:
         "executor": "executor",
         "reporter": "reporter",
     })
-    builder.add_edge("executor", "reporter")
+    builder.add_edge("executor", "verifier")
+    builder.add_edge("verifier", "reporter")
     builder.add_edge("reporter", END)
 
     return builder.compile()
@@ -298,6 +321,45 @@ def _get_agent_graph():
     if _agent_graph is None:
         _agent_graph = _build_agent_graph()
     return _agent_graph
+
+
+# ==================== 分析历史持久化（V6.0） ====================
+
+def save_analysis_log(
+    session_id: str, user_input: str, template_name: str = "",
+    task_count: int = 0, task_details: list = None,
+    report: str = "", chart_count: int = 0,
+    processing_time: float = 0.0, status: str = "completed",
+):
+    """
+    持久化 Agent 分析记录到 analysis_log 表。
+
+    写入失败不影响主流程（静默降级）。
+    """
+    from db import SessionLocal, AnalysisLog
+    # ── V6.0: 同步写入 token 用量（与 analysis_log 一起落盘）──
+    save_token_usage(session_id, f"agent_{status}")
+    db = SessionLocal()
+    try:
+        log_entry = AnalysisLog(
+            session_id=session_id,
+            user_input=user_input,
+            template_name=template_name or "",
+            task_count=task_count,
+            task_details=task_details or [],
+            report=report,
+            chart_count=chart_count,
+            processing_time=processing_time,
+            status=status,
+        )
+        db.add(log_entry)
+        db.commit()
+        logger.debug(f"AnalysisLog 已写入: session={session_id}, tasks={task_count}, time={processing_time}s")
+    except Exception as e:
+        db.rollback()
+        logger.debug(f"AnalysisLog 写入失败（静默降级）: {e}")
+    finally:
+        db.close()
 
 
 # ==================== 公共入口 ====================
@@ -326,6 +388,7 @@ def run_agent_stream(
     _init_components()
     start_time = time.time()
     tid = set_trace_id()  # 生成本次请求的 trace_id
+    init_usage()  # V6.0: 初始化 token 计数
 
     try:
         graph = _get_agent_graph()
@@ -417,6 +480,15 @@ def run_agent_stream(
                     processing_time=processing_time,
                     message=f"分析完成，耗时 {processing_time} 秒",
                 ).to_sse()
+                # ── V6.0: 持久化分析记录 ──
+                save_analysis_log(
+                    session_id, user_input, template_name,
+                    task_count=len(results),
+                    task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
+                                   "success": r.get("success", False)} for r in results],
+                    report=report, chart_count=chart_count,
+                    processing_time=processing_time,
+                )
                 logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
                 return
 
@@ -438,6 +510,15 @@ def run_agent_stream(
                 processing_time=processing_time,
                 message=f"分析完成，耗时 {processing_time} 秒",
             ).to_sse()
+            # ── V6.0: 持久化分析记录 ──
+            save_analysis_log(
+                session_id, user_input, template_name,
+                task_count=len(results),
+                task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
+                               "success": r.get("success", False)} for r in results],
+                report=report, chart_count=chart_count,
+                processing_time=processing_time,
+            )
             logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
 
     except Exception as e:
@@ -464,22 +545,34 @@ def run_agent_sync(
     # 如已有 plan 则跳过 Planner（benchmark 复用优化）
     if plan is not None:
         if plan.requires_clarification:
-            return {
+            result = {
                 "report": f"### ⚠️ 需要更多信息\n\n{plan.requires_clarification}",
                 "charts": [],
                 "task_count": 0,
                 "processing_time": round(time.time() - start_time, 1),
                 "clarification": plan.requires_clarification,
             }
+            save_analysis_log(session_id, user_input, template_name,
+                              task_count=0, report=result["report"],
+                              processing_time=result["processing_time"], status="clarification")
+            return result
         results = _executor.execute(plan.tasks)
         chart_count = sum(1 for r in results if r.chart_base64)
         report = _reporter.generate(user_input, plan.tasks, results, chart_count)
-        return {
+        processing_time = round(time.time() - start_time, 1)
+        result = {
             "report": report,
             "charts": [r.chart_base64 for r in results if r.chart_base64],
             "task_count": len(plan.tasks),
-            "processing_time": round(time.time() - start_time, 1),
+            "processing_time": processing_time,
         }
+        save_analysis_log(session_id, user_input, template_name,
+                          task_count=len(plan.tasks),
+                          task_details=[{"task_id": r.task_id, "type": r.task_type,
+                                         "success": r.success} for r in results],
+                          report=report, chart_count=chart_count,
+                          processing_time=processing_time)
+        return result
 
     # 正常流程：通过 LangGraph
     graph = _get_agent_graph()
@@ -493,16 +586,32 @@ def run_agent_sync(
         final_state = graph.invoke(initial_state)
     except Exception as e:
         logger.error(f"[Agent] 同步执行失败: {e}")
-        return {
+        processing_time = round(time.time() - start_time, 1)
+        result = {
             "report": f"## 分析异常\n\n错误: {e}",
             "charts": [],
             "task_count": 0,
-            "processing_time": round(time.time() - start_time, 1),
+            "processing_time": processing_time,
         }
+        save_analysis_log(session_id, user_input, template_name,
+                          task_count=0, report=result["report"],
+                          processing_time=processing_time, status="failed")
+        return result
 
-    return {
-        "report": final_state.get("final_report", "## 报告生成失败"),
-        "charts": [r.get("chart_base64") for r in final_state.get("task_results", []) if r.get("chart_base64")],
-        "task_count": len(final_state.get("task_results", [])),
-        "processing_time": round(time.time() - start_time, 1),
+    processing_time = round(time.time() - start_time, 1)
+    task_results = final_state.get("task_results", [])
+    report = final_state.get("final_report", "## 报告生成失败")
+    chart_count = final_state.get("chart_count", 0)
+    result = {
+        "report": report,
+        "charts": [r.get("chart_base64") for r in task_results if r.get("chart_base64")],
+        "task_count": len(task_results),
+        "processing_time": processing_time,
     }
+    save_analysis_log(session_id, user_input, template_name,
+                      task_count=len(task_results),
+                      task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
+                                     "success": r.get("success", False)} for r in task_results],
+                      report=report, chart_count=chart_count,
+                      processing_time=processing_time)
+    return result

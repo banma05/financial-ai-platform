@@ -33,6 +33,7 @@ class TaskResult(BaseModel):
     data: Any = None                           # 结构化数据（数值/字典等）
     chart_base64: Optional[str] = None         # 图表 base64 编码（图表任务专用）
     error: Optional[str] = None                # 失败时的错误信息
+    confidence: Optional[float] = None         # V6.0: 结论置信度 0.0-1.0
 
 
 class AnalysisPlan(BaseModel):

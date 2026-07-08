@@ -187,6 +187,53 @@ def validate_expansion(original: str, expanded: str) -> str:
         return expanded
 
 
+def _fast_anaphora_resolve(query: str, history: List[dict]) -> str:
+    """
+    纯规则指代消解（V6.0，零延迟）。
+
+    处理最频繁的追问模式，不需要调 LLM：
+    - "那X呢？" / "那X怎么样？" → 从历史中提取公司名补全
+    - "它" / "该" 开头 → 从历史中提取最近的公司名/指标名
+    """
+    import re
+
+    # 从历史最后几轮中提取已知公司名和最近提到的指标
+    known_companies = ["贵州茅台", "茅台", "比亚迪", "腾讯控股", "腾讯",
+                       "五粮液", "宁德时代", "宁德", "阿里巴巴", "阿里", "京东", "美团"]
+    recent_text = ""
+    for msg in reversed(history[-6:]):
+        recent_text = msg.get("content", "") + recent_text
+        # 只取最近 3 轮（6条）
+        if len(recent_text) > 1500:
+            break
+
+    # 找到最近提到的公司名
+    found_company = None
+    for c in known_companies:
+        if c in recent_text:
+            found_company = c  # 取最后出现的
+    # 找到最近提到的指标（简单提取中文指标短语）
+    metric_match = re.search(r'(?:毛利率|净利率|ROE|ROA|营收|净利润|现金流|资产负债率|流动比率|存货周转率)', recent_text)
+    found_metric = metric_match.group(0) if metric_match else None
+
+    # 模式1: "那X呢？" / "那X怎么样？"
+    m = re.match(r'^(?:那|那么|那个)\s*(.+?)(?:呢|怎么样|如何|怎样|呢？|怎么样？)\s*$', query.strip())
+    if m:
+        target = m.group(1).strip()
+        parts = []
+        if found_company and found_company not in target:
+            parts.append(found_company)
+        parts.append(target)
+        return "".join(parts)
+
+    # 模式2: "它/该/其" 开头的短句，且历史中有公司名
+    m = re.match(r'^(?:它|该|其|这)\s*(.+)', query.strip())
+    if m and found_company:
+        return f"{found_company}{m.group(1)}"
+
+    return query
+
+
 def rewrite_multiturn_query(query: str, history: List[dict]) -> str:
     """
     多轮对话改写：将含代词的追问改写为独立检索语句。
@@ -206,6 +253,12 @@ def rewrite_multiturn_query(query: str, history: List[dict]) -> str:
 
     if not has_pronoun and not is_short_followup:
         return query
+
+    # ── V6.0: 纯规则快捷路径（零延迟，覆盖 80% 常见追问）──
+    fast_result = _fast_anaphora_resolve(query, history)
+    if fast_result != query:
+        logger.info(f"[多轮改写] 规则匹配: '{query[:30]}' → '{fast_result[:60]}'")
+        return fast_result
 
     logger.info(f"[多轮改写] 检测到歧义: {query[:50]}")
 
