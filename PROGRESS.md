@@ -345,6 +345,28 @@ streamlit run frontend\app.py
 
 ## 历史记录
 
+### 2026-07-08 (续) — 前端成本卡片 + 评测成本 + 对比Agent ✅
+
+#### 6.3c 前端成本仪表盘
+- `frontend/app.py` 侧边栏新增"💰 Token 用量统计"卡片
+- 调用 `GET /api/v1/admin/stats/cost`，展示累计 tokens/费用/调用次数/按模型分组
+
+#### 6.3d 评测成本维度
+- `evaluation/agent/bench_agent.py` Phase 2 后从 contextvar 捕获 token 用量
+- 每道题结果追加 `tokens` + `cost` 字段
+- 评测报告底部输出总 tokens/总费用/单题均费
+
+#### 6.5b 对比 Agent
+- `backend/agent/comparator.py`（新建）：纯数据提取 → 生成结构化对比表
+- `graph.py` 新增 `comparator_node` + `_route_after_verifier` 条件路由
+- 仅在 `cross_company_profit` 模板时触发 verifier→comparator→reporter 路径
+
+#### 改动文件
+- `frontend/app.py` — 侧边栏成本卡片
+- `evaluation/agent/bench_agent.py` — 成本追踪
+- `backend/agent/comparator.py`（新）— 对比Agent
+- `backend/agent/graph.py` — comparator_node + 条件路由
+
 ### 2026-07-08 (下午) — 阶段六 6.2-6.5 核心功能交付 ✅
 
 #### 6.2 上下文管理 (P0)
