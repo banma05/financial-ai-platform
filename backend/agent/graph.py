@@ -42,6 +42,7 @@ class AgentState(TypedDict, total=False):
     processing_time: float
     error: Optional[str]
     verification: Optional[dict]  # V6.0: 校验结果
+    comparison: Optional[dict]    # V6.0: 对比结果
 
 
 # ==================== 全局单例 ====================
@@ -282,11 +283,35 @@ def verifier_node(state: AgentState) -> dict:
 
 # ==================== 条件路由 ====================
 
+def comparator_node(state: AgentState) -> dict:
+    """V6.0: 对比 Agent — 从多公司结果中抽取指标生成对比表"""
+    if state.get("clarification"):
+        return {}
+    results_dict = state.get("task_results", [])
+    tasks_dict = state.get("tasks", [])
+    if not results_dict:
+        return {"comparison": None}
+
+    from .comparator import Comparator
+    comp = Comparator()
+    result = comp.compare(tasks_dict, results_dict)
+    logger.info(f"[Comparator] 对比完成: {result['summary']}")
+    return {"comparison": result}
+
+
 def _route_after_planner(state: AgentState) -> str:
     """Planner 之后：有追问→reporter，否则→executor"""
     if state.get("clarification"):
         return "reporter"
     return "executor"
+
+
+def _route_after_verifier(state: AgentState) -> str:
+    """V6.0: 校验后路由 — 多公司对比模板走 comparator，否则直通 reporter"""
+    template = state.get("template_name", "")
+    if template == "cross_company_profit":
+        return "comparator"
+    return "reporter"
 
 
 # ==================== 构建 Graph ====================
@@ -297,7 +322,8 @@ def _build_agent_graph() -> StateGraph:
 
     builder.add_node("planner", planner_node)
     builder.add_node("executor", executor_node)
-    builder.add_node("verifier", verifier_node)    # V6.0: 校验Agent
+    builder.add_node("verifier", verifier_node)       # V6.0: 校验Agent
+    builder.add_node("comparator", comparator_node)    # V6.0: 对比Agent
     builder.add_node("reporter", reporter_node)
 
     builder.set_entry_point("planner")
@@ -306,7 +332,11 @@ def _build_agent_graph() -> StateGraph:
         "reporter": "reporter",
     })
     builder.add_edge("executor", "verifier")
-    builder.add_edge("verifier", "reporter")
+    builder.add_conditional_edges("verifier", _route_after_verifier, {
+        "comparator": "comparator",
+        "reporter": "reporter",
+    })
+    builder.add_edge("comparator", "reporter")
     builder.add_edge("reporter", END)
 
     return builder.compile()

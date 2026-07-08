@@ -162,6 +162,26 @@ with st.sidebar:
     else:
         st.warning("⏳ 检查中...")
 
+    # ── V6.0: 成本仪表盘 ──
+    if st.session_state.backend_ok:
+        try:
+            cost_resp = requests.get(f"{_BACKEND}/api/v1/admin/stats/cost", timeout=5)
+            if cost_resp.status_code == 200:
+                cost_data = cost_resp.json()
+                total_tokens = cost_data.get("total_tokens", 0)
+                total_cost = cost_data.get("total_cost", 0)
+                if total_tokens > 0:
+                    with st.expander("💰 Token 用量统计", expanded=False):
+                        st.metric("累计 Tokens", f"{total_tokens:,}")
+                        st.metric("累计费用", f"¥{total_cost:.4f}")
+                        st.metric("API 调用次数", cost_data.get("total_calls", 0))
+                        if cost_data.get("by_model"):
+                            st.caption("---")
+                            for m in cost_data["by_model"]:
+                                st.caption(f"{m['model']}: {m['tokens']:,} tokens / ¥{m['cost']:.4f} ({m['calls']}次)")
+        except Exception:
+            pass  # 成本 API 不可用时静默降级
+
     st.markdown("---")
     st.caption("智能财务分析平台 V1.0")
     st.caption("知识库 + Agent + MCP 三模块架构")

@@ -25,6 +25,7 @@ from loguru import logger
 from agent.planner import Planner, BUILTIN_TEMPLATES
 from agent.schemas import AnalysisPlan, AnalysisTask
 from agent.graph import run_agent_sync
+from rag.model_router import init_usage, get_usage  # V6.0: 成本追踪
 
 TEST_SET = Path(__file__).parent.parent / "data" / "agent_questions.json"
 
@@ -134,6 +135,8 @@ total_task_score = 0.0
 total_indicator_coverage = 0.0
 total_structure_score = 0.0
 total_time = 0.0
+total_cost = 0.0      # V6.0
+total_tokens_all = 0   # V6.0
 valid_plan_count = 0
 clarification_count = 0
 by_category = {}
@@ -175,6 +178,14 @@ for i, q in enumerate(questions, 1):
     exec_start = time.time()
     try:
         agent_result = run_agent_sync(query, plan=plan)
+        # ── V6.0: 捕获本次分析的 token 用量 ──
+        usage = get_usage()
+        question_cost = round(
+            (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0))
+            / 1_000_000 * 2.0,  # 均价 ¥2/百万tokens
+            6,
+        )
+        question_tokens = usage.get("total_tokens", 0)
     except Exception as e:
         logger.error(f"  Agent 执行失败: {e}")
         failed.append(qid)
@@ -188,6 +199,8 @@ for i, q in enumerate(questions, 1):
     struct_result = score_report_structure(report)
     total_indicator_coverage += ind_result["coverage"]
     total_structure_score += struct_result["structure_score"]
+    total_cost += question_cost    # V6.0
+    total_tokens_all += question_tokens  # V6.0
 
     logger.info(f"  执行: {exec_time:.1f}s | 指标覆盖率={ind_result['coverage']:.1%} | 结构={struct_result['structure_score']:.1%}")
     if ind_result["missing"]:
@@ -217,6 +230,8 @@ for i, q in enumerate(questions, 1):
         "task_count": task_result.get("task_count", 0),
         "missing_indicators": ind_result["missing"],
         "needs_clarification": task_result["status"] == "needs_clarification",
+        "tokens": question_tokens,     # V6.0
+        "cost": question_cost,         # V6.0
     })
 
 elapsed = time.time() - start_all
@@ -262,5 +277,13 @@ for d in ["easy", "medium", "hard"]:
 
 if failed:
     print(f"\n### 失败题: {failed}")
+
+avg_cost = total_cost / n if n > 0 else 0
+print(f"\n### 成本维度（V6.0 新增）")
+print(f"| 指标 | 值 |")
+print(f"|------|:--:|")
+print(f"| 总 Token 用量 | {total_tokens_all:,} |")
+print(f"| 总费用 | ¥{total_cost:.4f} |")
+print(f"| 单题均费 | ¥{avg_cost:.4f} |")
 
 print(f"\n评测完成 [OK]")
