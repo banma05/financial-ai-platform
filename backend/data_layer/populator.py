@@ -242,7 +242,7 @@ class DataPopulator:
         seen = set()
         for q in search_queries:
             processed = process_query(q)
-            results = hybrid_search(processed, top_k=8)
+            results = hybrid_search(processed, top_k=8, enable_entity_routing=True)
             for r in results:
                 key = r["content"][:100]
                 if key not in seen:
@@ -278,7 +278,8 @@ class DataPopulator:
             result = parse_llm_json(response)
             filtered = {k: v for k, v in result.items() if v is not None}
             if filtered:
-                logger.debug(f"[Populator] Flash 提取 {company} {year}: {len(filtered)} 个指标")
+                logger.info(f"[Populator] Flash 原始键名 {company} {year}: {list(result.keys())}")
+                logger.info(f"[Populator] Flash 提取 {company} {year}: {len(filtered)} 个指标: {list(filtered.keys())}")
                 return filtered
         except Exception as e:
             logger.debug(f"[Populator] Flash 提取失败: {e}")
@@ -293,7 +294,9 @@ class DataPopulator:
             )
             result = parse_llm_json(response)
             filtered = {k: v for k, v in result.items() if v is not None}
-            logger.info(f"[Populator] Pro 提取 {company} {year}: {len(filtered)} 个指标")
+            # ── 调试：打印 LLM 原始返回的所有键名 ──
+            logger.info(f"[Populator] Pro 原始键名 {company} {year}: {list(result.keys())}")
+            logger.info(f"[Populator] Pro 提取 {company} {year}: {len(filtered)} 个指标: {list(filtered.keys())}")
             return filtered
         except Exception as e:
             logger.warning(f"[Populator] Pro 重试也失败: {e}")
@@ -341,7 +344,7 @@ class DataPopulator:
                 # 标准化指标名
                 metric_name = self._normalize_metric(raw_name)
                 if metric_name not in STANDARD_METRICS:
-                    logger.debug(f"[Populator] 跳过非标准指标: {raw_name}→{metric_name}")
+                    logger.info(f"[Populator] 跳过非标准指标: '{raw_name}'→'{metric_name}' (不在STANDARD_METRICS中)")
                     continue
 
                 # INSERT OR REPLACE
