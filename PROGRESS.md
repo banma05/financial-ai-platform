@@ -344,6 +344,38 @@ streamlit run frontend\app.py
 
 ## 历史记录
 
+### 2026-07-08 (深夜) — V7.0 结构化数据层交付 ✅
+
+#### 核心设计
+Agent 的 data_query 从纯 RAG 升级为 SQL 优先 + RAG 兜底：
+- Phase 1: SQL 结构化查询（~5ms，零 LLM）
+- Phase 2: RAG 兜底（原有逻辑，~20-80s）
+
+设计理念：SQL 管事实（精确数字），RAG 管解读（原因/趋势）。
+
+#### 交付清单
+| 文件 | 内容 |
+|------|------|
+| `data_layer/models.py` | Company + FinancialData（EAV模式）ORM 模型 |
+| `data_layer/service.py` | `StructuredDataService.try_query()` 零 LLM 解析→SQL查询 |
+| `data_layer/populator.py` | 批量提取 21 个标准指标（Flash+Pro 重试）→ 写入 SQL |
+| `data_layer/__init__.py` | 包导出 |
+
+**集成改动**：
+- `data_query.py` — `run()` 插入 SQL 优先路径
+- `financial_calc.py` — `_auto_fill_params()` ROE/ROA/Growth 智能回退
+- `param_injection.py` — 补充 equity→avg_equity 等 8 对回退映射
+- `api/rag.py` — 文档上传后 BackgroundTasks 异步触发结构化提取
+- `main.py` — init_db() 前导入 data_layer 模型确保建表
+
+#### 数据填充结果
+- 3 家公司 / 40 指标：比亚迪 19 + 腾讯 5 + 茅台 17
+- 数据真实可靠（茅台营收 1708.99亿 vs 年报 1709亿）
+- `python -m data_layer.populator --all` 可随时增量更新
+
+#### 验证
+- **376/376 测试全过**，零回归
+
 ### 2026-07-08 (晚) — Executor DAG 并行回退修复 + 全项目审计启动 ✅
 
 #### 问题发现
