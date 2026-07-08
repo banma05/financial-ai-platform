@@ -5,7 +5,7 @@ import os
 import json
 import asyncio
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
@@ -99,7 +99,7 @@ async def clear_session(session_id: str = "default"):
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
     """
     上传文档到知识库
     支持 PDF / Word / Markdown / TXT 格式
@@ -177,6 +177,21 @@ async def upload_document(file: UploadFile = File(...)):
         logger.warning(f"写入文档记录失败（不影响知识库）: {e}")
     finally:
         db.close()
+
+    # ── V7.0: 后台异步触发结构化数据提取 ──
+    def _trigger_population():
+        try:
+            from data_layer.populator import DataPopulator
+            populator = DataPopulator()
+            company, year = populator._parse_filename(file.filename or "")
+            if company and year:
+                count = populator.populate_company(company, year)
+                logger.info(f"[上传] 结构化提取完成: {company} {year}, {count} 个指标")
+        except Exception as e:
+            logger.debug(f"[上传] 结构化提取跳过: {e}")
+
+    if background_tasks:
+        background_tasks.add_task(_trigger_population)
 
     return DocumentUploadResponse(
         filename=file.filename or "unknown",
