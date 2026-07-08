@@ -528,12 +528,9 @@ class Planner:
         model_hint = "pro" if task_type == TaskType.COMPLEX else "flash"
         logger.info(f"LLM 自由拆解模式（{model_hint}）")
         try:
+            from utils.text import parse_llm_json
             text = chat(messages, query=user_input, task_type=task_type)
-            text = text.strip()
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-            return json.loads(text)
+            return parse_llm_json(text)
         except Exception as e:
             logger.warning(f"LLM 拆解失败({model_hint}): {type(e).__name__}: {str(e)[:80]}")
             return None

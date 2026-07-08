@@ -23,39 +23,8 @@ from .tools.param_injection import (
 )
 
 
-def _topological_layers(tasks: list) -> list:
-    """
-    Kahn 算法分层拓扑排序。
-
-    返回：[[layer0_tasks], [layer1_tasks], ...]
-    同层任务之间无依赖关系，可并行执行。
-
-    与 graph.py 中的同名函数逻辑一致（避免循环导入，此处重复一份）。
-    """
-    task_map = {t["task_id"]: t for t in tasks}
-    in_degree = {t["task_id"]: len(t.get("depends_on", [])) for t in tasks}
-    adjacency = {t["task_id"]: [] for t in tasks}
-    for t in tasks:
-        for dep_id in t.get("depends_on", []):
-            if dep_id in adjacency:
-                adjacency[dep_id].append(t["task_id"])
-
-    layers = []
-    while in_degree:
-        current = [tid for tid, deg in in_degree.items() if deg == 0]
-        if not current:
-            remaining = [task_map[tid] for tid in in_degree]
-            if remaining:
-                layers.append(remaining)
-            break
-        layers.append([task_map[tid] for tid in current])
-        for tid in current:
-            del in_degree[tid]
-            for neighbor in adjacency[tid]:
-                if neighbor in in_degree:
-                    in_degree[neighbor] -= 1
-
-    return layers
+# DAG 拓扑排序 — 统一使用 utils.topological
+from utils.topological import topological_layers as _topological_layers
 
 
 class ToolRegistry:

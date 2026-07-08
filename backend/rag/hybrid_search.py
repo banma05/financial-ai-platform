@@ -24,25 +24,17 @@ from .embedder import get_embedding_model
 from .vector_store import _get_chroma
 from .jieba_tokenizer import tokenize, tokenize_docs, tokenize_for_search
 from .entity_router import resolve_document_filter, get_entity_boost_sources
+from .keywords import COMPLEX_QUERY_KEYWORDS, SIMPLE_QUERY_PATTERNS
 
 
 # ============ 策略路由 ============
 
-# 简单 query 模式（极短 + 无财务术语，才走快速模式）
-SIMPLE_PATTERNS = ["你好", "帮助", "文档列表", "有哪些文件"]
+# 简单 query 模式（极短 + 无财务术语，走快速模式）
+SIMPLE_PATTERNS = SIMPLE_QUERY_PATTERNS
 
 
 # 复杂 query 关键词（触发 LambdaMART 重排序）
-COMPLEX_PATTERNS = [
-    "分析", "对比", "趋势", "变化", "原因", "为什么",
-    "异常", "风险", "评估", "判断", "预测", "建议",
-    "关联", "影响", "差异", "波动",
-    "指标", "比率", "毛利率", "净利率", "ROE", "ROA",
-    "同比", "环比", "财务", "审计", "合规",
-    # 数值查询类（用户问了具体数字 → 需要精确检索）
-    "多少", "增长", "下降", "上升", "减少", "增加",
-    "分配", "方案", "目标", "措施", "计划",
-]
+COMPLEX_PATTERNS = COMPLEX_QUERY_KEYWORDS
 
 
 def route_query(query: str) -> str:
@@ -284,6 +276,10 @@ def hybrid_search(
     返回:
         [{"content": "...", "source": "...", "page": 1, "score": 0.95}, ...]
     """
+    # ── 轻量评测模式：跳过 CrossEncoder 重排，省 2-3GB 内存 ──
+    if os.environ.get("EVAL_LIGHT"):
+        force_rerank = False
+
     # 实体路由：自动检测公司名 → 限定文档
     applied_filter = filter_sources
     if enable_entity_routing and filter_sources is None:

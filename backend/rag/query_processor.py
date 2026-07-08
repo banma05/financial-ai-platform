@@ -198,8 +198,7 @@ def _fast_anaphora_resolve(query: str, history: List[dict]) -> str:
     import re
 
     # 从历史最后几轮中提取已知公司名和最近提到的指标
-    known_companies = ["贵州茅台", "茅台", "比亚迪", "腾讯控股", "腾讯",
-                       "五粮液", "宁德时代", "宁德", "阿里巴巴", "阿里", "京东", "美团"]
+    from .keywords import KNOWN_COMPANIES, FINANCIAL_METRICS
     recent_text = ""
     for msg in reversed(history[-6:]):
         recent_text = msg.get("content", "") + recent_text
@@ -209,11 +208,12 @@ def _fast_anaphora_resolve(query: str, history: List[dict]) -> str:
 
     # 找到最近提到的公司名
     found_company = None
-    for c in known_companies:
+    for c in KNOWN_COMPANIES:
         if c in recent_text:
             found_company = c  # 取最后出现的
-    # 找到最近提到的指标（简单提取中文指标短语）
-    metric_match = re.search(r'(?:毛利率|净利率|ROE|ROA|营收|净利润|现金流|资产负债率|流动比率|存货周转率)', recent_text)
+    # 找到最近提到的指标（从统一关键词表构建正则）
+    _metric_pattern = "|".join(re.escape(m) for m in FINANCIAL_METRICS)
+    metric_match = re.search(_metric_pattern, recent_text)
     found_metric = metric_match.group(0) if metric_match else None
 
     # 模式1: "那X呢？" / "那X怎么样？"
