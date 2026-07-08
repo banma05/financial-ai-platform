@@ -458,7 +458,7 @@ class FinancialCalcTool:
         return self._single_calculate(formula, params)
 
     def _single_calculate(self, formula: str, params: dict) -> dict:
-        """单个公式计算（原有逻辑）"""
+        """单个公式计算（含 V7.0 智能参数补全）"""
         entry = FORMULA_REGISTRY.get(formula)
         if not entry:
             return {
@@ -472,6 +472,9 @@ class FinancialCalcTool:
             }
 
         try:
+            # ── V7.0: 智能参数补全（ROE/ROA/Growth 自动回退）──
+            params = self._auto_fill_params(formula, dict(params))
+
             func = entry["func"]
             # 提取所需参数
             args = []
@@ -505,6 +508,59 @@ class FinancialCalcTool:
                 "unit": "",
                 "error": str(e),
             }
+
+    @staticmethod
+    def _auto_fill_params(formula: str, params: dict) -> dict:
+        """
+        V7.0: 智能参数补全 — 修复 ROE/ROA/Growth 常见参数名不匹配。
+
+        ROE 场景：只有 equity 无 avg_equity → avg_equity = equity
+        ROA 场景：只有 total_assets 无 avg_total_assets → avg_total_assets = total_assets
+        增长率场景：只有 营业收入_2024/营业收入_2023 → 提取 current_revenue/previous_revenue
+        """
+        params = dict(params)  # 不修改原始字典
+
+        # ── ROE: avg_equity ← equity ──
+        if formula == "roe":
+            if "avg_equity" not in params and "equity" in params:
+                params["avg_equity"] = params["equity"]
+
+        # ── ROA: avg_total_assets ← total_assets ──
+        if formula == "roa":
+            if "avg_total_assets" not in params and "total_assets" in params:
+                params["avg_total_assets"] = params["total_assets"]
+
+        # ── 营收增长率: current_revenue ← 营业收入_最大年 ──
+        if formula == "revenue_growth":
+            if "current_revenue" not in params or "previous_revenue" not in params:
+                yearly = FinancialCalcTool._extract_yearly(params, "营业收入")
+                if len(yearly) >= 2:
+                    sorted_yrs = sorted(yearly.keys(), reverse=True)
+                    params.setdefault("current_revenue", yearly[sorted_yrs[0]])
+                    params.setdefault("previous_revenue", yearly[sorted_yrs[1]])
+
+        # ── 净利润增长率: current_profit ← 净利润_最大年 ──
+        if formula == "net_profit_growth":
+            if "current_profit" not in params or "previous_profit" not in params:
+                yearly = FinancialCalcTool._extract_yearly(params, "净利润")
+                if len(yearly) >= 2:
+                    sorted_yrs = sorted(yearly.keys(), reverse=True)
+                    params.setdefault("current_profit", yearly[sorted_yrs[0]])
+                    params.setdefault("previous_profit", yearly[sorted_yrs[1]])
+
+        return params
+
+    @staticmethod
+    def _extract_yearly(params: dict, metric_base: str) -> dict:
+        """从 params 中提取带年份后缀的指标值，如 {'2024': 1709.90, '2023': 1505.60}"""
+        import re
+        pattern = re.compile(rf'^{re.escape(metric_base)}_(\d{{4}})$')
+        result = {}
+        for key, value in params.items():
+            m = pattern.match(key)
+            if m:
+                result[int(m.group(1))] = value
+        return result
 
     def _batch_calculate(self, formula_names: list, params: dict) -> dict:
         """

@@ -30,15 +30,19 @@ class DataQueryTool:
         """
         执行数据查询。
 
+        V7.0: SQL 优先策略
+          Phase 1: 结构化数据库查询（~5ms, 零 LLM）
+          Phase 2: RAG 兜底（原有逻辑, ~20-80s）
+
         参数:
             query: 自然语言查询（例如"贵州茅台2022-2024年毛利率和净利率"）
             session_id: 会话 ID
-            top_k: 检索文档数（数据提取需要更多候选，默认10）
+            top_k: 检索文档数（RAG 兜底时使用）
 
         返回:
             {
                 "found": True/False,
-                "data": {...},           # 结构化数值（LLM 提取）
+                "data": {...},           # 结构化数值
                 "summary": "xxx",        # 人类可读摘要
                 "raw_chunks": [...],     # 原始检索结果
                 "confidence": 0.0-1.0,   # 置信度
@@ -46,6 +50,17 @@ class DataQueryTool:
         """
         logger.info(f"DataQuery 工具调用: {query}")
 
+        # ── V7.0 Phase 1: 结构化数据优先 ──
+        try:
+            from data_layer.service import get_service
+            structured = get_service().try_query(query)
+            if structured and structured.get("found"):
+                logger.info(f"[SQL命中] {query[:50]} -> {len(structured['data'])} 个指标")
+                return structured
+        except Exception as e:
+            logger.debug(f"[SQL] 检查跳过（静默降级）: {e}")
+
+        # ── Phase 2: RAG 兜底 ──
         # Step 1: Query 处理（复用模块一）
         processed_query = process_query(query)
 

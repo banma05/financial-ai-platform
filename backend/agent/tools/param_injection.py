@@ -60,6 +60,12 @@ FINANCIAL_TERM_TO_PARAM: Dict[str, str] = {
     "营业收入_当期": "current_revenue", "净利润_当期": "current_profit",
     # ── 通用 ──
     "EBITDA": "ebitda",
+    # ── V7.0: 参数回退映射（期末值→平均值，解决 ROE/ROA 缺参数问题）──
+    "净资产": "equity", "净资产(期末)": "equity",
+    "平均净资产": "avg_equity", "净资产平均值": "avg_equity",
+    "平均总资产": "avg_total_assets", "总资产平均值": "avg_total_assets",
+    "期初净资产": "equity_beginning", "期初总资产": "total_assets_beginning",
+    "期末净资产": "equity", "期末总资产": "total_assets",
 }
 
 
