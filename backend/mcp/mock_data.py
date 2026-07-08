@@ -45,7 +45,7 @@ def get_stock_price(symbol: str, period: str = "realtime") -> Dict[str, Any]:
         try:
             return _akshare_stock_price(norm, name, period)
         except Exception as e:
-            logger.warning(f"[AKShare] 行情获取失败({symbol}): {e}，降级 Mock")
+            logger.info(f"[AKShare] 行情获取失败({symbol})，静默降级 Mock")
 
     return _mock_stock_price(norm, period)
 
@@ -128,7 +128,7 @@ def get_financial_statements(
         try:
             return _akshare_statements(norm, name, statement_type)
         except Exception as e:
-            logger.warning(f"[AKShare] 报表获取失败({symbol}): {e}，降级 Mock")
+            logger.info(f"[AKShare] 报表获取失败({symbol})，静默降级 Mock")
 
     return _mock_statements(norm, statement_type)
 
@@ -253,7 +253,7 @@ def get_market_index(index: str = "sh000001") -> Dict[str, Any]:
         try:
             return _akshare_index(index)
         except Exception as e:
-            logger.warning(f"[AKShare] 指数获取失败({index}): {e}，降级 Mock")
+            logger.info(f"[AKShare] 指数获取失败({index})，静默降级 Mock")
 
     data = _INDEX_DATA.get(index)
     if not data:
@@ -296,7 +296,7 @@ def get_financial_calendar(symbol: str, year: int = 2026) -> Dict[str, Any]:
             events.extend(div_events)
             events.sort(key=lambda x: x["date"])
         except Exception as e:
-            logger.warning(f"[AKShare] 分红日历获取失败({symbol}): {e}")
+            logger.info(f"[AKShare] 分红日历获取失败({symbol})，静默降级 Mock")
 
     return {"symbol": symbol, "name": name, "year": year, "events": events, "event_count": len(events)}
 

@@ -1,9 +1,9 @@
 
 # 项目进度存档
 
-> 📅 最后更新：2026-07-06 深夜
+> 📅 最后更新：2026-07-08
 > 🎯 目标：智能财务分析平台（三模块：知识库 + Agent + MCP）
-> 📌 当前阶段：**阶段五 ✅ → 阶段六待启动**
+> 📌 当前阶段：**阶段六进行中 — 6.1 性能优化完成**
 > 🗺️ 完整五阶段路线图见下文「版本路线 V3.0」
 
 ---
@@ -17,7 +17,7 @@
 | **阶段三** | MCP模块从零开发（6+工具）+ AKShare | ✅ 完成 (7/5) | 外部数据源接入 |
 | **阶段四** | Docker + Redis + CI/CD + 集成测试 | ✅ 完成 (7/5) | 生产级工程补齐 |
 | **阶段五** | 惰性加载 + 统一评测 + P1/P2清零 + GPU可选 | ✅ 完成 (7/6) | 代码工程化 + 质量防线 |
-| **阶段六** | 性能优化 + 上下文管理 + 人机协同 | ⏳ 待启动 | 指标达标 + 含金量提升 |
+| **阶段六** | 性能优化 ✅ + 上下文管理 + 人机协同 | 🔄 进行中 | 指标达标 + 含金量提升 |
 
 ### 核心架构决策（持续更新）
 - ✅ **采用 LangGraph StateGraph**：业界标准 Agent 编排框架，StateGraph 做顶层编排 + ThreadPoolExecutor 做层内并行
@@ -344,6 +344,52 @@ streamlit run frontend\app.py
 ---
 
 ## 历史记录
+
+### 2026-07-08 — 阶段六启动：5项性能优化 + 2项存量修复 ✅
+
+#### 方案A：修复 Flash JSON 提取（`data_query.py`）
+- `_extract_structured_data()` System prompt 从1行 → 4行铁律
+- 新增 3 个 few-shot 示例（单年多指标/多年单指标/数据缺失）
+- 预期：Flash 失败率 40% → <10%，端到端耗时 -30%
+
+#### 方案B：Calculator 多公式批量计算（`financial_calc.py` + `executor.py`）
+- `run(formula)` 支持逗号分隔多公式 → `_batch_calculate()` 拆分逐个计算
+- 返回聚合结果 `{results: [...], is_batch: true}`
+- `executor.py` 适配批量结果格式
+- 预期：计算任务失败率 50% → <15%，指标覆盖率 78.6% → 87%+
+
+#### 方案C：Executor DAG 并行执行（`executor.py`）
+- `execute()` 从线性顺序 → 拓扑排序 + ThreadPoolExecutor 层内并行
+- 复制 `_topological_layers()`（避免循环导入 graph.py）
+- 预期：Executor 阶段耗时 -40%
+
+#### 方案D：Hard 题模板优先策略（`planner.py`）
+- 新增 2 个模板：`cross_company_profit`（跨公司盈利对比）、`multi_dimension`（多维度综合分析）
+- 模板总数 5→7，全部加载到 `BUILTIN_TEMPLATES`
+- `_match_template()` 关键词匹配机制，10条优先级规则
+- `plan()` 新增模式2：关键词匹配 → 跳过 LLM 拆解（0.1s vs 36s）
+- `_load_template()` 支持 `{company_a}/{company_b}` 多公司占位符
+- 预期：Hard 题拆解准确率 39.6% → 65%+
+
+#### 方案E：优化 Planner 指令遵循（`planner.py`）
+- Prompt 增加"参数精确性铁律"：formula 拼写必须精确、MCP 参数值必须合规
+- 增加"常见错误"反例：❌ `formula: "毛利率"` → ✅ `formula: "gross_profit_margin"`
+- 澄清多公式语法：用逗号分隔而非数组格式
+
+#### 存量优化
+- `chart.py`：`_bar_chart` 和 `_radar_chart` 的 `legend()` 调用前检查 handles（消除 "No artists with labels" 警告）
+- `mock_data.py`：4 处 AKShare 失败日志 warning→info（静默降级，减少噪音）
+
+#### 验证结果
+- **370/370 单元测试全过**，零回归（10分钟）
+
+#### 改动文件
+- `backend/agent/tools/data_query.py` — 方案A：Prompt增强
+- `backend/agent/tools/financial_calc.py` — 方案B：多公式批量
+- `backend/agent/tools/chart.py` — 存量：legend修复
+- `backend/agent/executor.py` — 方案B+C：批量+DAG并行
+- `backend/agent/planner.py` — 方案D+E：新模板+匹配+指令
+- `backend/mcp/mock_data.py` — 存量：AKShare静默降级
 
 ### 2026-07-06 — 阶段五完成 + P1 清零 + rag 惰性加载 ✅
 

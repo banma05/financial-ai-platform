@@ -192,7 +192,10 @@ class ChartTool:
         ax.set_ylabel(config.y_label or "数值")
         ax.set_xticks(x)
         ax.set_xticklabels(categories, rotation=30, ha="right")
-        ax.legend()
+        # 🔧 只在有图例项时才调用 legend（避免 "No artists with labels" 警告）
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend()
         ax.grid(True, alpha=0.3, axis="y")
 
         return _fig_to_base64(fig)
@@ -238,7 +241,10 @@ class ChartTool:
         ax.set_xticks(angles[:-1])
         ax.set_xticklabels(categories, fontsize=10)
         ax.set_title(config.title, fontsize=14, fontweight="bold", pad=20)
-        ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
+        # 🔧 只在有图例项时才调用 legend（避免 "No artists with labels" 警告）
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
 
         return _fig_to_base64(fig)
 

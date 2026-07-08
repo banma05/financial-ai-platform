@@ -171,6 +171,78 @@ BUILTIN_TEMPLATES = {
              "depends_on": ["3", "4", "5", "6"]},
         ],
     },
+    # ── V6.0 新增模板 ──
+    "cross_company_profit": {
+        "name": "cross_company_profit",
+        "display_name": "跨公司盈利对比",
+        "description": "对比两家公司的核心盈利指标（毛利率/净利率/ROE/ROA）并可视化差异",
+        "category": "对比分析",
+        "tasks": [
+            {"task_id": "1", "task_type": "data_query",
+             "description": "查询公司A的盈利数据",
+             "params": {"query": "{company_a} 营业收入 营业成本 净利润 净资产 总资产"}},
+            {"task_id": "2", "task_type": "data_query",
+             "description": "查询公司B的盈利数据",
+             "params": {"query": "{company_b} 营业收入 营业成本 净利润 净资产 总资产"}},
+            {"task_id": "3", "task_type": "calculate",
+             "description": "计算公式A的毛利率、净利率、ROE、ROA",
+             "params": {"formula": "gross_profit_margin,net_profit_margin,roe,roa"},
+             "depends_on": ["1"]},
+            {"task_id": "4", "task_type": "calculate",
+             "description": "计算公式B的毛利率、净利率、ROE、ROA",
+             "params": {"formula": "gross_profit_margin,net_profit_margin,roe,roa"},
+             "depends_on": ["2"]},
+            {"task_id": "5", "task_type": "chart",
+             "description": "两公司盈利指标对比柱状图",
+             "params": {"chart_type": "bar", "title": "盈利能力对比"},
+             "depends_on": ["3", "4"]},
+            {"task_id": "6", "task_type": "analyze",
+             "description": "对比两公司盈利能力差异并给出投资建议",
+             "params": {},
+             "depends_on": ["3", "4"]},
+        ],
+    },
+    "multi_dimension": {
+        "name": "multi_dimension",
+        "display_name": "多维度综合分析",
+        "description": "从盈利/成长/偿债/营运四个维度全面评估公司财务健康状况",
+        "category": "综合分析",
+        "tasks": [
+            {"task_id": "1", "task_type": "data_query",
+             "description": "查询盈利相关数据",
+             "params": {"query": "{company} 营业收入 营业成本 净利润 净资产 总资产"}},
+            {"task_id": "2", "task_type": "data_query",
+             "description": "查询资产负债和现金流数据",
+             "params": {"query": "{company} 总负债 流动资产 流动负债 存货 经营活动产生的现金流量净额"}},
+            {"task_id": "3", "task_type": "data_query",
+             "description": "查询历史对比数据",
+             "params": {"query": "{company} 去年 营业收入 净利润 总资产"}},
+            {"task_id": "4", "task_type": "calculate",
+             "description": "盈利维度：毛利率、净利率、ROE",
+             "params": {"formula": "gross_profit_margin,net_profit_margin,roe"},
+             "depends_on": ["1"]},
+            {"task_id": "5", "task_type": "calculate",
+             "description": "偿债维度：资产负债率、流动比率",
+             "params": {"formula": "debt_ratio,current_ratio"},
+             "depends_on": ["1", "2"]},
+            {"task_id": "6", "task_type": "calculate",
+             "description": "运营维度：总资产周转率",
+             "params": {"formula": "total_asset_turnover"},
+             "depends_on": ["1"]},
+            {"task_id": "7", "task_type": "calculate",
+             "description": "成长维度：营收增长率、净利润增长率",
+             "params": {"formula": "revenue_growth,net_profit_growth"},
+             "depends_on": ["1", "3"]},
+            {"task_id": "8", "task_type": "chart",
+             "description": "四维度综合雷达图",
+             "params": {"chart_type": "radar", "title": "{company} 四维度财务健康雷达图"},
+             "depends_on": ["4", "5", "6", "7"]},
+            {"task_id": "9", "task_type": "analyze",
+             "description": "基于四维度结果综合评估财务健康状况",
+             "params": {},
+             "depends_on": ["4", "5", "6", "7"]},
+        ],
+    },
 }
 
 
@@ -178,10 +250,11 @@ class Planner:
     """
     分析需求 → 子任务列表（AnalysisPlan）
 
-    流程：
+    V6.0 流程（模板匹配优先）：
     1. 检查是否指定了分析模板 → 有则加载预设任务
-    2. 否则用 LLM 解析用户输入，生成任务列表
-    3. 检测是否有歧义 → 需要追问时返回 clarification_question
+    2. 关键词匹配已有模板 → 有则直接走模板（跳过 LLM，0.1s vs 36s）
+    3. 否则用 LLM 解析用户输入，生成任务列表
+    4. 检测是否有歧义 → 需要追问时返回 clarification_question
     """
 
     # 触发使用 pro 模型的复杂查询关键词
@@ -209,6 +282,9 @@ class Planner:
         """
         入口方法：将用户输入转为执行计划。
 
+        V6.0 升级：模板匹配优先——关键词命中模板时直接走模板，
+        跳过 LLM 拆解（0.1s vs 36s），大幅降低 hard 题延迟。
+
         参数:
             user_input: 用户分析需求
             template_name: 可选模板名（"profitability"/"dupont"/"growth"）
@@ -216,32 +292,108 @@ class Planner:
         返回:
             AnalysisPlan(tasks=[...], requires_clarification=None或追问内容)
         """
-        # 模式 1：模板分析
+        # 模式 1：显式指定模板
         if template_name and template_name in BUILTIN_TEMPLATES:
-            logger.info(f"使用分析模板: {template_name}")
+            logger.info(f"使用分析模板（显式）: {template_name}")
             return self._load_template(template_name, user_input)
 
-        # 模式 2：自由分析（LLM 拆解）
+        # ── V6.0: 模式 2：关键词匹配模板（跳过 LLM，0.1s vs 36s）──
+        matched = self._match_template(user_input)
+        if matched:
+            logger.info(f"使用分析模板（匹配）: {matched}")
+            return self._load_template(matched, user_input)
+
+        # 模式 3：自由分析（LLM 拆解）
         logger.info("LLM 自由拆解模式")
         return self._parse_with_llm(user_input)
 
+    def _match_template(self, user_input: str) -> Optional[str]:
+        """
+        基于关键词匹配预设模板（V6.0 新增）。
+
+        匹配规则（按优先级，命中第一个即返回）：
+        1. 多公司对比关键词 → cross_company_profit
+        2. 多维度/全面/综合关键词 → multi_dimension
+        3. 杜邦/ROE分解 → dupont
+        4. 现金流/FCF → cash_flow
+        5. 风险/杠杆/偿债 → risk_scan
+        6. 成长/增长 → growth
+        7. 盈利/毛利率/净利率 → profitability
+
+        返回模板名或 None。
+        """
+        companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        company_count = sum(1 for c in companies if c in user_input)
+
+        contrast_kw = ["对比", "比较", "差异", "哪个更", "哪家更", "较量"]
+        profit_kw = ["盈利", "利润", "毛利", "净利", "赚钱", "回报"]
+
+        # 多公司对比 → cross_company_profit
+        if company_count >= 2 and any(kw in user_input for kw in contrast_kw):
+            return "cross_company_profit"
+        if company_count >= 2 and any(kw in user_input for kw in profit_kw):
+            return "cross_company_profit"
+
+        # 多维度关键词 → multi_dimension
+        multi_kw = ["全面评估", "综合分析", "多维度", "多维分析", "全方位",
+                     "系统性评估", "财务健康", "整体财务", "综合财务", "全面分析"]
+        if any(kw in user_input for kw in multi_kw):
+            return "multi_dimension"
+
+        # 杜邦关键词 → dupont
+        if any(kw in user_input for kw in ["杜邦", "ROE分解", "三因子", "权益乘数"]):
+            return "dupont"
+
+        # 现金流关键词 → cash_flow
+        if any(kw in user_input for kw in ["现金流", "FCF", "自由现金流", "利润质量"]) and company_count >= 1:
+            return "cash_flow"
+
+        # 风险关键词 → risk_scan
+        if any(kw in user_input for kw in ["风险", "杠杆", "偿债", "预警", "风险扫描", "债务风险"]):
+            return "risk_scan"
+
+        # 成长关键词 → growth
+        if any(kw in user_input for kw in ["成长", "增长趋势", "增长率", "发展速度", "成长性"]):
+            return "growth"
+
+        # 盈利关键词（最宽泛，放最后）→ profitability
+        if any(kw in user_input for kw in profit_kw):
+            return "profitability"
+
+        return None
+
     def _load_template(self, template_name: str, user_input: str) -> AnalysisPlan:
-        """从模板库加载预设任务，替换 {company} 占位符"""
+        """从模板库加载预设任务，替换 {company}/{company_a}/{company_b} 占位符"""
         template = BUILTIN_TEMPLATES[template_name]
 
-        # 尝试从用户输入中提取公司名（简单规则）
-        company = user_input  # 默认用整个输入；后续 entity_router 会处理
+        # 尝试从用户输入中提取公司名
+        company = user_input
+
+        # 多公司模板：提取公司A和公司B
+        company_a = company_b = user_input
+        known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        found = [c for c in known_companies if c in user_input]
+        if len(found) >= 2:
+            company_a = found[0]
+            company_b = found[1]
+        elif len(found) == 1:
+            company_a = company_b = found[0]
 
         tasks = []
         for t in template["tasks"]:
+            desc = t["description"].replace("{company}", company)
+            desc = desc.replace("{company_a}", company_a).replace("{company_b}", company_b)
+            params = {}
+            for k, v in t["params"].items():
+                if isinstance(v, str):
+                    v = v.replace("{company}", company)
+                    v = v.replace("{company_a}", company_a).replace("{company_b}", company_b)
+                params[k] = v
             tasks.append(AnalysisTask(
                 task_id=t["task_id"],
                 task_type=t["task_type"],
-                description=t["description"].replace("{company}", company),
-                params={
-                    k: v.replace("{company}", company) if isinstance(v, str) else v
-                    for k, v in t["params"].items()
-                },
+                description=desc,
+                params=params,
                 depends_on=t.get("depends_on", []),
             ))
 
@@ -321,6 +473,19 @@ class Planner:
 6. 如果用户没有指定具体公司或年份，requires_clarification 设为需要追问的问题
 7. 如果需求足够明确，requires_clarification 设为 null
 8. 任务数量控制在 3-7 个，不要过度拆分
+
+## ⚠️ 参数精确性铁律（违反则任务执行失败）
+1. **formula 必须严格从上方"可用财务公式"列表中选取**，一字不差。需要多个公式时用逗号分隔："roe,net_profit_margin,gross_profit_margin"
+2. **MCP 工具参数键名必须精确**。mcp_industry_comparison 的 sector 参数只能是 "白酒"/"新能源"/"互联网" 三个值
+3. **chart_type 只能是** line/bar/pie/radar/dual_axis 五个值，不要自创
+4. **depends_on 使用 task_id 字符串列表**，不要用数字
+
+## ❌ 常见错误（千万不要犯）
+- ❌ `"formula": "毛利率"` → 应该用 `"formula": "gross_profit_margin"`
+- ❌ `"formula": "ROE"` → 应该用 `"formula": "roe"`
+- ❌ `"params": {{"sector": "科技"}}` → sector 只能是 白酒/新能源/互联网
+- ❌ `"params": {{"chart_type": "柱状图"}}` → 应该用 `"chart_type": "bar"`
+- ❌ `"formula": ["roe", "net_profit_margin"]` → 应该用 `"formula": "roe,net_profit_margin"`
 """
 
         # 🔧 复杂查询用 pro 保质量，简单查询用 flash 提速
