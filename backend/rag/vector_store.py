@@ -1,6 +1,7 @@
 """
 向量数据库模块 - ChromaDB 管理
 """
+import threading
 from pathlib import Path
 from typing import List, Optional
 from loguru import logger
@@ -14,17 +15,20 @@ COLLECTION_NAME = "financial_docs"
 
 # Chroma 实例缓存
 _chroma_store: Optional[Chroma] = None
+_chroma_lock = threading.Lock()
 
 
 def _get_chroma() -> Chroma:
-    """获取 Chroma 实例（懒加载）"""
+    """获取 Chroma 实例（线程安全懒加载）"""
     global _chroma_store
     if _chroma_store is None:
-        _chroma_store = Chroma(
-            collection_name=COLLECTION_NAME,
-            embedding_function=get_embedding_model(),
-            persist_directory=CHROMA_PERSIST_DIR,
-        )
+        with _chroma_lock:
+            if _chroma_store is None:
+                _chroma_store = Chroma(
+                    collection_name=COLLECTION_NAME,
+                    embedding_function=get_embedding_model(),
+                    persist_directory=CHROMA_PERSIST_DIR,
+                )
     return _chroma_store
 
 

@@ -17,7 +17,10 @@ from typing import List, Tuple, Optional
 from loguru import logger
 from rank_bm25 import BM25Okapi
 
-# ── V6.0: GPU 推理互斥锁（防止 DAG 并行时多线程争抢 CUDA 导致性能暴跌）──
+# ── 线程安全锁（保护全局单例懒加载和 BM25 缓存）──
+_inference_lock = threading.Lock()  # GPU 推理互斥锁
+_bm25_lock = threading.Lock()       # BM25 缓存锁
+_reranker_lock = threading.Lock()   # Reranker 加载锁
 _cross_encoder_lock = threading.Lock()
 
 from .embedder import get_embedding_model
@@ -72,7 +75,7 @@ _bm25_cache: dict = {"bm25": None, "docs": [], "metas": [], "doc_count": -1}
 
 
 def _get_bm25_index():
-    """获取 BM25 索引（带缓存，仅在文档数变化时重建）"""
+    """获取 BM25 索引（线程安全缓存，仅在文档数变化时重建）"""
     chroma = _get_chroma()
     data = chroma.get()
     current_count = len(data.get("documents") or [])
@@ -80,18 +83,23 @@ def _get_bm25_index():
     if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
         return _bm25_cache["bm25"], _bm25_cache["docs"], _bm25_cache["metas"]
 
-    if not data["documents"]:
-        _bm25_cache["doc_count"] = 0
-        _bm25_cache["bm25"] = None
-        return None, [], []
+    with _bm25_lock:
+        # 双重检查：可能在等锁期间已被其他线程构建
+        if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
+            return _bm25_cache["bm25"], _bm25_cache["docs"], _bm25_cache["metas"]
 
-    tokenized = tokenize_docs(data["documents"])
-    bm25 = BM25Okapi(tokenized)
-    _bm25_cache["bm25"] = bm25
-    _bm25_cache["docs"] = data["documents"]
-    _bm25_cache["metas"] = data["metadatas"]
-    _bm25_cache["doc_count"] = current_count
-    logger.info(f"BM25 索引已缓存: {current_count} 文档")
+        if not data["documents"]:
+            _bm25_cache["doc_count"] = 0
+            _bm25_cache["bm25"] = None
+            return None, [], []
+
+        tokenized = tokenize_docs(data["documents"])
+        bm25 = BM25Okapi(tokenized)
+        _bm25_cache["bm25"] = bm25
+        _bm25_cache["docs"] = data["documents"]
+        _bm25_cache["metas"] = data["metadatas"]
+        _bm25_cache["doc_count"] = current_count
+        logger.info(f"BM25 索引已缓存: {current_count} 文档")
     return bm25, data["documents"], data["metadatas"]
 
 
@@ -209,16 +217,18 @@ def _get_lambda_mart():
     """
     global _reranker
     if _reranker is None:
-        local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
-        model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
-        # 自动选择设备：GPU 优先，不可用则回退 CPU
-        try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            device = "cpu"
-        _reranker = _CrossEncoder(model_name, device=device)
-        logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
+        with _reranker_lock:
+            if _reranker is None:
+                local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
+                model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
+                # 自动选择设备：GPU 优先，不可用则回退 CPU
+                try:
+                    import torch
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                except ImportError:
+                    device = "cpu"
+                _reranker = _CrossEncoder(model_name, device=device)
+                logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
     return _reranker
 
 

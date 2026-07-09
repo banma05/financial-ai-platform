@@ -1,11 +1,9 @@
-
 # 📊 智能财务分析平台
 
-> 三模块 AI 财务分析系统：RAG 知识库 + Agent 分析 + MCP 数据源
+> **SQL 优先，RAG 辅助，Agent 驱动 — 自然语言驱动的财务数据分析助手**
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.138-green)](https://fastapi.tiangolo.com/)
-[![LangChain](https://img.shields.io/badge/LangChain-1.3-orange)](https://www.langchain.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-green)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/Agent-LangGraph-purple)](https://langchain-ai.github.io/langgraph/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek_v4-purple)](https://www.deepseek.com/)
 [![ChromaDB](https://img.shields.io/badge/VectorDB-ChromaDB-brightgreen)](https://www.trychroma.com/)
@@ -13,200 +11,90 @@
 
 ---
 
-## 🎯 项目定位
+## 🎯 一句话说清楚
 
-**NL → 检索 → 分析 → 报告** 全流程自动化。覆盖"查数据 → 算指标 → 画图表 → 写报告"完整链路。
-
-| 模块 | 功能 | 核心指标 | 状态 |
-|------|------|------|:--:|
-| **一 RAG** | 财报/公告/研报 智能问答+溯源 | SEM-R@5=95.2%, GPU可选加速 | ✅ |
-| **二 Agent** | NL需求 → 多步推理 → 分析报告 | LangGraph DAG, 5模板, 19公式, 惰性加载 | ✅ |
-| **三 MCP** | 外部金融数据源（6工具） | AKShare 真实行情+财报, Mock兜底 | ✅ |
+输入 **"分析茅台 2024 年盈利能力"** → 秒级返回 **带图表的专业分析报告**，数字 100% 准确。
 
 ---
 
-## 🏗️ 技术架构
+## 🏗️ 架构（V8.0）
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│                    Streamlit 前端                           │
-│     RAG 智能问答  │  Agent 数据分析  │  MCP 工具调用         │
-└────────────────────────┬──────────────────────────────────┘
-                         │ HTTP/SSE
-┌────────────────────────▼──────────────────────────────────┐
-│                  FastAPI 后端 + 鉴权限流                     │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌─────────┐  │
-│  │ RAG API  │  │Agent API │  │ MCP API   │  │文档管理  │  │
-│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └─────────┘  │
-└───────┼──────────────┼──────────────┼─────────────────────┘
-        │              │              │
-┌───────▼──────────────▼──────────────▼─────────────────────┐
-│                    核心引擎层                                │
-│                                                             │
-│  ┌───────────────── RAG 引擎 ────────────────────┐         │
-│  │ Query理解 → BM25+语义双路 → RRF → LambdaMART │         │
-│  │ BGE Embedding(GPU) + CrossEncoder(GPU)        │         │
-│  │ 50题双轨评测(SEM-R@5=95.2%) + 4066 chunks     │         │
-│  └───────────────────────────────────────────────┘         │
-│                                                             │
-│  ┌───────────────── Agent 引擎 ───────────────────┐        │
-│  │ Planner(LLM拆解+5模板) → Executor(DAG并行)     │        │
-│  │ → Reporter(Markdown报告)                       │        │
-│  │ LangGraph StateGraph + ThreadPoolExecutor       │        │
-│  │ ParamInjector三层注入 + tenacity重试 + trace_id │        │
-│  └───────────────────────────────────────────────┘        │
-│                                                             │
-│  ┌───────────────── MCP 工具 ─────────────────────┐        │
-│  │ stock_price │ financial_statements │ ratios    │        │
-│  │ industry_compare │ market_index │ calendar     │        │
-│  │ AKShare(新浪)实时数据 + Mock兜底                │        │
-│  └───────────────────────────────────────────────┘        │
-└─────────────────────────────────────────────────────────────┘
+用户输入 → Planner(LLM) → Executor → Reporter(LLM) → 报告+图表
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+          SQL查数字       RAG解读文字      公式计算+图表
+         (毫秒,100%准)   (BM25+语义+LLM)   (Python,零LLM)
 ```
+
+### 核心设计决策
+
+| 决策 | 理由 |
+|------|------|
+| **SQL 优先，不是 RAG** | 财务数字须 100% 准，LLM 做不到 |
+| **RAG 做文字解读，不做数字提取** | 找原因/趋势，RAG 擅长且安全 |
+| **Agent 三节点直通** | 砍掉 verifier/comparator 等中间节点 |
+| **线性执行，不做层内并行** | 避免 GPU 双重加载和竞态 |
 
 ---
 
-## 🚀 快速开始
-
-### 环境要求
-
-- Python 3.12+
-- DeepSeek API Key（[申请地址](https://platform.deepseek.com)）
-- NVIDIA GPU（可选——有则 6.7x 加速，无则 CPU 正常运行）
-
-### 1. 安装依赖
+## 🚀 快速启动
 
 ```bash
+cd D:\实战项目\financial-ai-platform
+
+# 激活虚拟环境
+source ../.venv/Scripts/activate
+
+# 安装依赖（首次）
 pip install -r requirements.txt
-```
 
-### 2. 配置
-
-```bash
-cp .env.example .env
-# 编辑 .env 填入 DEEPSEEK_API_KEY
-```
-
-### 3. 启动
-
-```bash
-# 终端 1：后端
+# 启动后端 :8001
 python backend/main.py
 
-# 终端 2：前端
+# 启动前端 :8501
 streamlit run frontend/app.py
-```
-
-打开 http://localhost:8501，即可使用完整三模块功能。
-
----
-
-## 📂 项目结构
-
-```
-financial-ai-platform/
-├── backend/
-│   ├── rag/                    # 模块一：RAG 知识库
-│   │   ├── loader.py            文档加载（PDF/Word/MD/TXT + 表格提取）
-│   │   ├── semantic_splitter.py  语义动态切分
-│   │   ├── embedder.py           BGE 向量化（GPU加速）
-│   │   ├── hybrid_search.py      混合检索（BM25+语义→RRF→LambdaMART）
-│   │   ├── query_processor.py    Query理解（术语展开+LLM扩写）
-│   │   ├── evaluator.py          评测体系（50题+R@k/MRR/NDCG）
-│   │   ├── retriever.py          完整RAG问答入口
-│   │   └── model_router.py       LLM统一调用（flash/pro分层）
-│   │
-│   ├── agent/                  # 模块二：Agent 分析
-│   │   ├── api.py                 公共 API 显式导出（惰性加载）
-│   │   ├── graph.py              LangGraph StateGraph 编排
-│   │   ├── planner.py            任务拆解 + 5模板
-│   │   ├── executor.py           ToolRegistry + 依赖注入
-│   │   ├── reporter.py           报告生成
-│   │   └── tools/                工具包
-│   │       ├── data_query.py       RAG检索→结构化提取
-│   │       ├── financial_calc.py   19财务公式（7大类）
-│   │       ├── chart.py            5种图表
-│   │       └── param_injection.py  三层回退依赖注入
-│   │
-│   ├── mcp/                    # 模块三：MCP 工具
-│   │   ├── mock_data.py           AKShare 数据提供器
-│   │   ├── server.py              独立Server预留
-│   │   └── tools/                 6个MCP工具
-│   │
-│   ├── utils/                  # 公共工具
-│   │   ├── retry.py               tenacity重试+CircuitBreaker
-│   │   └── logger.py              结构化日志（trace_id+JSON轮转）
-│   │
-│   ├── api/                    # FastAPI 路由
-│   ├── middleware/              # 鉴权限流
-│   ├── tests/                  # 370 单元测试（CI 299）
-│   ├── config.py
-│   └── main.py
-│
-├── evaluation/                 # 评测脚本+数据集+报告
-│   ├── full_eval.py            三模块一键全量评测
-│   ├── rag/quick_eval.py        50题双轨评测
-│   ├── agent/bench_agent.py     Agent拆解评测
-│   └── data/                    评测数据集
-│
-├── frontend/app.py             # Streamlit 前端
-├── data/                       # 运行时数据
-│   ├── documents/               9份原始文档
-│   ├── chroma_db/               ChromaDB持久化
-│   └── models/                  本地Embedding模型
-│
-├── scripts/                    # 运维脚本
-│   ├── run_tests.py
-│   └── rebuild_index.py
-│
-├── requirements.txt
-└── PROGRESS.md
 ```
 
 ---
 
 ## 📊 评测基线
 
-| 场景 | KW-R@5 | SEM-R@5 | MRR | 文档数 | Chunks |
-|------|:------:|:-------:|:---:|:------:|:------:|
-| 当前（9文档, mean-1std） | 70.7% | **95.2%** | 89.2% | 9 | 4066 |
-| 旧（3文档, mean-0.5std） | 87.3% | — | 90.8% | 3 | 2882 |
-
-| Agent 指标 | 状态 |
-|-----------|:--:|
-| 财务公式计算准确率 | ✅ 19公式/40测试 |
-| 全量单元测试 | ✅ 370全过（CI: 299/11文件） |
-| 子任务拆解准确率 | 77.4%（easy 87%/med 86%/hard 43%, 目标≥85%） |
-| 指标覆盖率 | ✅ 86.6%（目标≥80%） |
-| 端到端耗时 | 54.9s（目标≤30s，阶段六优化） |
+| 指标 | 目标 | 说明 |
+|------|:----:|------|
+| 数字查询准确率 | ≥99% | SQL 直接返回 |
+| 端到端耗时 | ≤10s | 提问→报告 |
+| 子任务拆解准确率 | ≥85% | Planner 输出质量 |
+| 测试覆盖 | ≥85% | CI 自动运行 |
 
 ---
 
-## 🔑 核心亮点
+## 📁 项目结构
 
-1. **混合检索 + GPU 可选加速**：BM25+语义双路 → RRF → LambdaMART，GPU 6.7x 加速，CPU 正常运行
-2. **LangGraph DAG 并行**：StateGraph 顶层编排 + ThreadPoolExecutor 层内并行
-3. **模块惰性加载**：agent/rag 双模块按需导入，import 不再触发全家桶依赖，CI 兼容
-4. **三层依赖注入**：精确映射(60对) → 编辑距离模糊匹配 → LLM语义匹配
-5. **AKShare 真实数据**：6个MCP工具，新浪/巨潮实时行情+财务报表，Mock兜底
-6. **全链路可追溯**：trace_id 贯穿 Planner→Executor→Reporter，JSON按天轮转日志
-7. **引用溯源**：每个回答追溯源文件+页码，满足合规审计
-
----
-
-## 🗺️ 路线图
-
-| 阶段 | 内容 | 状态 |
-|------|------|:--:|
-| 一 | Bug修复 + LangGraph重构 | ✅ |
-| 二 | 依赖注入 + 重试 + 结构化日志 | ✅ |
-| 三 | MCP 6工具 + AKShare真实数据 | ✅ |
-| 四 | Docker + Redis + CI/CD + 集成测试 | ✅ |
-| 五 | 模块惰性加载 + 统一评测 + P1清零 + CI 299 | ✅ |
-| 六 | 上下文管理 + 成本追踪 + 人机协同 | ⏳ |
+```
+financial-ai-platform/
+├── backend/
+│   ├── agent/         # Agent 引擎（planner/executor/reporter）
+│   ├── rag/           # RAG 引擎（loader~retriever 13组件）
+│   ├── mcp/           # MCP 6工具（AKShare+MongoDB）
+│   ├── db/            # SQLite 业务数据库
+│   ├── api/           # FastAPI 路由
+│   ├── models/        # Pydantic 模型
+│   ├── middleware/     # 鉴权限流
+│   ├── utils/         # 重试/日志/监控/Redis
+│   └── tests/         # 单元测试
+├── frontend/          # Streamlit 前端
+├── evaluation/        # 评测脚本+数据集+报告
+├── docs/              # BRD+架构图
+├── scripts/           # 运维脚本
+└── data/              # 文档/向量库/模型
+```
 
 ---
 
-## 👤 作者
+## 📝 文档
 
-AI 专业 × 会计辅修，专注 AI 在财务场景的落地应用。
+- [BRD 业务需求说明书](docs/BRD-业务需求说明书.md)
+- [系统架构图](docs/架构图.md)
+- [项目进度](PROGRESS.md)
