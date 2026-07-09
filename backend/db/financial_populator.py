@@ -188,8 +188,7 @@ def query_financial_data(symbol: str, years: int = 5) -> List[Dict]:
                 except (ValueError, TypeError):
                     continue
 
-                if value == 0.0:
-                    continue  # 跳过零值（通常是未披露）
+                # 注意：0.0 是合法值（如零债务公司短期借款=0），不能过滤
 
                 results.append({
                     "symbol": symbol,
@@ -215,8 +214,10 @@ def _parse_report_date(date_str: str) -> Tuple[int, str]:
     "20240331" → (2024, "Q1")
     """
     date_str = date_str.strip()
-    match = re.match(r"(\d{4})(\d{2})(\d{2})", date_str)
+    # 支持 "20241231" 和 "2024-12-31" 两种格式
+    match = re.match(r"(\d{4})[-/]?(\d{2})[-/]?(\d{2})", date_str)
     if not match:
+        logger.warning(f"无法解析日期格式: {date_str}，回退为当前年份")
         return datetime.now().year, "annual"
     year, month, _ = int(match.group(1)), int(match.group(2)), int(match.group(3))
     quarter_map = {3: "Q1", 6: "Q2", 9: "Q3", 12: "Q4"}
@@ -323,11 +324,28 @@ if __name__ == "__main__":
     if "--all" in sys.argv:
         populate_all()
     elif "--symbol" in sys.argv:
-        idx = sys.argv.index("--symbol")
-        symbol = sys.argv[idx + 1]
-        extra = EXTRA_SYMBOLS.get(symbol, ("", "SH", ""))
-        populate_company(symbol, extra[0], extra[1], extra[2])
+        try:
+            idx = sys.argv.index("--symbol")
+            if idx + 1 >= len(sys.argv):
+                print("错误: --symbol 需要指定股票代码")
+                sys.exit(1)
+            symbol = sys.argv[idx + 1]
+            extra = EXTRA_SYMBOLS.get(symbol, ("", "SH", ""))
+            populate_company(symbol, extra[0], extra[1], extra[2])
+        except ValueError:
+            print("错误: --symbol 缺少参数值")
+            sys.exit(1)
+    elif "--top" in sys.argv:
+        try:
+            idx = sys.argv.index("--top")
+            n = int(sys.argv[idx + 1]) if idx + 1 < len(sys.argv) else 10
+            for sym, name, mkt, sector in DEFAULT_COMPANIES[:n]:
+                populate_company(sym, name, mkt, sector)
+        except (ValueError, IndexError):
+            print("错误: --top 需要指定数量（如 --top 10）")
+            sys.exit(1)
     else:
         print("用法:")
-        print("  python -m db.financial_populator --all          # 填充全部预设公司")
-        print("  python -m db.financial_populator --symbol 600519 # 单个公司")
+        print("  python -m db.financial_populator --all           # 填充全部预设公司")
+        print("  python -m db.financial_populator --symbol 600519  # 单个公司")
+        print("  python -m db.financial_populator --top 10          # A股前10大")
