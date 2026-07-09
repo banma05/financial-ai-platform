@@ -50,14 +50,8 @@ class DataQueryTool:
         """
         logger.info(f"DataQuery 工具调用: {query}")
 
-        # ── V7.0 Phase 1: 结构化数据优先 ──
+        # ── V8.0: 直接走 RAG 检索（规则提取在步骤3重建）──
         try:
-            from data_layer.service import get_service
-            structured = get_service().try_query(query)
-            if structured and structured.get("found"):
-                logger.info(f"[SQL命中] {query[:50]} -> {len(structured['data'])} 个指标")
-                return structured
-        except Exception as e:
             logger.debug(f"[SQL] 检查跳过（静默降级）: {e}")
 
         # ── Phase 2: RAG 兜底 ──

@@ -19,8 +19,6 @@ except ImportError:
 _MODULE_MAP = {
     # loader
     "load_document": (".loader", None),
-    # splitter
-    "split_documents": (".splitter", None),
     # vector_store
     "add_documents": (".vector_store", None),
     "search_similar": (".vector_store", None),

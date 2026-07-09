@@ -21,7 +21,7 @@ from models.schemas import (
     EvalSummary,
     EvalDetail,
 )
-from rag import load_document, split_documents, add_documents, rag_query, get_document_list
+from rag import load_document, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
 from rag.model_router import chat_stream, init_usage, save_token_usage
 from db import SessionLocal, Document, ChatHistory, QueryLog
@@ -178,20 +178,7 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
     finally:
         db.close()
 
-    # ── V7.0: 后台异步触发结构化数据提取 ──
-    def _trigger_population():
-        try:
-            from data_layer.populator import DataPopulator
-            populator = DataPopulator()
-            company, year = populator._parse_filename(file.filename or "")
-            if company and year:
-                count = populator.populate_company(company, year)
-                logger.info(f"[上传] 结构化提取完成: {company} {year}, {count} 个指标")
-        except Exception as e:
-            logger.debug(f"[上传] 结构化提取跳过: {e}")
-
-    if background_tasks:
-        background_tasks.add_task(_trigger_population)
+    # ── V8.0: 结构化数据提取将在步骤3用规则重建 ──
 
     return DocumentUploadResponse(
         filename=file.filename or "unknown",

@@ -1,16 +1,14 @@
 """
-Agent 核心编排 — LangGraph StateGraph + ThreadPoolExecutor 层内并行
+Agent 核心编排 — LangGraph StateGraph 三节点直通
 
-架构（V3.0）：
-    planner → executor (DAG并行) → reporter → END
+架构（V8.0 重构）：
+    planner → executor → reporter → END
 
-LangGraph 负责：顶层流控制、State管理、SSE流式事件
-ThreadPoolExecutor 负责：同层任务并行执行（最多4线程）
+设计原则：SQL 优先查数字，RAG 辅助解读本文，零冗余节点。
 """
 import json
 import time
-from typing import TypedDict, List, Optional, Generator, Union, Dict, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TypedDict, List, Optional, Generator, Dict, Any
 from loguru import logger
 
 from langgraph.graph import StateGraph, END
@@ -41,8 +39,6 @@ class AgentState(TypedDict, total=False):
     clarification: Optional[str]
     processing_time: float
     error: Optional[str]
-    verification: Optional[dict]  # V6.0: 校验结果
-    comparison: Optional[dict]    # V6.0: 对比结果
 
 
 # ==================== 全局单例 ====================
@@ -61,7 +57,7 @@ def _init_components():
         _tool_registry.register(DataQueryTool())
         _tool_registry.register(FinancialCalcTool())
         _tool_registry.register(ChartTool())
-        # ── MCP 工具（阶段三）──
+        # ── MCP 工具 ──
         from mcp import (
             StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
             IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,
@@ -77,10 +73,6 @@ def _init_components():
         _reporter = Reporter()
 
 
-# DAG 拓扑排序 — 统一使用 utils.topological
-from utils.topological import topological_layers as _topological_layers
-
-
 # ==================== 节点函数 ====================
 
 def planner_node(state: AgentState) -> dict:
@@ -88,17 +80,6 @@ def planner_node(state: AgentState) -> dict:
     _init_components()
     user_input = state["user_input"]
     template = state.get("template_name")
-    session_id = state.get("session_id", "default")
-
-    # ── V6.0: 加载用户偏好（长时记忆）──
-    from .memory import UserMemory
-    preferences = UserMemory().get_preferences(session_id)
-    if preferences.get("preferred_company") and not template:
-        # 有偏好公司且未指定模板：自动补全到查询中
-        pref_company = preferences["preferred_company"]
-        if pref_company not in user_input:
-            user_input = f"{pref_company} {user_input}"
-            logger.info(f"[Planner] 偏好注入: +{pref_company}")
 
     logger.info(f"[Planner] 开始拆解: {user_input[:50]}...")
 
@@ -126,10 +107,7 @@ def planner_node(state: AgentState) -> dict:
         }
 
     tasks_dict = [t.model_dump() for t in plan.tasks]
-    layers = _topological_layers(tasks_dict)
-    logger.info(f"[Planner] 拆解完成: {len(tasks_dict)} 任务, {len(layers)} DAG层")
-    for i, layer in enumerate(layers):
-        logger.debug(f"  层{i}: {[t['task_id'] + ':' + t['task_type'] for t in layer]}")
+    logger.info(f"[Planner] 拆解完成: {len(tasks_dict)} 任务")
 
     return {
         "clarification": None,
@@ -142,10 +120,11 @@ def planner_node(state: AgentState) -> dict:
 
 def executor_node(state: AgentState) -> dict:
     """
-    Executor 节点：按 DAG 拓扑层并行执行所有任务。
+    Executor 节点：按依赖顺序线性执行所有任务。
 
-    同一层的任务（无相互依赖）通过 ThreadPoolExecutor 并行提交，
-    每层完成后才进入下一层（保证依赖关系）。
+    V8.0: 回归线性执行。避免 ThreadPoolExecutor 与懒加载单例的竞态条件，
+    以及 GPU 模型双重加载导致 CUDA OOM 的问题。
+    层内并行收益有限（多数模板只有 1-2 个无依赖任务），不值得为它引入线程复杂度。
     """
     _init_components()
     tasks_dict = state.get("tasks", [])
@@ -164,46 +143,38 @@ def executor_node(state: AgentState) -> dict:
         return {}
 
     with TraceTimer("executor"):
-        # 拓扑分层
-        layers = _topological_layers(pending)
+        # 按 task_id 排序，保证确定性执行顺序
+        pending.sort(key=lambda t: t["task_id"])
 
-        for layer_idx, layer in enumerate(layers):
-            logger.info(f"[Executor] DAG 层 {layer_idx+1}/{len(layers)}: {len(layer)} 任务并行")
+        for task_dict in pending:
+            task = AnalysisTask(**task_dict)
+            logger.info(f"[Executor] 执行: {task.task_id}:{task.task_type} — {task.description[:40]}")
 
-            def _execute_one(task_dict: dict) -> dict:
-                """执行单个任务（线程安全）"""
-                task = AnalysisTask(**task_dict)
-                # 检查依赖
-                for dep_id in task.depends_on:
-                    dep = result_map.get(dep_id)
-                    if dep and not dep.get("success", True):
-                        return TaskResult(
-                            task_id=task.task_id, task_type=task.task_type,
-                            success=False,
-                            error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
-                        ).model_dump()
-
-                dep_results = [TaskResult(**result_map[dep_id]) for dep_id in task.depends_on if dep_id in result_map]
-                result = _executor.tools.execute_task(task, dep_results)
-                return result.model_dump()
-
-            # 层内并行执行
-            layer_start = time.time()
-            with ThreadPoolExecutor(max_workers=min(2, len(layer))) as pool:
-                futures = {pool.submit(_execute_one, t): t["task_id"] for t in layer}
-                for future in as_completed(futures):
-                    task_id = futures[future]
-                    try:
-                        result_dict = future.result()
-                        result_map[task_id] = result_dict
-                    except Exception as e:
-                        logger.error(f"[Executor] 任务 {task_id} 异常: {e}")
-                        result_map[task_id] = TaskResult(
-                            task_id=task_id, task_type="unknown",
-                            success=False, error=str(e),
-                        ).model_dump()
-            layer_elapsed = time.time() - layer_start
-            logger.debug(f"[Executor] DAG 层 {layer_idx+1} 耗时 {layer_elapsed:.2f}s")
+            # 检查前置依赖是否失败
+            for dep_id in task.depends_on:
+                dep = result_map.get(dep_id)
+                if dep and not dep.get("success", True):
+                    result_map[task.task_id] = TaskResult(
+                        task_id=task.task_id, task_type=task.task_type,
+                        success=False,
+                        error=f"前置任务 {dep_id} 失败，跳过「{task.description}」",
+                    ).model_dump()
+                    break
+            else:
+                # 依赖正常，执行任务
+                dep_results = [
+                    TaskResult(**result_map[dep_id])
+                    for dep_id in task.depends_on if dep_id in result_map
+                ]
+                try:
+                    result = _executor.tools.execute_task(task, dep_results)
+                    result_map[task.task_id] = result.model_dump()
+                except Exception as e:
+                    logger.error(f"[Executor] 任务 {task.task_id} 异常: {e}")
+                    result_map[task.task_id] = TaskResult(
+                        task_id=task.task_id, task_type=task.task_type,
+                        success=False, error=str(e),
+                    ).model_dump()
 
     new_results = [result_map[t["task_id"]] for t in tasks_dict if t["task_id"] in result_map]
     chart_count = sum(1 for r in new_results if r.get("chart_base64"))
@@ -239,42 +210,7 @@ def reporter_node(state: AgentState) -> dict:
             return {"final_report": f"## 分析报告生成失败\n\n错误: {e}"}
 
 
-def verifier_node(state: AgentState) -> dict:
-    """V6.0: 校验 Agent — 在报告生成前独立审查执行结果"""
-    if state.get("clarification"):
-        return {}
-    tasks_dict = state.get("tasks", [])
-    results_dict = state.get("task_results", [])
-    if not results_dict:
-        return {"verification": None}
-
-    from .verifier import Verifier
-    verifier = Verifier()
-    result = verifier.verify(
-        state["user_input"], tasks_dict, results_dict,
-    )
-    logger.info(f"[Verifier] 校验完成: passed={result['passed']}, "
-                f"issues={len(result['issues'])}, warnings={len(result['warnings'])}")
-    return {"verification": result}
-
-
 # ==================== 条件路由 ====================
-
-def comparator_node(state: AgentState) -> dict:
-    """V6.0: 对比 Agent — 从多公司结果中抽取指标生成对比表"""
-    if state.get("clarification"):
-        return {}
-    results_dict = state.get("task_results", [])
-    tasks_dict = state.get("tasks", [])
-    if not results_dict:
-        return {"comparison": None}
-
-    from .comparator import Comparator
-    comp = Comparator()
-    result = comp.compare(tasks_dict, results_dict)
-    logger.info(f"[Comparator] 对比完成: {result['summary']}")
-    return {"comparison": result}
-
 
 def _route_after_planner(state: AgentState) -> str:
     """Planner 之后：有追问→reporter，否则→executor"""
@@ -283,24 +219,14 @@ def _route_after_planner(state: AgentState) -> str:
     return "executor"
 
 
-def _route_after_verifier(state: AgentState) -> str:
-    """V6.0: 校验后路由 — 多公司对比模板走 comparator，否则直通 reporter"""
-    template = state.get("template_name", "")
-    if template == "cross_company_profit":
-        return "comparator"
-    return "reporter"
-
-
 # ==================== 构建 Graph ====================
 
 def _build_agent_graph() -> StateGraph:
-    """构建 LangGraph StateGraph"""
+    """构建 LangGraph StateGraph：planner → executor → reporter → END"""
     builder = StateGraph(AgentState)
 
     builder.add_node("planner", planner_node)
     builder.add_node("executor", executor_node)
-    builder.add_node("verifier", verifier_node)       # V6.0: 校验Agent
-    builder.add_node("comparator", comparator_node)    # V6.0: 对比Agent
     builder.add_node("reporter", reporter_node)
 
     builder.set_entry_point("planner")
@@ -308,12 +234,7 @@ def _build_agent_graph() -> StateGraph:
         "executor": "executor",
         "reporter": "reporter",
     })
-    builder.add_edge("executor", "verifier")
-    builder.add_conditional_edges("verifier", _route_after_verifier, {
-        "comparator": "comparator",
-        "reporter": "reporter",
-    })
-    builder.add_edge("comparator", "reporter")
+    builder.add_edge("executor", "reporter")
     builder.add_edge("reporter", END)
 
     return builder.compile()
@@ -330,7 +251,7 @@ def _get_agent_graph():
     return _agent_graph
 
 
-# ==================== 分析历史持久化（V6.0） ====================
+# ==================== 分析历史持久化 ====================
 
 def save_analysis_log(
     session_id: str, user_input: str, template_name: str = "",
@@ -340,14 +261,10 @@ def save_analysis_log(
 ):
     """
     持久化 Agent 分析记录到 analysis_log 表。
-
     写入失败不影响主流程（静默降级）。
     """
     from db import SessionLocal, AnalysisLog
-    # ── V6.0: 同步写入 token 用量 + 更新用户偏好（与 analysis_log 一起落盘）──
     save_token_usage(session_id, f"agent_{status}")
-    from .memory import UserMemory
-    UserMemory().update_from_query(session_id, user_input)
     db = SessionLocal()
     try:
         log_entry = AnalysisLog(
@@ -396,8 +313,8 @@ def run_agent_stream(
     """
     _init_components()
     start_time = time.time()
-    tid = set_trace_id()  # 生成本次请求的 trace_id
-    init_usage()  # V6.0: 初始化 token 计数
+    tid = set_trace_id()
+    init_usage()
 
     try:
         graph = _get_agent_graph()
@@ -410,14 +327,11 @@ def run_agent_stream(
         logger.info(f"[请求开始] session={session_id}, query={user_input[:80]}")
         yield AgentEvent("plan_start", message="正在分析需求...").to_sse()
 
-        # LangGraph stream 逐节点产出状态
         last_state = initial_state
         task_count = 0
         prev_result_count = 0
-        prev_chart_count = 0
 
         for event in graph.stream(initial_state, stream_mode="values"):
-            # event 是一个 dict，包含更新后的状态
             combined_state = {**last_state, **event}
             last_state = combined_state
 
@@ -437,16 +351,17 @@ def run_agent_stream(
                 yield AgentEvent(
                     "plan_start",
                     task_count=task_count,
-                    tasks=[{"id": t["task_id"], "type": t["task_type"], "desc": t.get("description", "")} for t in tasks],
+                    tasks=[{"id": t["task_id"], "type": t["task_type"],
+                            "desc": t.get("description", "")} for t in tasks],
                     message=f"已规划 {task_count} 个子任务",
                 ).to_sse()
 
             # 任务执行进度
             results = combined_state.get("task_results", [])
+            chart_count = combined_state.get("chart_count", 0)
             if len(results) > prev_result_count:
                 for i, r in enumerate(results[prev_result_count:]):
                     task_idx = prev_result_count + i + 1
-                    # 先发 task_start（前端进度条依赖此事件）
                     task_info = next((t for t in tasks if t["task_id"] == r["task_id"]), None)
                     yield AgentEvent(
                         "task_start",
@@ -461,8 +376,8 @@ def run_agent_stream(
                             "chart",
                             task_id=r["task_id"],
                             chart_base64=r["chart_base64"],
-                            chart_index=combined_state.get("chart_count", 0),
-                            message=f"图表已生成",
+                            chart_index=chart_count,
+                            message="图表已生成",
                         ).to_sse()
                     yield AgentEvent(
                         "task_complete",
@@ -473,7 +388,6 @@ def run_agent_stream(
                         message=f"{'✅' if r.get('success') else '❌'} {r.get('summary') or r.get('error') or '任务完成'}",
                     ).to_sse()
                 prev_result_count = len(results)
-                prev_chart_count = combined_state.get("chart_count", 0)
 
             # 报告生成完成
             if combined_state.get("final_report"):
@@ -489,7 +403,6 @@ def run_agent_stream(
                     processing_time=processing_time,
                     message=f"分析完成，耗时 {processing_time} 秒",
                 ).to_sse()
-                # ── V6.0: 持久化分析记录 ──
                 save_analysis_log(
                     session_id, user_input, template_name,
                     task_count=len(results),
@@ -505,7 +418,6 @@ def run_agent_stream(
         if not last_state.get("final_report") and not last_state.get("clarification"):
             tasks_dict = last_state.get("tasks", [])
             results_dict = last_state.get("task_results", [])
-            chart_count = last_state.get("chart_count", 0)
             tasks = [AnalysisTask(**t) for t in tasks_dict]
             results = [TaskResult(**r) for r in results_dict]
             with TraceTimer("reporter_fallback"):
@@ -519,7 +431,6 @@ def run_agent_stream(
                 processing_time=processing_time,
                 message=f"分析完成，耗时 {processing_time} 秒",
             ).to_sse()
-            # ── V6.0: 持久化分析记录 ──
             save_analysis_log(
                 session_id, user_input, template_name,
                 task_count=len(results),
@@ -549,7 +460,7 @@ def run_agent_sync(
     """
     _init_components()
     start_time = time.time()
-    tid = set_trace_id()  # 生成本次请求的 trace_id
+    tid = set_trace_id()
 
     # 如已有 plan 则跳过 Planner（benchmark 复用优化）
     if plan is not None:
