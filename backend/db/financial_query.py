@@ -160,13 +160,18 @@ def parse_query(query: str) -> Tuple[Optional[str], List[int], List[str]]:
         from datetime import datetime
         years = [datetime.now().year - 1]
 
-    # 3. 指标匹配
+    # 3. 指标匹配（双向：查询含别名 或 短词匹配）
     metrics = []
     for alias in METRIC_ALIASES:
         if alias in query:
             metrics.append(alias)
+            continue
+        # 反向部分匹配：查询中含短词（如"利润"），别名含该短词（如"净利润"）
+        for short_kw in ["营业", "收入", "成本", "利润", "资产", "负债", "现金", "收益", "息税"]:
+            if short_kw in query and short_kw in alias and alias not in metrics:
+                metrics.append(alias)
 
-    return symbol, years, metrics
+    return symbol, years, list(dict.fromkeys(metrics))  # 去重保序
 
 
 def try_query(query: str) -> Optional[dict]:
@@ -234,10 +239,10 @@ def try_query(query: str) -> Optional[dict]:
                 if not values:
                     continue
 
-                if formula and len(values) >= 2:
-                    # 复合指标：用公式计算
+                if formula and len(keys) >= 2 and all(k in values for k in keys):
+                    # 复合指标：用公式计算（所有分量都有值才计算）
                     try:
-                        safe_vars = {k: v for k, v in values.items() if v}
+                        safe_vars = {k: v for k, v in values.items() if k in keys}
                         result = eval(formula, {"__builtins__": {}}, safe_vars)
                         if len(years) == 1:
                             data[metric_name] = round(result, 2)
@@ -245,13 +250,14 @@ def try_query(query: str) -> Optional[dict]:
                             data[f"{metric_name}_{year}"] = round(result, 2)
                     except Exception:
                         continue
-                else:
+                elif not formula:
                     # 简单指标：直接取值
                     for key, val in values.items():
-                        if len(years) == 1:
-                            data[metric_name] = val
-                        else:
-                            data[f"{metric_name}_{year}"] = val
+                        if key in keys:
+                            if len(years) == 1:
+                                data[metric_name] = val
+                            else:
+                                data[f"{metric_name}_{year}"] = val
 
         if not found_any:
             db.close()
@@ -265,7 +271,7 @@ def try_query(query: str) -> Optional[dict]:
         if len(years) == 1:
             summary_parts = [f"{company_name} {years[0]}年"]
             for m in metrics:
-                key = m if len(metrics) > 1 else m
+                key = m
                 if key in data:
                     val = data[key]
                     summary_parts.append(f"{m}={val:,.2f}")

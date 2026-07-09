@@ -268,7 +268,7 @@ class Planner:
 
     def _is_complex(self, user_input: str) -> bool:
         """检测是否为复杂查询（需要 pro 模型拆解）"""
-        companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        companies = ["茅台", "比亚迪", "五粮液", "宁德", "美的", "恒瑞", "招行", "平安", "汾酒", "泸州老窖", "洋河", "伊利", "格力", "海康", "讯飞"]
         company_count = sum(1 for c in companies if c in user_input)
         if company_count >= 2:
             return True
@@ -322,7 +322,7 @@ class Planner:
 
         返回模板名或 None。
         """
-        companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        companies = ["茅台", "比亚迪", "五粮液", "宁德", "美的", "恒瑞", "招行", "平安", "汾酒", "泸州老窖", "洋河", "伊利", "格力", "海康", "讯飞"]
         company_count = sum(1 for c in companies if c in user_input)
 
         contrast_kw = ["对比", "比较", "差异", "哪个更", "哪家更", "较量"]
