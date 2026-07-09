@@ -50,11 +50,14 @@ class DataQueryTool:
         """
         logger.info(f"DataQuery 工具调用: {query}")
 
-        # ── V8.0: 直接走 RAG 检索（规则提取在步骤3重建）──
-        try:
-            logger.debug(f"[SQL] 检查跳过（静默降级）: {e}")
+        # ── V8.0 Phase 1: SQL 结构化查询优先（< 5ms, 零 LLM）──
+        from db.financial_query import try_query as sql_try_query
+        structured = sql_try_query(query)
+        if structured and structured.get("found"):
+            logger.info(f"[SQL命中] {query[:50]} -> {len(structured['data'])} 个指标")
+            return structured
 
-        # ── Phase 2: RAG 兜底 ──
+        # ── Phase 2: RAG 兜底（文字解读/长尾问题）──
         # Step 1: Query 处理（复用模块一）
         processed_query = process_query(query)
 
