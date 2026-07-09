@@ -6,36 +6,48 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.139-green)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/Agent-LangGraph-purple)](https://langchain-ai.github.io/langgraph/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek_v4-purple)](https://www.deepseek.com/)
-[![ChromaDB](https://img.shields.io/badge/VectorDB-ChromaDB-brightgreen)](https://www.trychroma.com/)
-[![AKShare](https://img.shields.io/badge/Data-AKShare-red)](https://akshare.akfamily.xyz/)
+[![Tests](https://img.shields.io/badge/Tests-162%2F162-green)]()
 
 ---
 
-## 🎯 一句话说清楚
+## 🎯 一句话
 
-输入 **"分析茅台 2024 年盈利能力"** → 秒级返回 **带图表的专业分析报告**，数字 100% 准确。
+输入 **"分析茅台 2024 年盈利能力"** → 秒级返回 **数字 + 图表 + 原文引用的专业分析报告**。
 
 ---
 
-## 🏗️ 架构（V8.0）
+## 🏗️ 架构 (V8.0)
 
 ```
-用户输入 → Planner(LLM) → Executor → Reporter(LLM) → 报告+图表
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-          SQL查数字       RAG解读文字      公式计算+图表
-         (毫秒,100%准)   (BM25+语义+LLM)   (Python,零LLM)
+用户上传文档(年报/研报/尽调)
+  → loader 解析表格+正文
+  → 表格 → 规则提取 → SQL (100%准确)
+  → 正文 → RAG 索引 (可溯源引用)
+  → Agent: Planner → Executor(SQL+RAG+Calc+Chart) → Reporter
+  → 数字 + 解读 + 图表 + 原文引用 = 完整报告
 ```
 
 ### 核心设计决策
 
 | 决策 | 理由 |
 |------|------|
-| **SQL 优先，不是 RAG** | 财务数字须 100% 准，LLM 做不到 |
-| **RAG 做文字解读，不做数字提取** | 找原因/趋势，RAG 擅长且安全 |
-| **Agent 三节点直通** | 砍掉 verifier/comparator 等中间节点 |
-| **线性执行，不做层内并行** | 避免 GPU 双重加载和竞态 |
+| **数字不走 LLM** | 表格→规则提取→SQL，100% 准确，<2ms |
+| **RAG 做溯源，不做提取** | 引用原文页码，不猜数字 |
+| **三个任务类型互补** | data_query(数字) + rag_context(解读) + calculate(公式) |
+| **诚实评测** | 区分能力内/外，不过拟合 |
+
+---
+
+## 📊 评测基线 (V8.0)
+
+| 指标 | 值 | 说明 |
+|------|:--:|------|
+| SQL 覆盖率 | **100%** | 单/多公司+多年份，24/24 |
+| 平均延迟 | **1.4ms** | 零 LLM |
+| 规则提取准确率 | **100%** | 茅台56指标全匹配年报 |
+| 多公司查询 | ✅ | 茅台 vs 五粮液等 |
+| Agent 任务类型 | **4种** | +rag_context(原文解读) |
+| 测试 | **162/162** | CI 通过 |
 
 ---
 
@@ -43,58 +55,33 @@
 
 ```bash
 cd D:\实战项目\financial-ai-platform
-
-# 激活虚拟环境
-source ../.venv/Scripts/activate
-
-# 安装依赖（首次）
-pip install -r requirements.txt
-
-# 启动后端 :8001
-python backend/main.py
-
-# 启动前端 :8501
-streamlit run frontend/app.py
+source ../.venv/Scripts/activate   # 激活虚拟环境
+pip install -r requirements.txt    # 首次安装依赖
+python backend/main.py             # 后端 :8001
+streamlit run frontend/app.py      # 前端 :8501 (即将替换为 React)
 ```
-
----
-
-## 📊 评测基线
-
-| 指标 | 目标 | 说明 |
-|------|:----:|------|
-| 数字查询准确率 | ≥99% | SQL 直接返回 |
-| 端到端耗时 | ≤10s | 提问→报告 |
-| 子任务拆解准确率 | ≥85% | Planner 输出质量 |
-| 测试覆盖 | ≥85% | CI 自动运行 |
-
----
 
 ## 📁 项目结构
 
 ```
 financial-ai-platform/
 ├── backend/
-│   ├── agent/         # Agent 引擎（planner/executor/reporter）
-│   ├── rag/           # RAG 引擎（loader~retriever 13组件）
-│   ├── mcp/           # MCP 6工具（AKShare+MongoDB）
-│   ├── db/            # SQLite 业务数据库
-│   ├── api/           # FastAPI 路由
-│   ├── models/        # Pydantic 模型
-│   ├── middleware/     # 鉴权限流
-│   ├── utils/         # 重试/日志/监控/Redis
-│   └── tests/         # 单元测试
-├── frontend/          # Streamlit 前端
-├── evaluation/        # 评测脚本+数据集+报告
-├── docs/              # BRD+架构图
-├── scripts/           # 运维脚本
-└── data/              # 文档/向量库/模型
+│   ├── agent/         # Agent 引擎 (Planner/Executor/Reporter + 4工具)
+│   ├── rag/           # RAG 引擎 (loader/splitter/embedder/retriever/table_extractor)
+│   ├── db/            # SQLite + 财务数据模型 + 查询引擎
+│   ├── mcp/           # MCP 6工具 (AKShare)
+│   ├── api/           # FastAPI 路由 (上传/分析/问答)
+│   ├── utils/         # 重试/日志/监控
+│   └── tests/         # 162 单元测试
+├── frontend/          # Streamlit (→ 即将替换为 React)
+├── evaluation/        # 50题三层评测 + 运行器
+├── docs/              # BRD/架构图/V8实施计划
+└── data/              # 文档/ChromaDB/模型
 ```
-
----
 
 ## 📝 文档
 
+- [V8.0 实施计划](docs/V8-实施计划.md)
 - [BRD 业务需求说明书](docs/BRD-业务需求说明书.md)
 - [系统架构图](docs/架构图.md)
 - [项目进度](PROGRESS.md)
