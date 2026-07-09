@@ -84,7 +84,7 @@
 | 向量库 | ChromaDB | 轻量免运维 |
 | 数据源 | AKShare | A股免费金融数据 |
 | 后端 | FastAPI + SSE | 流式响应 |
-| 前端 | Streamlit | 快速原型 |
+| 前端 | React 19 + Vite + TailwindCSS + shadcn/ui + ECharts | 快速原型 |
 | Agent | LangGraph | 标准编排框架 |
 
 ---

@@ -17,6 +17,7 @@ V8.0 核心组件：零 LLM 参与，纯规则匹配 + SQL 直查。
   - 支持多年份、多指标批量查询
 """
 import re
+from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 from loguru import logger
 
@@ -81,6 +82,8 @@ METRIC_ALIASES: Dict[str, dict] = {
     "长期借款": {"keys": ["long_term_borrowings"], "formula": None},
     "短期借款": {"keys": ["short_term_borrowings"], "formula": None},
     # 现金流指标
+    "营收": {"keys": ["revenue"], "formula": None},  # 简短别名
+    "净利": {"keys": ["net_profit_attr_parent"], "formula": None},
     "经营现金流": {"keys": ["operating_cf"], "formula": None},
     "投资现金流": {"keys": ["investing_cf"], "formula": None},
     "筹资现金流": {"keys": ["financing_cf"], "formula": None},
@@ -130,48 +133,48 @@ def parse_query(query: str) -> Tuple[Optional[str], List[int], List[str]]:
     返回:
         (symbol, years, metrics) — symbol为None表示无法识别公司
     """
-    # 1. 公司识别
-    symbol = None
+    # 1. 公司识别（支持多公司）
+    symbols = []
     for alias, sym in COMPANY_ALIASES.items():
         if alias in query:
-            symbol = sym
-            break
+            symbols.append(sym)
+    symbols = list(dict.fromkeys(symbols))  # 去重保序
+    symbol = symbols[0] if symbols else None
 
     # 2. 年份提取
+    now = datetime.now()
     years = []
-    # 单年: "2024年" / "2024"
+    # 数字年份: "2024年" / "2024"
     year_matches = re.findall(r"(20\d{2})\s*年?", query)
-    years = sorted(set(int(y) for y in year_matches))
+    years.extend(int(y) for y in year_matches)
+    # 口语化: "去年" / "今年" / "前年"
+    if "去年" in query:
+        years.append(now.year - 1)
+    if "今年" in query:
+        years.append(now.year)
+    if "前年" in query:
+        years.append(now.year - 2)
     # 范围: "2022-2024" / "近3年"
     range_match = re.search(r"(20\d{2})\s*[-~至到]\s*(20\d{2})", query)
     if range_match:
         start, end = int(range_match.group(1)), int(range_match.group(2))
-        years = sorted(set(list(range(start, end + 1)) + years))
+        years.extend(range(start, end + 1))
     if "近" in query and "年" in query:
         n_match = re.search(r"近\s*(\d+)\s*年", query)
         if n_match:
             n = int(n_match.group(1))
-            from datetime import datetime
-            current = datetime.now().year
-            years = list(range(current - n, current))
+            years.extend(range(now.year - n, now.year))
+    # 去重排序
+    years = sorted(set(years))
 
     if not years:
-        # 默认最近一年
-        from datetime import datetime
-        years = [datetime.now().year - 1]
+        years = [now.year - 1]
 
-    # 3. 指标匹配（双向：查询含别名 或 短词匹配）
-    metrics = []
-    for alias in METRIC_ALIASES:
-        if alias in query:
-            metrics.append(alias)
-            continue
-        # 反向部分匹配：查询中含短词（如"利润"），别名含该短词（如"净利润"）
-        for short_kw in ["营业", "收入", "成本", "利润", "资产", "负债", "现金", "收益", "息税"]:
-            if short_kw in query and short_kw in alias and alias not in metrics:
-                metrics.append(alias)
-
-    return symbol, years, list(dict.fromkeys(metrics))  # 去重保序
+    # 3. 指标匹配
+    # 直接匹配: query 中包含完整的别名 → 精确命中
+    metrics = [alias for alias in METRIC_ALIASES if alias in query]
+    # 去重保序
+    return symbol, years, list(dict.fromkeys(metrics))
 
 
 def try_query(query: str) -> Optional[dict]:
