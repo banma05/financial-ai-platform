@@ -170,9 +170,22 @@ def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
 
     # 3. 指标匹配
     # 直接匹配: query 中包含完整的别名 → 精确命中
-    metrics = [alias for alias in METRIC_ALIASES if alias in query]
-    # 去重保序
-    return symbols, years, list(dict.fromkeys(metrics))
+    raw_metrics = [alias for alias in METRIC_ALIASES if alias in query]
+    raw_metrics = list(dict.fromkeys(raw_metrics))  # 去重
+    # 去子串: 仅当两个别名映射到同一指标时才去重(如"营收"→"营业收入")
+    metrics = []
+    for m in raw_metrics:
+        m_keys = METRIC_ALIASES[m]["keys"]
+        dup = False
+        for other in raw_metrics:
+            if other != m and m in other:
+                other_keys = METRIC_ALIASES[other]["keys"]
+                if m_keys == other_keys:  # 同一指标的不同别名→保留长的
+                    dup = True
+                    break
+        if not dup:
+            metrics.append(m)
+    return symbols, years, metrics
 
 
 def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],

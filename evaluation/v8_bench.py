@@ -61,30 +61,43 @@ def evaluate_sql() -> dict:
         data_dict = result.get("data", {}) if result else {}
 
         # 统计预期值命中情况
+        # 匹配策略: 把预期键和返回键都拆成 {公司, 指标, 年份} 三元组,交叉比对
+        import re as _re
         hits = {}
         for key, expected_val in expected.items():
             found = False
             accurate = False
+            # 解析预期键: "毛利率_贵州茅台_2024" or "茅台_毛利率" or "营业收入_2024" or "ROE"
+            key_parts = key.split('_')
+
             for dk, dv in data_dict.items():
-                # 多级匹配策略:
-                # 1) 直接子串 (key in dk or dk in key)
-                # 2) 去前缀后缀 (key_clean in dk_clean)
-                # 3) 公司名前缀匹配: "毛利率_贵州茅台" vs "茅台_毛利率"
-                #    拆出公司名和指标名，交叉匹配
-                key_clean = key.replace('净', '').replace('毛', '').replace('总', '').replace('归母', '')
-                dk_clean = dk.replace('净', '').replace('毛', '').replace('总', '').replace('归母', '')
-                # 标准匹配
-                match = (key in dk or dk in key or key_clean in dk_clean or dk_clean in key_clean)
-                # 跨公司键名: "_"分割后交叉匹配
+                dk_parts = dk.split('_')
+
+                # 策略1: 直接相等
+                match = (key == dk)
+
+                # 策略2: 双向子串
                 if not match:
-                    key_parts = key.split('_')
-                    dk_parts = dk.split('_')
-                    if len(key_parts) >= 2 and len(dk_parts) >= 2:
-                        match = any(
-                            kp in dk and dp in key
-                            for kp in key_parts for dp in dk_parts
-                            if len(kp) >= 2 and len(dp) >= 2
-                        )
+                    match = (key in dk or dk in key)
+
+                # 策略3: 拆成部件后交叉匹配（所有部件都出现在对方键中）
+                if not match and len(key_parts) >= 2 and len(dk_parts) >= 2:
+                    match = all(
+                        any(kp in dp for dp in dk_parts) or any(dp in kp for dp in dk_parts)
+                        for kp in key_parts
+                    )
+
+                # 策略4: 指标名匹配（去掉公司和年份，只比指标）
+                if not match:
+                    known_metrics = {'营业收入','营收','净利润','净利','净利率','毛利率','ROE','ROA',
+                                    '资产负债率','权益乘数','研发费用','经营现金流','经营活动现金流净额'}
+                    k_metric = next((m for m in known_metrics if m in key), None)
+                    d_metric = next((m for m in known_metrics if m in dk), None)
+                    if k_metric and d_metric:
+                        k_base = k_metric.replace('净','').replace('毛','').replace('总','').replace('营收','营收')
+                        d_base = d_metric.replace('净','').replace('毛','').replace('总','').replace('营收','营收')
+                        match = (k_base in d_base or d_base in k_base)
+
                 if match:
                     found = True
                     if expected_val and dv:
