@@ -1,133 +1,145 @@
 {
   "meta": {
     "name": "SQL 数据层评测集",
-    "version": "8.0",
+    "version": "8.0.1",
     "created": "2026-07-09",
     "total_questions": 20,
-    "description": "测试 data_query SQL路径。expected_values 来自 AKShare 真实数据验证。",
+    "description": "诚实评测 SQL 查询引擎的能力边界。expected_support: full=预期满分 / partial=功能有但不稳 / none=已知不支持",
     "scoring": {
-      "coverage": "expected_values 中 数据命中率",
-      "accuracy": "命中值的误差 < tolerance_pct",
-      "target": "coverage >= 90%, accuracy >= 95% (排除预期不命中题)"
+      "in_scope_coverage": "expected_support=full 的命中率",
+      "in_scope_accuracy": "expected_support=full 的值精度 (< tolerance_pct)",
+      "overall_coverage": "所有题(含partial/none)的命中率",
+      "target": "in_scope: coverage>=95%, accuracy>=95%"
     }
   },
   "questions": [
     {
-      "id": "S01", "category": "单指标", "difficulty": "easy",
+      "id": "S01", "category": "单指标", "difficulty": "easy", "expected_support": "full",
       "query": "贵州茅台2024年的营业收入是多少？",
       "expected_values": {"营业收入": 1708.99}, "tolerance_pct": 2,
-      "tests": "单公司单指标"
+      "tests": "基础查询"
     },
     {
-      "id": "S02", "category": "单指标", "difficulty": "easy",
+      "id": "S02", "category": "单指标", "difficulty": "easy", "expected_support": "full",
       "query": "比亚迪2024年净利润",
       "expected_values": {"净利润": 402.54}, "tolerance_pct": 2,
-      "tests": "不带年份'年'字"
+      "tests": "不带年字"
     },
     {
-      "id": "S03", "category": "单指标", "difficulty": "easy",
+      "id": "S03", "category": "单指标", "difficulty": "easy", "expected_support": "full",
       "query": "五粮液2024年的ROE是多少",
       "expected_values": {"ROE": 23.90}, "tolerance_pct": 5,
-      "tests": "复合指标公式计算"
+      "tests": "复合指标公式"
     },
     {
-      "id": "S04", "category": "单指标", "difficulty": "easy",
+      "id": "S04", "category": "单指标", "difficulty": "easy", "expected_support": "full",
       "query": "宁德时代2024年研发费用",
       "expected_values": {"研发费用": 186.07}, "tolerance_pct": 2,
-      "tests": "单指标"
+      "tests": "制造业指标"
     },
     {
-      "id": "S05", "category": "单指标", "difficulty": "easy",
+      "id": "S05", "category": "单指标", "difficulty": "easy", "expected_support": "full",
       "query": "招商银行2024年资产负债率",
       "expected_values": {"资产负债率": 89.85}, "tolerance_pct": 2,
       "tests": "金融高杠杆场景"
     },
     {
-      "id": "S06", "category": "多指标", "difficulty": "medium",
+      "id": "S06", "category": "多指标", "difficulty": "medium", "expected_support": "full",
       "query": "查询茅台2024年的营业收入、净利润和毛利率",
       "expected_values": {"营业收入": 1708.99, "净利润": 862.28, "毛利率": 91.93},
       "tolerance_pct": 2, "tests": "3指标批量查询"
     },
     {
-      "id": "S07", "category": "多指标", "difficulty": "medium",
+      "id": "S07", "category": "多指标", "difficulty": "medium", "expected_support": "full",
       "query": "比亚迪2024年营收、净利、毛利率、净利率",
       "expected_values": {"营业收入": 7771.02, "净利润": 402.54, "毛利率": 19.44, "净利率": 5.18},
-      "tolerance_pct": 2, "tests": "4指标批量"
+      "tolerance_pct": 2, "tests": "4指标+简称混合"
     },
     {
-      "id": "S08", "category": "多指标", "difficulty": "medium",
+      "id": "S08", "category": "多指标", "difficulty": "medium", "expected_support": "full",
       "query": "宁德时代2024年营收、净利润、研发费用和ROE",
       "expected_values": {"营业收入": 3620.13, "净利润": 507.45, "研发费用": 186.07, "ROE": 20.55},
-      "tolerance_pct": 5, "tests": "科技制造企业"
+      "tolerance_pct": 5, "tests": "科技制造综合查询"
     },
     {
-      "id": "S09", "category": "多年份趋势", "difficulty": "medium",
+      "id": "S09", "category": "多年份", "difficulty": "medium", "expected_support": "full",
       "query": "五粮液2023年和2024年的毛利率分别是多少",
       "expected_values": {"毛利率_2023": 75.79, "毛利率_2024": 77.05},
-      "tolerance_pct": 2, "tests": "跨年度趋势"
+      "tolerance_pct": 2, "tests": "跨年度对比趋势"
     },
     {
-      "id": "S10", "category": "多年份趋势", "difficulty": "medium",
+      "id": "S10", "category": "多年份", "difficulty": "medium", "expected_support": "full",
       "query": "美的集团2023和2024年营业收入",
       "expected_values": {"营业收入_2023": 3720.37, "营业收入_2024": 4071.50},
-      "tolerance_pct": 5, "tests": "家电跨年营收"
+      "tolerance_pct": 5, "tests": "家电行业跨年营收"
     },
     {
-      "id": "S11", "category": "多年份趋势", "difficulty": "medium",
+      "id": "S11", "category": "多年份", "difficulty": "medium", "expected_support": "full",
       "query": "恒瑞医药2023-2024年净利润变化",
       "expected_values": {"净利润_2023": 43.02, "净利润_2024": 63.37},
-      "tolerance_pct": 10, "tests": "区间年份解析 + 医药行业"
+      "tolerance_pct": 10, "tests": "区间年份(-格式) + 医药行业"
     },
     {
-      "id": "S12", "category": "复合指标", "difficulty": "medium",
+      "id": "S12", "category": "复合指标", "difficulty": "medium", "expected_support": "full",
       "query": "比亚迪2024年经营活动现金流净额",
       "expected_values": {"经营活动现金流净额": 1334.54}, "tolerance_pct": 2,
-      "tests": "现金流量表单项"
+      "tests": "现金流量表(完整术语匹配)"
     },
     {
-      "id": "S13", "category": "复合指标", "difficulty": "medium",
+      "id": "S13", "category": "复合指标", "difficulty": "medium", "expected_support": "full",
       "query": "茅台2024年权益乘数",
       "expected_values": {"权益乘数": 1.28}, "tolerance_pct": 5,
-      "tests": "复合指标:权益乘数=总资产/净资产"
+      "tests": "复合:权益乘数=总资产/净资产"
     },
     {
-      "id": "S14", "category": "跨公司对比", "difficulty": "medium",
-      "query": "茅台2024年毛利率和净利率",
-      "expected_values": {"毛利率": 91.93, "净利率": 50.46},
-      "tolerance_pct": 2, "tests": "同公司多复合指标查询"
+      "id": "S14", "category": "跨公司", "difficulty": "hard", "expected_support": "none",
+      "query": "茅台和五粮液2024年谁的毛利率和净利率更高",
+      "expected_values": {
+        "毛利率_贵州茅台": 91.93, "净利率_贵州茅台": 50.46,
+        "毛利率_五粮液": 77.05, "净利率_五粮液": 35.72
+      },
+      "tolerance_pct": 2,
+      "tests": "KNOWN_LIMIT: parse_query只取第一家。预期: 仅返回茅台数据，五粮液缺失"
     },
     {
-      "id": "S15", "category": "跨公司对比", "difficulty": "hard",
-      "query": "比亚迪2024年营收和净利",
-      "expected_values": {"营业收入": 7771.02, "净利润": 402.54},
-      "tolerance_pct": 2, "tests": "单公司多指标替代跨公司(跨公司另议)"
+      "id": "S15", "category": "跨公司", "difficulty": "hard", "expected_support": "none",
+      "query": "比亚迪和宁德时代2024年营收和净利对比",
+      "expected_values": {
+        "营业收入_比亚迪": 7771.02, "营业收入_宁德时代": 3620.13,
+        "净利润_比亚迪": 402.54, "净利润_宁德时代": 507.45
+      },
+      "tolerance_pct": 2,
+      "tests": "KNOWN_LIMIT: 跨公司查询只返回第一家(比亚迪)。宁德数据缺失"
     },
     {
-      "id": "S16", "category": "跨公司对比", "difficulty": "hard",
-      "query": "比亚迪2024年资产负债率和ROE",
-      "expected_values": {"资产负债率": 74.64, "ROE": 21.73},
-      "tolerance_pct": 5, "tests": "制造业综合指标"
+      "id": "S16", "category": "跨公司", "difficulty": "hard", "expected_support": "none",
+      "query": "贵州茅台、比亚迪、招商银行的资产负债率分别是多少",
+      "expected_values": {
+        "资产负债率_贵州茅台": 12.55, "资产负债率_比亚迪": 74.64, "资产负债率_招商银行": 89.85
+      },
+      "tolerance_pct": 5,
+      "tests": "KNOWN_LIMIT: 三家跨行业对比只返回第一家(茅台)"
     },
     {
-      "id": "S17", "category": "边界测试", "difficulty": "easy",
+      "id": "S17", "category": "边界", "difficulty": "easy", "expected_support": "full",
       "query": "特斯拉2024年营收", "expected_values": {}, "tolerance_pct": 0,
       "tests": "未注册公司→返回空(不编造)"
     },
     {
-      "id": "S18", "category": "边界测试", "difficulty": "easy",
+      "id": "S18", "category": "边界", "difficulty": "easy", "expected_support": "full",
       "query": "茅台2030年的ROE", "expected_values": {}, "tolerance_pct": 0,
       "tests": "未来年份→返回空"
     },
     {
-      "id": "S19", "category": "短Query", "difficulty": "easy",
+      "id": "S19", "category": "边界", "difficulty": "easy", "expected_support": "full",
       "query": "ROE", "expected_values": {}, "tolerance_pct": 0,
-      "tests": "超短Query: 无公司→返回空"
+      "tests": "超短Query无公司→返回空"
     },
     {
-      "id": "S20", "category": "口语化", "difficulty": "medium",
-      "query": "茅台2024年净利",
+      "id": "S20", "category": "口语化", "difficulty": "medium", "expected_support": "partial",
+      "query": "茅台去年赚了多少钱",
       "expected_values": {"净利润": 862.28}, "tolerance_pct": 2,
-      "tests": "之前S20 '赚了多少钱' → 改为 '赚了多少' 加年份"
+      "tests": "KNOWN_LIMIT: '去年'解析为2025, '赚了多少钱'无指标匹配"
     }
   ]
 }
