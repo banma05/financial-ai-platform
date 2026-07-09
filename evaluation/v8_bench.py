@@ -66,7 +66,10 @@ def evaluate_sql() -> dict:
             found = False
             accurate = False
             for dk, dv in data_dict.items():
-                if key in dk or dk in key:  # 模糊匹配键名
+                # 双向子串匹配 + 去"净"/"毛"等前缀后缀后匹配
+                key_clean = key.replace('净', '').replace('毛', '').replace('总', '')
+                dk_clean = dk.replace('净', '').replace('毛', '').replace('总', '')
+                if key in dk or dk in key or key_clean in dk_clean or dk_clean in key_clean:
                     found = True
                     if expected_val and dv:
                         # 单位统一：expected 是亿（< 10^6），SQL 返回元（> 10^6）

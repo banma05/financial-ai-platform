@@ -84,6 +84,8 @@ METRIC_ALIASES: Dict[str, dict] = {
     # 现金流指标
     "营收": {"keys": ["revenue"], "formula": None},  # 简短别名
     "净利": {"keys": ["net_profit_attr_parent"], "formula": None},
+    "经营活动现金流净额": {"keys": ["operating_cf"], "formula": None},
+    "经营活动产生的现金流量净额": {"keys": ["operating_cf"], "formula": None},
     "经营现金流": {"keys": ["operating_cf"], "formula": None},
     "投资现金流": {"keys": ["investing_cf"], "formula": None},
     "筹资现金流": {"keys": ["financing_cf"], "formula": None},
