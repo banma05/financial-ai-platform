@@ -178,7 +178,64 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
     finally:
         db.close()
 
-    # ── V8.0: 结构化数据提取将在步骤3用规则重建 ──
+    # ── V8.0: 规则提取表格数字 → 写入 SQL（不阻塞主流程）──
+    def _extract_tables_to_sql():
+        try:
+            from rag.table_extractor import extract_and_store
+            from db.financial_models import Company
+            from db import SessionLocal
+
+            # 从文件名推断公司名和年份
+            company_name = file.filename or ""
+            # 去掉扩展名和常见后缀
+            for suffix in [".pdf", ".PDF", ".docx", ".doc", ".md", ".txt",
+                           "年年报", "年报", "年度报告", "年审计报告"]:
+                company_name = company_name.replace(suffix, "")
+            # 提取年份
+            import re as _re
+            year_match = _re.search(r"(20\d{2})", file.filename or "")
+            year = int(year_match.group(1)) if year_match else None
+
+            if not company_name:
+                return
+
+            # 注册公司
+            db2 = SessionLocal()
+            company = db2.query(Company).filter(Company.name == company_name).first()
+            if not company:
+                # 尝试匹配已知代码
+                symbol = ""
+                from db.financial_query import COMPANY_ALIASES
+                for alias, sym in COMPANY_ALIASES.items():
+                    if alias in company_name:
+                        symbol = sym
+                        break
+                company = Company(name=company_name, symbol=symbol or company_name[:6])
+                db2.add(company)
+                db2.commit()
+                db2.refresh(company)
+            db2.close()
+
+            # 收集所有大表格
+            all_tables = []
+            for page in pages:
+                for t in page.get("tables", []):
+                    if t.get("rows", 0) >= 4 and t.get("cols", 0) >= 3:
+                        all_tables.append(t)
+
+            if all_tables:
+                count = extract_and_store(
+                    all_tables,
+                    symbol=company.symbol or company_name,
+                    company_id=company.id,
+                    default_year=year,
+                )
+                logger.info(f"[上传] 规则提取完成: {company_name} {year}, {count} 条指标")
+        except Exception as e:
+            logger.debug(f"[上传] 规则提取跳过: {e}")
+
+    if background_tasks:
+        background_tasks.add_task(_extract_tables_to_sql)
 
     return DocumentUploadResponse(
         filename=file.filename or "unknown",
