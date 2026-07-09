@@ -54,8 +54,10 @@ def load_pdf(file_path: str) -> List[dict]:
     """
     加载 PDF 文件，按页提取文本 + 结构化表格
 
-    使用 "blocks" 模式提取文本：按版面段落块分组，保留阅读顺序
-    （默认 get_text() 按物理坐标排序，多栏布局下会交叉拼接）
+    V8.0 重构：用 "dict" 模式 + 坐标过滤，替代原来的 "blocks" 模式。
+    - 页眉页脚（y < 8% 或 y > 92%）→ 过滤
+    - 表格区域（find_tables 检测到的） → 独立存为 Markdown，文本中不重复
+    - 相邻文本块按 y 坐标合并为段落
 
     返回: [{
         "text": "段落文本...",
@@ -69,17 +71,14 @@ def load_pdf(file_path: str) -> List[dict]:
     try:
         doc = pymupdf.open(file_path)
         for page_num, page in enumerate(doc, start=1):
-            # 用 "blocks" 模式按版面段落块提取，避免多栏乱序
-            blocks = page.get_text("blocks")
-            # 按 y 坐标为主、x 坐标为辅排序（先上后下，先左后右）
-            blocks.sort(key=lambda b: (round(b[1] / 10) * 10, b[0]))
-            # 只取文本块（type=0），过滤图片块
-            text_lines = [b[4].strip() for b in blocks if b[4].strip() and b[6] == 0]
-            text = "\n".join(text_lines)
+            # ── 1. 获取页面尺寸 ──
+            page_height = page.rect.height
+            header_y = page_height * 0.08   # 页面顶部 8% 视为页眉区
+            footer_y = page_height * 0.92   # 页面底部 8% 视为页脚区
 
+            # ── 2. 检测表格区域（用于后续文本过滤）──
+            table_bboxes = []
             tables = []
-
-            # 检测页面中的表格
             try:
                 found = page.find_tables()
                 for t in found.tables:
@@ -90,11 +89,82 @@ def load_pdf(file_path: str) -> List[dict]:
                             "rows": t.row_count,
                             "cols": t.col_count,
                         })
+                        table_bboxes.append(t.bbox)  # (x0, y0, x1, y1)
                 total_tables += len(tables)
             except Exception as e:
                 logger.debug(f"表格检测失败 P{page_num}: {e}")
 
-            # 保留非空页面（有文本或有表格）
+            # ── 3. 用 "dict" 模式提取结构化文本 ──
+            text_dict = page.get_text("dict")
+            text_blocks = []
+
+            for block in text_dict.get("blocks", []):
+                # 只处理文本块（type=0），跳过图片块（type=1）
+                if block.get("type") != 0:
+                    continue
+
+                bbox = block.get("bbox", (0, 0, 0, 0))
+                y0, y1 = bbox[1], bbox[3]
+
+                # 规则1: 过滤页眉页脚区域
+                if y1 < header_y or y0 > footer_y:
+                    continue
+
+                # 规则2: 过滤表格区域内的文本（表格已单独提取）
+                in_table = False
+                for tb in table_bboxes:
+                    if (y0 >= tb[1] - 5 and y1 <= tb[3] + 5 and
+                        bbox[0] >= tb[0] - 5 and bbox[2] <= tb[2] + 5):
+                        in_table = True
+                        break
+                if in_table:
+                    continue
+
+                # 提取块内文本
+                lines = []
+                for line in block.get("lines", []):
+                    line_text = ""
+                    for span in line.get("spans", []):
+                        line_text += span.get("text", "")
+                    line_text = line_text.strip()
+                    if line_text:
+                        lines.append(line_text)
+
+                if lines:
+                    text_blocks.append({
+                        "y0": y0,
+                        "text": "".join(lines),
+                    })
+
+            # ── 4. 规则3: 过滤纯页码行（短纯数字，在页眉页脚区域附近）──
+            filtered_blocks = []
+            for block in text_blocks:
+                text = block["text"]
+                # 纯数字且 ≤3 字符 → 疑似页码
+                if text.isdigit() and len(text) <= 3:
+                    continue
+                # 纯数字+空格（如"4 5"） → 疑似页码
+                if all(c.isdigit() or c.isspace() for c in text) and len(text.replace(" ", "")) <= 3:
+                    continue
+                filtered_blocks.append(block)
+
+            # ── 5. 合并相邻文本块为段落（y 坐标接近的连续块）──
+            paragraphs = []
+            if filtered_blocks:
+                current = filtered_blocks[0]["text"]
+                for i in range(1, len(filtered_blocks)):
+                    y_gap = filtered_blocks[i]["y0"] - filtered_blocks[i-1]["y0"]
+                    # y 间距 < 20 点（约 0.7mm）视为同一段落
+                    if y_gap < 20:
+                        current += filtered_blocks[i]["text"]
+                    else:
+                        paragraphs.append(current)
+                        current = filtered_blocks[i]["text"]
+                paragraphs.append(current)
+
+            text = "\n\n".join(paragraphs)
+
+            # ── 6. 保留非空页面 ──
             if text.strip() or tables:
                 docs.append({
                     "text": text.strip(),
