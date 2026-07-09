@@ -46,12 +46,12 @@ def evaluate_sql() -> dict:
 
     questions = data["questions"]
     results = []
-    total_hits = 0
-    total_expected = 0
-    total_accurate = 0
+    in_scope_hits = in_scope_expected = in_scope_accurate = 0
+    all_hits = all_expected = all_accurate = 0
     avg_latency = 0
 
     for q in questions:
+        support = q.get("expected_support", "full")
         start = time.perf_counter()
         result = try_query(q["query"])
         latency_ms = (time.perf_counter() - start) * 1000
@@ -66,10 +66,26 @@ def evaluate_sql() -> dict:
             found = False
             accurate = False
             for dk, dv in data_dict.items():
-                # 双向子串匹配 + 去"净"/"毛"等前缀后缀后匹配
-                key_clean = key.replace('净', '').replace('毛', '').replace('总', '')
-                dk_clean = dk.replace('净', '').replace('毛', '').replace('总', '')
-                if key in dk or dk in key or key_clean in dk_clean or dk_clean in key_clean:
+                # 多级匹配策略:
+                # 1) 直接子串 (key in dk or dk in key)
+                # 2) 去前缀后缀 (key_clean in dk_clean)
+                # 3) 公司名前缀匹配: "毛利率_贵州茅台" vs "茅台_毛利率"
+                #    拆出公司名和指标名，交叉匹配
+                key_clean = key.replace('净', '').replace('毛', '').replace('总', '').replace('归母', '')
+                dk_clean = dk.replace('净', '').replace('毛', '').replace('总', '').replace('归母', '')
+                # 标准匹配
+                match = (key in dk or dk in key or key_clean in dk_clean or dk_clean in key_clean)
+                # 跨公司键名: "_"分割后交叉匹配
+                if not match:
+                    key_parts = key.split('_')
+                    dk_parts = dk.split('_')
+                    if len(key_parts) >= 2 and len(dk_parts) >= 2:
+                        match = any(
+                            kp in dk and dp in key
+                            for kp in key_parts for dp in dk_parts
+                            if len(kp) >= 2 and len(dp) >= 2
+                        )
+                if match:
                     found = True
                     if expected_val and dv:
                         # 单位统一：expected 是亿（< 10^6），SQL 返回元（> 10^6）
@@ -89,14 +105,19 @@ def evaluate_sql() -> dict:
 
         hit_count = sum(1 for h in hits.values() if h["found"])
         acc_count = sum(1 for h in hits.values() if h["accurate"])
-        total_hits += hit_count
-        total_expected += len(expected)
-        total_accurate += acc_count
+        all_hits += hit_count
+        all_expected += len(expected)
+        all_accurate += acc_count
+        if support == "full":
+            in_scope_hits += hit_count
+            in_scope_expected += len(expected)
+            in_scope_accurate += acc_count
         avg_latency += latency_ms
 
         results.append({
             "id": q["id"],
             "query": q["query"],
+            "support": support,
             "expected_count": len(expected),
             "hits": hit_count,
             "accurate": acc_count,
@@ -109,8 +130,10 @@ def evaluate_sql() -> dict:
     return {
         "layer": "SQL",
         "total_questions": len(questions),
-        "coverage": f"{total_hits}/{total_expected} = {total_hits/max(total_expected,1)*100:.1f}%",
-        "accuracy": f"{total_accurate}/{total_expected} = {total_accurate/max(total_expected,1)*100:.1f}%",
+        "in_scope_coverage": f"{in_scope_hits}/{in_scope_expected} = {in_scope_hits/max(in_scope_expected,1)*100:.1f}%",
+        "in_scope_accuracy": f"{in_scope_accurate}/{in_scope_expected} = {in_scope_accurate/max(in_scope_expected,1)*100:.1f}%",
+        "overall_coverage": f"{all_hits}/{all_expected} = {all_hits/max(all_expected,1)*100:.1f}%",
+        "overall_accuracy": f"{all_accurate}/{all_expected} = {all_accurate/max(all_expected,1)*100:.1f}%",
         "avg_latency_ms": round(avg_latency, 1),
         "results": results,
     }
@@ -235,9 +258,10 @@ if __name__ == "__main__":
             print(f"  {k}: {v}")
 
     if "results" in result and result["results"]:
-        print(f"\n  --- 逐题结果 ---")
+        print(f"\n  --- 逐题结果 (F=full P=partial N=none) ---")
         for r in result["results"]:
-            status = "OK" if r.get("accurate", r.get("elapsed_s", 99) < 10) else "CHECK"
+            support_tag = r.get("support", "?")
+            status = "OK" if r.get("accurate", r.get("elapsed_s", 99) < 10) else "CHK"
             if "expected_count" in r:
                 print(f"  {r['id']} {status}: hits={r['hits']}/{r['expected_count']}, "
                       f"acc={r['accurate']}, {r['latency_ms']:.0f}ms | {r['query'][:40]}")

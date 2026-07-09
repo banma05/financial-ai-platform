@@ -125,15 +125,12 @@ METRIC_ALIASES: Dict[str, dict] = {
 }
 
 
-def parse_query(query: str) -> Tuple[Optional[str], List[int], List[str]]:
+def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
     """
-    解析自然语言查询 → (symbol, years, metric_names)
-
-    参数:
-        query: 如"茅台2024年ROE和毛利率"
+    解析自然语言查询 → (symbols, years, metric_names)
 
     返回:
-        (symbol, years, metrics) — symbol为None表示无法识别公司
+        (symbols, years, metrics) — symbols为空表示无法识别公司
     """
     # 1. 公司识别（支持多公司）
     symbols = []
@@ -141,7 +138,6 @@ def parse_query(query: str) -> Tuple[Optional[str], List[int], List[str]]:
         if alias in query:
             symbols.append(sym)
     symbols = list(dict.fromkeys(symbols))  # 去重保序
-    symbol = symbols[0] if symbols else None
 
     # 2. 年份提取
     now = datetime.now()
@@ -176,123 +172,123 @@ def parse_query(query: str) -> Tuple[Optional[str], List[int], List[str]]:
     # 直接匹配: query 中包含完整的别名 → 精确命中
     metrics = [alias for alias in METRIC_ALIASES if alias in query]
     # 去重保序
-    return symbol, years, list(dict.fromkeys(metrics))
+    return symbols, years, list(dict.fromkeys(metrics))
+
+
+def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
+                       multi_company: bool) -> Optional[dict]:
+    """查询一家公司的指标数据。multi_company=True 时键名加公司前缀。"""
+    from db import SessionLocal, FinancialData, Company
+
+    company = db.query(Company).filter(Company.symbol == symbol).first()
+    if not company:
+        return None
+
+    # 取公司简称用于键名前缀
+    short_name = company.name.replace("贵州", "").replace("股份", "").replace("有限", "") if company.name else symbol
+    data = {}
+    found_any = False
+
+    for metric_name in metrics:
+        metric_def = METRIC_ALIASES[metric_name]
+        keys = metric_def["keys"]
+        formula = metric_def["formula"]
+
+        for year in years:
+            values = {}
+            for key in keys:
+                record = db.query(FinancialData).filter(
+                    FinancialData.symbol == symbol,
+                    FinancialData.year == year,
+                    FinancialData.quarter == "Q4",
+                    FinancialData.metric_key == key,
+                ).first()
+                if not record:
+                    record = db.query(FinancialData).filter(
+                        FinancialData.symbol == symbol,
+                        FinancialData.year == year,
+                        FinancialData.metric_key == key,
+                    ).order_by(FinancialData.quarter.desc()).first()
+                if record:
+                    values[key] = record.metric_value
+                    found_any = True
+
+            if not values:
+                continue
+
+            key_prefix = f"{short_name}_" if multi_company else ""
+            year_suffix = f"_{year}" if len(years) > 1 else ""
+
+            if formula and len(keys) >= 2 and all(k in values for k in keys):
+                try:
+                    safe_vars = {k: v for k, v in values.items() if k in keys}
+                    result = eval(formula, {"__builtins__": {}}, safe_vars)
+                    data[f"{key_prefix}{metric_name}{year_suffix}"] = round(result, 2)
+                except Exception:
+                    continue
+            elif not formula:
+                for key, val in values.items():
+                    if key in keys:
+                        data[f"{key_prefix}{metric_name}{year_suffix}"] = val
+
+    if not found_any:
+        return None
+    return {"company": company, "data": data, "found_any": found_any}
 
 
 def try_query(query: str) -> Optional[dict]:
     """
-    尝试用 SQL 回答查询。无法处理返回 None。
-
-    参数:
-        query: 自然语言查询
+    尝试用 SQL 回答查询。支持多公司（每家公司独立查询，键名加公司前缀）。
 
     返回:
-        成功: {"found": True, "data": {...}, "summary": "...", "confidence": 0.99}
+        成功: {"found": True, "data": {...}, "summary": "...", "confidence": 0.99, "source": "SQL"}
         失败: None
     """
     # 1. 解析查询
-    symbol, years, metrics = parse_query(query)
-    if not symbol:
+    symbols, years, metrics = parse_query(query)
+    if not symbols:
         logger.debug(f"[SQL] 未识别公司: {query[:50]}")
         return None
     if not metrics:
         logger.debug(f"[SQL] 未识别指标: {query[:50]}")
         return None
 
-    logger.info(f"[SQL] 解析: {symbol} × {years} × {metrics}")
+    multi = len(symbols) > 1
+    logger.info(f"[SQL] 解析: {symbols} × {years} × {metrics}")
 
-    # 2. 查询数据库
-    from db import SessionLocal, FinancialData, Company
+    from db import SessionLocal
     db = SessionLocal()
     try:
-        company = db.query(Company).filter(Company.symbol == symbol).first()
-        if not company:
-            logger.debug(f"[SQL] 公司未注册: {symbol}")
+        all_data = {}
+        company_names = []
+        any_found = False
+
+        for sym in symbols:
+            result = _query_one_company(db, sym, years, metrics, multi)
+            if result:
+                all_data.update(result["data"])
+                company_names.append(result["company"].name or sym)
+                any_found = True
+
+        if not any_found:
             return None
 
-        data = {}
-        found_any = False
-
-        for metric_name in metrics:
-            metric_def = METRIC_ALIASES[metric_name]
-            keys = metric_def["keys"]
-            formula = metric_def["formula"]
-
-            for year in years:
-                values = {}
-                for key in keys:
-                    # 取 Q4（年报）优先，没有则取最近可用季度
-                    record = db.query(FinancialData).filter(
-                        FinancialData.symbol == symbol,
-                        FinancialData.year == year,
-                        FinancialData.quarter == "Q4",
-                        FinancialData.metric_key == key,
-                    ).first()
-
-                    if not record:
-                        # 尝试其他季度
-                        record = db.query(FinancialData).filter(
-                            FinancialData.symbol == symbol,
-                            FinancialData.year == year,
-                            FinancialData.metric_key == key,
-                        ).order_by(FinancialData.quarter.desc()).first()
-
-                    if record:
-                        values[key] = record.metric_value
-                        found_any = True
-
-                if not values:
-                    continue
-
-                if formula and len(keys) >= 2 and all(k in values for k in keys):
-                    # 复合指标：用公式计算（所有分量都有值才计算）
-                    try:
-                        safe_vars = {k: v for k, v in values.items() if k in keys}
-                        result = eval(formula, {"__builtins__": {}}, safe_vars)
-                        if len(years) == 1:
-                            data[metric_name] = round(result, 2)
-                        else:
-                            data[f"{metric_name}_{year}"] = round(result, 2)
-                    except Exception:
-                        continue
-                elif not formula:
-                    # 简单指标：直接取值
-                    for key, val in values.items():
-                        if key in keys:
-                            if len(years) == 1:
-                                data[metric_name] = val
-                            else:
-                                data[f"{metric_name}_{year}"] = val
-
-        if not found_any:
-            db.close()
-            logger.debug(f"[SQL] 无数据: {symbol} {years}")
-            return None
-
-        db.close()
-
-        # 3. 生成摘要
-        company_name = company.name or symbol
-        if len(years) == 1:
-            summary_parts = [f"{company_name} {years[0]}年"]
-            for m in metrics:
-                key = m
-                if key in data:
-                    val = data[key]
-                    summary_parts.append(f"{m}={val:,.2f}")
+        # 生成摘要
+        if multi:
+            summary = " vs ".join(company_names) + f" {years[0]}年 对比"
+        elif len(years) == 1:
+            summary = f"{company_names[0]} {years[0]}年"
         else:
-            summary_parts = [f"{company_name} {years[0]}-{years[-1]}年"]
-        summary = "，".join(summary_parts)
+            summary = f"{company_names[0]} {years[0]}-{years[-1]}年"
 
         return {
             "found": True,
-            "data": data,
+            "data": all_data,
             "summary": summary,
             "raw_chunks": [],
             "confidence": 0.99,
             "source": "SQL",
         }
-
     except Exception as e:
         logger.warning(f"[SQL] 查询失败: {e}")
         return None

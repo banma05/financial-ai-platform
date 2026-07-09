@@ -1,0 +1,477 @@
+{
+  "layer": "SQL",
+  "total_questions": 20,
+  "in_scope_coverage": "22/24 = 91.7%",
+  "in_scope_accuracy": "17/24 = 70.8%",
+  "overall_coverage": "33/36 = 91.7%",
+  "overall_accuracy": "21/36 = 58.3%",
+  "avg_latency_ms": 1.4,
+  "results": [
+    {
+      "id": "S01",
+      "query": "贵州茅台2024年的营业收入是多少？",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 7.4,
+      "details": {
+        "营业收入": {
+          "found": true,
+          "accurate": true,
+          "expected": 1708.99,
+          "got": 1708.99,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S02",
+      "query": "比亚迪2024年净利润",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 1.0,
+      "details": {
+        "净利润": {
+          "found": true,
+          "accurate": true,
+          "expected": 402.54,
+          "got": 402.54,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S03",
+      "query": "五粮液2024年的ROE是多少",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 0.8,
+      "details": {
+        "ROE": {
+          "found": true,
+          "accurate": true,
+          "expected": 23.9,
+          "got": 23.9,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S04",
+      "query": "宁德时代2024年研发费用",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 0.6,
+      "details": {
+        "研发费用": {
+          "found": true,
+          "accurate": true,
+          "expected": 186.07,
+          "got": 186.07,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S05",
+      "query": "招商银行2024年资产负债率",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 0.8,
+      "details": {
+        "资产负债率": {
+          "found": true,
+          "accurate": true,
+          "expected": 89.85,
+          "got": 89.85,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S06",
+      "query": "查询茅台2024年的营业收入、净利润和毛利率",
+      "support": "full",
+      "expected_count": 3,
+      "hits": 3,
+      "accurate": 2,
+      "latency_ms": 1.4,
+      "details": {
+        "营业收入": {
+          "found": true,
+          "accurate": true,
+          "expected": 1708.99,
+          "got": 1708.99,
+          "diff_pct": 0.0
+        },
+        "净利润": {
+          "found": true,
+          "accurate": true,
+          "expected": 862.28,
+          "got": 862.28,
+          "diff_pct": 0.0
+        },
+        "毛利率": {
+          "found": true,
+          "accurate": false,
+          "expected": 91.93,
+          "got": 862.28,
+          "diff_pct": 838.0
+        }
+      }
+    },
+    {
+      "id": "S07",
+      "query": "比亚迪2024年营收、净利、毛利率、净利率",
+      "support": "full",
+      "expected_count": 4,
+      "hits": 3,
+      "accurate": 1,
+      "latency_ms": 1.7,
+      "details": {
+        "营业收入": {
+          "found": false,
+          "accurate": false,
+          "expected": 7771.02,
+          "got": null
+        },
+        "净利润": {
+          "found": true,
+          "accurate": true,
+          "expected": 402.54,
+          "got": 402.54,
+          "diff_pct": 0.0
+        },
+        "毛利率": {
+          "found": true,
+          "accurate": false,
+          "expected": 19.44,
+          "got": 402.54,
+          "diff_pct": 1970.7
+        },
+        "净利率": {
+          "found": true,
+          "accurate": false,
+          "expected": 5.18,
+          "got": 402.54,
+          "diff_pct": 7671.1
+        }
+      }
+    },
+    {
+      "id": "S08",
+      "query": "宁德时代2024年营收、净利润、研发费用和ROE",
+      "support": "full",
+      "expected_count": 4,
+      "hits": 3,
+      "accurate": 3,
+      "latency_ms": 1.6,
+      "details": {
+        "营业收入": {
+          "found": false,
+          "accurate": false,
+          "expected": 3620.13,
+          "got": null
+        },
+        "净利润": {
+          "found": true,
+          "accurate": true,
+          "expected": 507.45,
+          "got": 507.45,
+          "diff_pct": 0.0
+        },
+        "研发费用": {
+          "found": true,
+          "accurate": true,
+          "expected": 186.07,
+          "got": 186.07,
+          "diff_pct": 0.0
+        },
+        "ROE": {
+          "found": true,
+          "accurate": true,
+          "expected": 20.55,
+          "got": 20.55,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S09",
+      "query": "五粮液2023年和2024年的毛利率分别是多少",
+      "support": "full",
+      "expected_count": 2,
+      "hits": 2,
+      "accurate": 2,
+      "latency_ms": 1.3,
+      "details": {
+        "毛利率_2023": {
+          "found": true,
+          "accurate": true,
+          "expected": 75.79,
+          "got": 75.79,
+          "diff_pct": 0.0
+        },
+        "毛利率_2024": {
+          "found": true,
+          "accurate": true,
+          "expected": 77.05,
+          "got": 75.79,
+          "diff_pct": 1.6
+        }
+      }
+    },
+    {
+      "id": "S10",
+      "query": "美的集团2023和2024年营业收入",
+      "support": "full",
+      "expected_count": 2,
+      "hits": 2,
+      "accurate": 1,
+      "latency_ms": 0.7,
+      "details": {
+        "营业收入_2023": {
+          "found": true,
+          "accurate": true,
+          "expected": 3720.37,
+          "got": 3720.37,
+          "diff_pct": 0.0
+        },
+        "营业收入_2024": {
+          "found": true,
+          "accurate": false,
+          "expected": 4071.5,
+          "got": 3720.37,
+          "diff_pct": 8.6
+        }
+      }
+    },
+    {
+      "id": "S11",
+      "query": "恒瑞医药2023-2024年净利润变化",
+      "support": "full",
+      "expected_count": 2,
+      "hits": 2,
+      "accurate": 1,
+      "latency_ms": 1.2,
+      "details": {
+        "净利润_2023": {
+          "found": true,
+          "accurate": true,
+          "expected": 43.02,
+          "got": 43.02,
+          "diff_pct": 0.0
+        },
+        "净利润_2024": {
+          "found": true,
+          "accurate": false,
+          "expected": 63.37,
+          "got": 43.02,
+          "diff_pct": 32.1
+        }
+      }
+    },
+    {
+      "id": "S12",
+      "query": "比亚迪2024年经营活动现金流净额",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 0.5,
+      "details": {
+        "经营活动现金流净额": {
+          "found": true,
+          "accurate": true,
+          "expected": 1334.54,
+          "got": 1334.54,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S13",
+      "query": "茅台2024年权益乘数",
+      "support": "full",
+      "expected_count": 1,
+      "hits": 1,
+      "accurate": 1,
+      "latency_ms": 0.8,
+      "details": {
+        "权益乘数": {
+          "found": true,
+          "accurate": true,
+          "expected": 1.28,
+          "got": 1.28,
+          "diff_pct": 0.0
+        }
+      }
+    },
+    {
+      "id": "S14",
+      "query": "茅台和五粮液2024年谁的毛利率和净利率更高",
+      "support": "none",
+      "expected_count": 4,
+      "hits": 4,
+      "accurate": 2,
+      "latency_ms": 2.8,
+      "details": {
+        "毛利率_贵州茅台": {
+          "found": true,
+          "accurate": true,
+          "expected": 91.93,
+          "got": 91.93,
+          "diff_pct": 0.0
+        },
+        "净利率_贵州茅台": {
+          "found": true,
+          "accurate": true,
+          "expected": 50.46,
+          "got": 50.46,
+          "diff_pct": 0.0
+        },
+        "毛利率_五粮液": {
+          "found": true,
+          "accurate": false,
+          "expected": 77.05,
+          "got": 91.93,
+          "diff_pct": 19.3
+        },
+        "净利率_五粮液": {
+          "found": true,
+          "accurate": false,
+          "expected": 35.72,
+          "got": 50.46,
+          "diff_pct": 41.3
+        }
+      }
+    },
+    {
+      "id": "S15",
+      "query": "比亚迪和宁德时代2024年营收和净利对比",
+      "support": "none",
+      "expected_count": 4,
+      "hits": 4,
+      "accurate": 2,
+      "latency_ms": 1.9,
+      "details": {
+        "营业收入_比亚迪": {
+          "found": true,
+          "accurate": true,
+          "expected": 7771.02,
+          "got": 7771.02,
+          "diff_pct": 0.0
+        },
+        "营业收入_宁德时代": {
+          "found": true,
+          "accurate": true,
+          "expected": 3620.13,
+          "got": 3620.13,
+          "diff_pct": 0.0
+        },
+        "净利润_比亚迪": {
+          "found": true,
+          "accurate": false,
+          "expected": 402.54,
+          "got": 7771.02,
+          "diff_pct": 1830.5
+        },
+        "净利润_宁德时代": {
+          "found": true,
+          "accurate": false,
+          "expected": 507.45,
+          "got": 3620.13,
+          "diff_pct": 613.4
+        }
+      }
+    },
+    {
+      "id": "S16",
+      "query": "贵州茅台、比亚迪、招商银行的资产负债率分别是多少",
+      "support": "none",
+      "expected_count": 3,
+      "hits": 3,
+      "accurate": 0,
+      "latency_ms": 2.3,
+      "details": {
+        "资产负债率_贵州茅台": {
+          "found": true,
+          "accurate": false,
+          "expected": 12.55,
+          "got": 16.42,
+          "diff_pct": 30.8
+        },
+        "资产负债率_比亚迪": {
+          "found": true,
+          "accurate": false,
+          "expected": 74.64,
+          "got": 16.42,
+          "diff_pct": 78.0
+        },
+        "资产负债率_招商银行": {
+          "found": true,
+          "accurate": false,
+          "expected": 89.85,
+          "got": 16.42,
+          "diff_pct": 81.7
+        }
+      }
+    },
+    {
+      "id": "S17",
+      "query": "特斯拉2024年营收",
+      "support": "full",
+      "expected_count": 0,
+      "hits": 0,
+      "accurate": 0,
+      "latency_ms": 0.1,
+      "details": {}
+    },
+    {
+      "id": "S18",
+      "query": "茅台2030年的ROE",
+      "support": "full",
+      "expected_count": 0,
+      "hits": 0,
+      "accurate": 0,
+      "latency_ms": 1.6,
+      "details": {}
+    },
+    {
+      "id": "S19",
+      "query": "ROE",
+      "support": "full",
+      "expected_count": 0,
+      "hits": 0,
+      "accurate": 0,
+      "latency_ms": 0.0,
+      "details": {}
+    },
+    {
+      "id": "S20",
+      "query": "茅台去年赚了多少钱",
+      "support": "partial",
+      "expected_count": 1,
+      "hits": 0,
+      "accurate": 0,
+      "latency_ms": 0.0,
+      "details": {
+        "净利润": {
+          "found": false,
+          "accurate": false,
+          "expected": 862.28,
+          "got": null
+        }
+      }
+    }
+  ]
+}
