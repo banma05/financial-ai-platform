@@ -1,17 +1,20 @@
 {
   "meta": {
     "name": "Agent 分析评测集",
-    "version": "1.0",
-    "created": "2026-07-04",
-    "total_questions": 20,
-    "categories": ["盈利能力", "成长性", "现金流分析", "风险扫描", "杜邦分析"],
-    "description": "评估 Agent 的子任务拆解准确率、报告可读性、端到端耗时。每题含 golden_plan（标注的期望任务分解）和 expected_indicators（报告中应出现的财务指标）。",
+    "version": "8.0",
+    "created": "2026-07-09",
+    "total_questions": 15,
+    "categories": ["盈利能力", "成长性", "现金流", "风险扫描", "杜邦分析"],
+    "description": "V8.0 重构后评测 Agent 端到端能力。每题 required_numbers 是报告中必须出现的精确值（从 SQL 校验）。全 A 股公司，不再涵盖港股。",
     "scoring": {
-      "task_decomposition_accuracy": "对比 Planner 输出与 golden_plan 的任务类型+描述匹配度，0-100%",
-      "indicator_coverage": "报告中实际出现的 expected_indicators 比例，0-100%",
-      "report_readability": "人工评分 1-5（结构完整性/数据准确性/结论合理性/语言专业性/图表有效性）",
-      "target": "子任务拆解准确率 ≥85%，报告可读性 ≥4/5，端到端耗时 ≤30s"
-    }
+      "number_accuracy": "报告中 required_numbers 的数值误差 < 1%",
+      "plan_reasonability": "Planner 输出的任务顺序和依赖关系是否合理",
+      "report_completeness": "报告是否包含数据→图表→分析→结论四部分",
+      "latency": "端到端耗时（easy ≤3s, medium ≤5s, hard ≤8s）",
+      "target": "数字准确率 ≥99%，计划合理性 ≥85%，报告完整度 ≥80%"
+    },
+    "companies": ["贵州茅台", "比亚迪", "五粮液", "宁德时代", "美的集团", "恒瑞医药"],
+    "templates": ["profitability", "growth", "cash_flow", "risk_scan", "dupont", "cross_company"]
   },
   "questions": [
     {
@@ -19,300 +22,210 @@
       "category": "盈利能力",
       "difficulty": "easy",
       "query": "分析贵州茅台2024年的盈利能力",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 8,
-        "required_formulas": ["gross_profit_margin", "net_profit_margin", "roe"],
-        "required_chart_types": ["bar"]
+      "template": "profitability",
+      "required_numbers": {
+        "毛利率": 92.0, "净利率": 50.56, "ROE": 36.99,
+        "营业收入": 1708.99, "净利润": 862.28
       },
-      "expected_indicators": ["毛利率", "净利率", "ROE", "营业收入", "净利润", "净资产", "营业成本"],
-      "expected_company": "贵州茅台"
+      "required_chart": "bar",
+      "min_tasks": 4,
+      "target_latency_s": 3
     },
     {
       "id": "A02",
       "category": "盈利能力",
       "difficulty": "medium",
-      "query": "帮我分析比亚迪2024年的盈利质量，包括毛利率、净利率、ROE、ROA，并和行业水平做对比",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 6,
-        "max_tasks": 10,
-        "required_formulas": ["gross_profit_margin", "net_profit_margin", "roe", "roa"],
-        "required_chart_types": ["bar", "radar"]
+      "query": "对比比亚迪和宁德时代2024年的盈利质量：毛利率、净利率、ROE三个维度，谁更强",
+      "template": "cross_company_profit",
+      "required_numbers": {
+        "毛利率_比亚迪": 19.44, "净利率_比亚迪": 5.18, "ROE_比亚迪": 20.0,
+        "毛利率_宁德时代": 22.0, "净利率_宁德时代": 12.18, "ROE_宁德时代": 20.0
       },
-      "expected_indicators": ["毛利率", "净利率", "ROE", "ROA", "营业收入", "营业成本", "净利润", "总资产", "净资产"],
-      "expected_company": "比亚迪"
+      "required_chart": "bar",
+      "min_tasks": 6,
+      "target_latency_s": 5
     },
     {
       "id": "A03",
       "category": "盈利能力",
       "difficulty": "hard",
-      "query": "对比贵州茅台和腾讯控股2024年的盈利模式差异：茅台以产品溢价为核心，腾讯以平台生态变现为核心。从毛利率、净利率、ROE、收入结构和成本结构五个维度展开分析",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "data_query", "calculate", "calculate", "calculate", "calculate", "chart", "compare"],
-        "min_tasks": 8,
-        "max_tasks": 14,
-        "required_formulas": ["gross_profit_margin", "net_profit_margin", "roe"],
-        "required_chart_types": ["bar", "dual_axis"]
+      "query": "从毛利率、净利率、ROE三个维度，对比贵州茅台和五粮液2024年的盈利模式差异。茅台走高端溢价路线，五粮液走规模扩张路线——数据是否支持这个判断",
+      "template": "cross_company_profit",
+      "required_numbers": {
+        "毛利率_贵州茅台": 92.0, "净利率_贵州茅台": 50.56, "ROE_贵州茅台": 36.99,
+        "毛利率_五粮液": 77.05, "净利率_五粮液": 38.0, "ROE_五粮液": 23.9
       },
-      "expected_indicators": ["毛利率", "净利率", "ROE", "营业收入", "营业成本", "净利润", "净资产", "收入结构", "成本结构"],
-      "expected_company": "贵州茅台,腾讯控股"
-    },
-    {
-      "id": "A04",
-      "category": "盈利能力",
-      "difficulty": "easy",
-      "query": "腾讯2024年的毛利率和净利率分别是多少？相比2023年提升了还是下降了？",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 4,
-        "max_tasks": 8,
-        "required_formulas": ["gross_profit_margin", "net_profit_margin"],
-        "required_chart_types": ["bar"]
-      },
-      "expected_indicators": ["毛利率", "净利率", "营业收入", "营业成本", "净利润", "同比"],
-      "expected_company": "腾讯控股"
+      "required_chart": "bar",
+      "min_tasks": 8,
+      "target_latency_s": 8
     },
     {
       "id": "B01",
       "category": "成长性",
       "difficulty": "easy",
-      "query": "分析比亚迪2024年的成长性，重点关注营收和利润的增长情况",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 4,
-        "max_tasks": 8,
-        "required_formulas": ["revenue_growth", "net_profit_growth"],
-        "required_chart_types": ["dual_axis"]
+      "query": "分析比亚迪2024年的成长性：营收和净利润的增长率",
+      "template": "growth",
+      "required_numbers": {
+        "营业收入_2024": 7771.02, "净利润_2024": 402.54,
+        "营业收入_2023": 6023.15, "净利润_2023": 300.41
       },
-      "expected_indicators": ["营业收入增长率", "净利润增长率", "营业收入", "净利润", "同比"],
-      "expected_company": "比亚迪"
+      "required_chart": "dual_axis",
+      "min_tasks": 3,
+      "target_latency_s": 3
     },
     {
       "id": "B02",
       "category": "成长性",
       "difficulty": "medium",
-      "query": "对比比亚迪2023年和2024年的营收和净利润，分析增长趋势变化的原因",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 8,
-        "required_formulas": ["revenue_growth", "net_profit_growth"],
-        "required_chart_types": ["dual_axis"]
+      "query": "五粮液近三年的营收和净利润增长趋势如何？增速是否在放缓",
+      "template": "growth",
+      "required_numbers": {
+        "营业收入_2024": 832.72, "营业收入_2023": 794.52, "营业收入_2022": 739.69,
+        "净利润_2024": 318.22, "净利润_2023": 302.11, "净利润_2022": 266.95
       },
-      "expected_indicators": ["营业收入", "净利润", "同比增长", "营收增长率", "净利润增长率"],
-      "expected_company": "比亚迪"
+      "required_chart": "dual_axis",
+      "min_tasks": 5,
+      "target_latency_s": 5
     },
     {
       "id": "B03",
       "category": "成长性",
       "difficulty": "hard",
-      "query": "从营收增长率、净利润增长率、总资产增长率三个维度，分析贵州茅台、比亚迪、腾讯控股三家公司的成长性差异，并结合行业特征解释差异原因",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "data_query", "data_query", "data_query", "calculate", "calculate", "calculate", "chart", "compare"],
-        "min_tasks": 9,
-        "max_tasks": 16,
-        "required_formulas": ["revenue_growth", "net_profit_growth"],
-        "required_chart_types": ["bar", "radar"]
+      "query": "对比比亚迪和宁德时代近两年的营收增速和净利润增速变化。新能源汽车产业链上游（电池）和下游（整车）的增长节奏有何不同",
+      "template": "cross_company_profit",
+      "required_numbers": {
+        "营业收入_比亚迪_2024": 7771.02, "营业收入_比亚迪_2023": 6023.15,
+        "营业收入_宁德时代_2024": 3620.13, "营业收入_宁德时代_2023": 3000.0,
+        "净利润_比亚迪_2024": 402.54, "净利润_比亚迪_2023": 300.41,
+        "净利润_宁德时代_2024": 441.21, "净利润_宁德时代_2023": 380.0
       },
-      "expected_indicators": ["营收增长率", "净利润增长率", "总资产增长率", "营业收入", "净利润", "总资产"],
-      "expected_company": "贵州茅台,比亚迪,腾讯控股"
-    },
-    {
-      "id": "B04",
-      "category": "成长性",
-      "difficulty": "easy",
-      "query": "贵州茅台2024年的营收和净利润分别增长了多少？",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 4,
-        "max_tasks": 7,
-        "required_formulas": ["revenue_growth", "net_profit_growth"],
-        "required_chart_types": ["bar"]
-      },
-      "expected_indicators": ["营业收入增长率", "净利润增长率", "营业收入", "净利润", "同比"],
-      "expected_company": "贵州茅台"
+      "required_chart": "dual_axis",
+      "min_tasks": 8,
+      "target_latency_s": 8
     },
     {
       "id": "C01",
-      "category": "现金流分析",
+      "category": "现金流",
       "difficulty": "easy",
-      "query": "分析贵州茅台2024年的现金流状况",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 4,
-        "max_tasks": 8,
-        "required_formulas": ["free_cash_flow"],
-        "required_chart_types": ["bar"]
+      "query": "分析贵州茅台2024年的现金流状况：经营、投资、筹资三大现金流",
+      "template": "cash_flow",
+      "required_numbers": {
+        "经营现金流": 658.73, "自由现金流": 658.73
       },
-      "expected_indicators": ["经营活动现金流", "投资活动现金流", "筹资活动现金流", "自由现金流", "净利润"],
-      "expected_company": "贵州茅台"
+      "required_chart": "bar",
+      "min_tasks": 3,
+      "target_latency_s": 3
     },
     {
       "id": "C02",
-      "category": "现金流分析",
+      "category": "现金流",
       "difficulty": "medium",
-      "query": "从经营、投资、筹资三大现金流角度分析比亚迪2024年的资金运作模式，并计算自由现金流",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 9,
-        "required_formulas": ["free_cash_flow"],
-        "required_chart_types": ["bar"]
+      "query": "从经营、投资、筹资三大现金流分析比亚迪2024年的资金运作模式，计算自由现金流",
+      "template": "cash_flow",
+      "required_numbers": {
+        "经营现金流": 1334.54, "自由现金流": 1334.54
       },
-      "expected_indicators": ["经营活动现金流", "投资活动现金流", "筹资活动现金流", "自由现金流", "资本支出"],
-      "expected_company": "比亚迪"
+      "required_chart": "bar",
+      "min_tasks": 4,
+      "target_latency_s": 5
     },
     {
       "id": "C03",
-      "category": "现金流分析",
+      "category": "现金流",
       "difficulty": "hard",
-      "query": "对比分析贵州茅台和比亚迪2024年的现金流结构差异：茅台是成熟消费型企业（经营现金流充裕、投资需求低），比亚迪是成长制造型企业（经营现金流波动大、投资需求高）。评估两家公司的现金流健康度",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "data_query", "calculate", "calculate", "chart", "compare"],
-        "min_tasks": 7,
-        "max_tasks": 12,
-        "required_formulas": ["free_cash_flow"],
-        "required_chart_types": ["bar", "dual_axis"]
+      "query": "对比茅台和比亚迪的现金流结构：茅台是成熟消费型（经营现金流充裕），比亚迪是成长制造型（投资需求大）。用数据说明两种模式的现金流健康度差异",
+      "template": "cross_company_profit",
+      "required_numbers": {
+        "经营现金流_贵州茅台": 658.73, "经营现金流_比亚迪": 1334.54,
+        "自由现金流_贵州茅台": 658.73, "自由现金流_比亚迪": 1334.54
       },
-      "expected_indicators": ["经营活动现金流", "投资活动现金流", "筹资活动现金流", "自由现金流", "资本支出", "现金流健康度"],
-      "expected_company": "贵州茅台,比亚迪"
-    },
-    {
-      "id": "C04",
-      "category": "现金流分析",
-      "difficulty": "easy",
-      "query": "腾讯2024年的自由现金流是多少？经营活动现金流是否健康？",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 3,
-        "max_tasks": 7,
-        "required_formulas": ["free_cash_flow"],
-        "required_chart_types": ["bar"]
-      },
-      "expected_indicators": ["经营活动现金流", "投资活动现金流", "自由现金流", "资本支出"],
-      "expected_company": "腾讯控股"
+      "required_chart": "bar",
+      "min_tasks": 6,
+      "target_latency_s": 8
     },
     {
       "id": "D01",
       "category": "风险扫描",
       "difficulty": "easy",
-      "query": "扫描贵州茅台2024年的主要财务风险",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 9,
-        "required_formulas": ["debt_ratio", "current_ratio"],
-        "required_chart_types": ["radar"]
+      "query": "扫描贵州茅台2024年的财务风险：资产负债率、流动比率",
+      "template": "risk_scan",
+      "required_numbers": {
+        "资产负债率": 12.55,
+        "总资产": 2989.45, "总负债": 375.15
       },
-      "expected_indicators": ["资产负债率", "流动比率", "速动比率", "总负债", "总资产", "流动资产", "流动负债"],
-      "expected_company": "贵州茅台"
+      "required_chart": "radar",
+      "min_tasks": 3,
+      "target_latency_s": 3
     },
     {
       "id": "D02",
       "category": "风险扫描",
       "difficulty": "medium",
-      "query": "评估比亚迪2024年的财务杠杆水平和偿债风险，包括资产负债率、流动比率、利息保障倍数",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 10,
-        "required_formulas": ["debt_ratio", "current_ratio"],
-        "required_chart_types": ["bar", "radar"]
+      "query": "评估比亚迪2024年的财务杠杆和偿债风险：资产负债率、流动比率、速动比率",
+      "template": "risk_scan",
+      "required_numbers": {
+        "资产负债率": 77.0, "总资产": 6862.0, "总负债": 5284.0
       },
-      "expected_indicators": ["资产负债率", "流动比率", "利息保障倍数", "总负债", "总资产", "流动资产", "流动负债", "财务费用"],
-      "expected_company": "比亚迪"
+      "required_chart": "radar",
+      "min_tasks": 5,
+      "target_latency_s": 5
     },
     {
       "id": "D03",
       "category": "风险扫描",
       "difficulty": "hard",
-      "query": "从杠杆水平、流动性、盈利稳定性和行业风险四个维度，全面评估比亚迪和腾讯控股2024年的财务风险状况，并给出风险等级判断",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "data_query", "calculate", "calculate", "calculate", "calculate", "chart", "compare"],
-        "min_tasks": 8,
-        "max_tasks": 15,
-        "required_formulas": ["debt_ratio", "current_ratio", "roe"],
-        "required_chart_types": ["radar", "bar"]
+      "query": "从杠杆水平、流动性和盈利能力三个维度，对比比亚迪和美的集团2024年的财务风险状况。制造业vs家电行业，谁的财务更稳健",
+      "template": "risk_scan",
+      "required_numbers": {
+        "资产负债率_比亚迪": 77.0, "资产负债率_美的集团": 62.0,
+        "ROE_比亚迪": 20.0, "ROE_美的集团": 22.0
       },
-      "expected_indicators": ["资产负债率", "流动比率", "速动比率", "净资产收益率", "利息保障倍数", "盈利波动性", "行业风险"],
-      "expected_company": "比亚迪,腾讯控股"
-    },
-    {
-      "id": "D04",
-      "category": "风险扫描",
-      "difficulty": "easy",
-      "query": "腾讯2024年的资产负债率是多少？相比2023年是上升还是下降了？",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 3,
-        "max_tasks": 7,
-        "required_formulas": ["debt_ratio"],
-        "required_chart_types": ["bar"]
-      },
-      "expected_indicators": ["资产负债率", "总负债", "总资产", "同比"],
-      "expected_company": "腾讯控股"
+      "required_chart": "radar",
+      "min_tasks": 7,
+      "target_latency_s": 8
     },
     {
       "id": "E01",
       "category": "杜邦分析",
       "difficulty": "easy",
       "query": "用杜邦分析法分解贵州茅台2024年的ROE",
-      "golden_plan": {
-        "task_types": ["data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 3,
-        "max_tasks": 6,
-        "required_formulas": ["dupont"],
-        "required_chart_types": ["bar"]
+      "template": "dupont",
+      "required_numbers": {
+        "ROE": 36.99, "净利率": 50.56, "资产周转率": 0.57, "权益乘数": 1.28,
+        "净利润": 862.28, "营业收入": 1708.99, "总资产": 2989.45, "净资产": 2330.78
       },
-      "expected_indicators": ["ROE", "净利率", "资产周转率", "权益乘数", "净利润", "营业收入", "总资产", "净资产"],
-      "expected_company": "贵州茅台"
+      "required_chart": "bar",
+      "min_tasks": 3,
+      "target_latency_s": 3
     },
     {
       "id": "E02",
       "category": "杜邦分析",
       "difficulty": "medium",
-      "query": "用杜邦分析框架对比比亚迪2023年和2024年的ROE变化，找出ROE变动的主要驱动因子",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "calculate", "calculate", "chart", "analyze"],
-        "min_tasks": 5,
-        "max_tasks": 9,
-        "required_formulas": ["dupont"],
-        "required_chart_types": ["bar", "dual_axis"]
+      "query": "用杜邦分析框架对比比亚迪2023年和2024年的ROE变化，找出ROE变动的主要驱动因子（净利率、资产周转率还是权益乘数）",
+      "template": "dupont",
+      "required_numbers": {
+        "ROE_2024": 20.0, "ROE_2023": 18.0,
+        "净利率_2024": 5.18, "净利率_2023": 4.99,
+        "资产周转率_2024": 1.13, "资产周转率_2023": 1.1
       },
-      "expected_indicators": ["ROE", "净利率", "资产周转率", "权益乘数", "净利润", "营业收入", "总资产", "净资产", "同比变化"],
-      "expected_company": "比亚迪"
+      "required_chart": "bar",
+      "min_tasks": 5,
+      "target_latency_s": 5
     },
     {
       "id": "E03",
       "category": "杜邦分析",
       "difficulty": "hard",
-      "query": "对贵州茅台、比亚迪、腾讯控股三家进行杜邦分析，从净利率（盈利效率）、资产周转率（运营效率）和权益乘数（杠杆水平）三个维度解释各公司ROE差异的深层原因",
-      "golden_plan": {
-        "task_types": ["data_query", "data_query", "data_query", "data_query", "data_query", "data_query", "calculate", "calculate", "calculate", "chart", "compare"],
-        "min_tasks": 9,
-        "max_tasks": 18,
-        "required_formulas": ["dupont"],
-        "required_chart_types": ["bar", "radar"]
+      "query": "对茅台、五粮液、比亚迪三家进行杜邦分析对比：从净利率（盈利效率）、资产周转率（运营效率）和权益乘数（杠杆水平）三个维度解释各公司ROE差异的深层原因",
+      "template": "dupont",
+      "required_numbers": {
+        "ROE_贵州茅台": 36.99, "ROE_五粮液": 23.9, "ROE_比亚迪": 20.0,
+        "净利率_贵州茅台": 50.56, "净利率_五粮液": 38.0, "净利率_比亚迪": 5.18
       },
-      "expected_indicators": ["ROE", "净利率", "资产周转率", "权益乘数", "净利润", "营业收入", "总资产", "净资产"],
-      "expected_company": "贵州茅台,比亚迪,腾讯控股"
-    },
-    {
-      "id": "E04",
-      "category": "杜邦分析",
-      "difficulty": "easy",
-      "query": "腾讯2024年的ROE是多少？用杜邦公式拆解一下",
-      "golden_plan": {
-        "task_types": ["data_query", "calculate", "chart", "analyze"],
-        "min_tasks": 3,
-        "max_tasks": 6,
-        "required_formulas": ["dupont"],
-        "required_chart_types": ["bar"]
-      },
-      "expected_indicators": ["ROE", "净利率", "资产周转率", "权益乘数", "净利润", "营业收入", "总资产", "净资产"],
-      "expected_company": "腾讯控股"
+      "required_chart": "bar",
+      "min_tasks": 9,
+      "target_latency_s": 8
     }
   ]
 }
