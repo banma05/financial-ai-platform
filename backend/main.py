@@ -10,6 +10,9 @@ from db import init_db
 from api.rag import router as rag_router
 from api.agent import router as agent_router
 
+# ── V8.0: 财务数据模型（必须先导入再 init_db，确保表被创建）──
+import db.financial_models  # noqa: F401
+
 # 初始化业务数据库（SQLite → 生产切 MySQL）
 init_db()
 
