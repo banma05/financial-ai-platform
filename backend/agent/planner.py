@@ -44,10 +44,13 @@ BUILTIN_TEMPLATES = {
              "description": "盈利能力指标柱状图",
              "params": {"chart_type": "bar"},
              "depends_on": ["3", "4", "5"]},
-            {"task_id": "7", "task_type": "analyze",
-             "description": "综合分析盈利能力并给出结论",
+            {"task_id": "7", "task_type": "rag_context",
+             "description": "从年报中检索盈利能力相关解读",
+             "params": {"query": "{company} 毛利率 净利率 盈利能力 原因分析"}},
+            {"task_id": "8", "task_type": "analyze",
+             "description": "综合分析盈利能力并给出结论（引用原文）",
              "params": {},
-             "depends_on": ["3", "4", "5"]},
+             "depends_on": ["3", "4", "5", "7"]},
         ],
     },
     "dupont": {
@@ -407,7 +410,8 @@ class Planner:
 {user_input}
 
 ## 可用任务类型
-- data_query: 从知识库查询财务数据（参数：query=查询内容）
+- data_query: 从知识库查询财务数字（参数：query=查询内容）→ 返回结构化数值
+- rag_context: 从知识库检索文字解读和原因分析（参数：query=查询内容）→ 返回原文引用段落
 - calculate: 财务指标计算（参数：formula=公式名, 注：公式名见下方）
 - chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
 - analyze: 综合分析并生成结论

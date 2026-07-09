@@ -20,6 +20,7 @@ from .reporter import Reporter
 from .tools.data_query import DataQueryTool
 from .tools.financial_calc import FinancialCalcTool
 from .tools.chart import ChartTool
+from .tools.rag_context import RAGContextTool
 from utils.logger import TraceTimer, set_trace_id
 from rag.model_router import init_usage, save_token_usage
 
@@ -55,6 +56,7 @@ def _init_components():
     if _tool_registry is None:
         _tool_registry = ToolRegistry()
         _tool_registry.register(DataQueryTool())
+        _tool_registry.register(RAGContextTool())
         _tool_registry.register(FinancialCalcTool())
         _tool_registry.register(ChartTool())
         # ── MCP 工具 ──

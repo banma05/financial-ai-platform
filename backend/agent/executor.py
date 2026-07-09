@@ -66,6 +66,7 @@ class ToolRegistry:
         # 任务类型 → 工具映射
         tool_map = {
             "data_query": "data_query",
+            "rag_context": "rag_context",
             "calculate": "financial_calc",
             "chart": "chart",
             "analyze": None,    # analyze 不调用工具，由 Reporter 处理

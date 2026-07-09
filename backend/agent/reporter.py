@@ -51,6 +51,8 @@ class Reporter:
         data_summaries = []
         data_values = {}
         calc_results = []
+        rag_insights = []  # V8.0: RAG 文字解读
+        rag_quotations = []  # V8.0: 原文引用
 
         for r in results:
             if not r.success:
@@ -61,6 +63,12 @@ class Reporter:
                     data_values.update(r.data["data"])
             elif r.task_type == "calculate" and r.data:
                 calc_results.append(r.data)
+            elif r.task_type == "rag_context":  # V8.0
+                if isinstance(r.data, dict):
+                    if r.data.get("insights"):
+                        rag_insights.extend(r.data["insights"])
+                    if r.data.get("quotations"):
+                        rag_quotations.extend(r.data["quotations"])
 
         # 构建报告各章节
         sections = []
@@ -76,12 +84,16 @@ class Reporter:
         if calc_results:
             sections.append(self._build_indicator_analysis(calc_results))
 
+        # 三、RAG 原文解读（V8.0 新增）
+        if rag_insights or rag_quotations:
+            sections.append(self._build_rag_section(rag_insights, rag_quotations))
+
         # 四、图表展示（占位符，前端替换为实际图片）
         if chart_count > 0:
             sections.append(self._build_chart_section(chart_count))
 
-        # 五、结论与建议（LLM 生成）
-        insights = self._generate_insights(user_input, data_summaries, calc_results)
+        # 五、结论与建议（LLM 生成，含 RAG 上下文）
+        insights = self._generate_insights(user_input, data_summaries, calc_results, rag_insights)
         if insights:
             sections.append(insights)
 
@@ -129,6 +141,19 @@ class Reporter:
 
         return "\n".join(lines)
 
+    def _build_rag_section(self, insights: List[str], quotations: List[dict]) -> str:
+        """构建 RAG 原文解读章节"""
+        lines = ["## 三、原文解读（来自年报/研报）\n"]
+        if insights:
+            for ins in insights:
+                lines.append(f"- {ins}")
+        if quotations:
+            lines.append("\n**原文引用：**")
+            for q in quotations[:3]:
+                src = f"{q.get('source','')} 第{q.get('page','')}页"
+                lines.append(f"\n> {q['text'][:200]}...\n> — *{src}*")
+        return "\n".join(lines)
+
     def _build_chart_section(self, chart_count: int) -> str:
         """构建图表展示章节"""
         return f"""## 四、可视化图表
@@ -136,9 +161,10 @@ class Reporter:
 > 共生成 {chart_count} 张图表，请在报告下方查看。"""
 
     def _generate_insights(
-        self, user_input: str, data_summaries: List[str], calc_results: List[dict]
+        self, user_input: str, data_summaries: List[str],
+        calc_results: List[dict], rag_insights: List[str] = None,
     ) -> str:
-        """LLM 生成分析洞察和建议"""
+        """LLM 生成分析洞察和建议（含 RAG 上下文）"""
         if not data_summaries and not calc_results:
             return ""
 
@@ -153,6 +179,11 @@ class Reporter:
             for cr in calc_results:
                 if cr.get("success"):
                     context += f"- {cr.get('expression', '')}\n"
+
+        if rag_insights:
+            context += "\n## 年报/研报原文解读\n"
+            for ins in rag_insights:
+                context += f"- {ins}\n"
 
         prompt = f"""{context}
 
