@@ -34,7 +34,7 @@ export default function DocumentUpload() {
     apiClient
       .get('/rag/documents')
       .then((data) => {
-        const resp = data as { documents: DocInfo[] };
+        const resp = data as unknown as { documents: DocInfo[] };
         setDocuments(resp.documents || []);
       })
       .catch(() => setUploadError('加载文档列表失败'));
@@ -59,7 +59,7 @@ export default function DocumentUpload() {
       const data = await apiClient.post('/rag/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const resp = data as { filename: string; chunk_count: number; file_size: number; message: string };
+      const resp = data as unknown as { filename: string; chunk_count: number; file_size: number; message: string };
       addDocument({
         filename: resp.filename,
         chunk_count: resp.chunk_count,
@@ -108,7 +108,7 @@ export default function DocumentUpload() {
         top_k: 5,
         session_id: `rag-${Date.now()}`,
       });
-      const resp = data as { answer: string; sources: ChatMessage['sources']; processing_time: number };
+      const resp = data as unknown as { answer: string; sources: ChatMessage['sources']; processing_time: number };
       addMessage({
         role: 'assistant',
         content: resp.answer,

@@ -44,7 +44,7 @@ describe('页面路由', () => {
     // 点击侧边栏"报告展示"链接
     await user.click(screen.getByRole('link', { name: /报告展示/ }));
 
-    // 页面主标题变为"分析报告"
-    expect(screen.getByRole('heading', { name: '分析报告' })).toBeInTheDocument();
+    // 无分析结果时显示空状态提示
+    expect(screen.getByRole('heading', { name: '暂无分析结果' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { apiClient } from '@/api/client';
 import { useAnalysisStore, type Template } from '@/stores/analysis';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 /** 预设公司列表（前端常量，不调 API） */
 const PRESET_COMPANIES = [
@@ -31,6 +32,7 @@ export default function PresetAnalysis() {
   } = useAnalysisStore();
 
   const [customQuery, setCustomQuery] = useState('');
+  const [showResult, setShowResult] = useState(false);  // 本地视图切换，不清 store
 
   // 加载模板列表
   useEffect(() => {
@@ -59,6 +61,7 @@ export default function PresetAnalysis() {
         session_id: `preset-${Date.now()}`,
       });
       setResult(data as unknown as { report: string; charts: string[]; processing_time: number; task_count: number; clarification: string | null });
+      setShowResult(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : '分析请求失败');
     }
@@ -68,17 +71,17 @@ export default function PresetAnalysis() {
   const canAnalyze = selectedCompany && !isAnalyzing;
 
   // 显示结果时
-  if (result) {
+  if (showResult && result) {
     return (
       <div className="max-w-4xl mx-auto">
         <button
-          onClick={() => setResult(null)}
+          onClick={() => setShowResult(false)}
           className="mb-4 text-sm text-blue-600 hover:underline"
         >
           ← 返回重新分析
         </button>
-        <article className="prose prose-gray max-w-none bg-white rounded-xl p-6 shadow-sm border">
-          <div dangerouslySetInnerHTML={{ __html: formatMarkdown(result.report) }} />
+        <article className="bg-white rounded-xl p-6 shadow-sm border">
+          <MarkdownRenderer content={result.report} />
         </article>
         {result.charts.length > 0 && (
           <div className="mt-4 bg-white rounded-xl p-6 shadow-sm border">
@@ -177,14 +180,3 @@ export default function PresetAnalysis() {
   );
 }
 
-/** 简陋的 Markdown 转 HTML（后续替换为 react-markdown） */
-function formatMarkdown(md: string): string {
-  return md
-    .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-6 mb-4">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n- (.+)/g, '\n<li>$1</li>')
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>');
-}
