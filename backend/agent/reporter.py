@@ -57,8 +57,9 @@ class Reporter:
         for r in results:
             if not r.success:
                 continue
-            if r.task_type == "data_query" and r.summary:
-                data_summaries.append(r.summary)
+            if r.task_type == "data_query":
+                if r.summary:
+                    data_summaries.append(r.summary)
                 if isinstance(r.data, dict) and r.data.get("data"):
                     data_values.update(r.data["data"])
             elif r.task_type == "calculate" and r.data:
@@ -77,8 +78,10 @@ class Reporter:
         sections.append(self._build_summary(user_input, tasks, results))
 
         # 二、数据概览
-        if data_summaries:
-            sections.append(self._build_data_overview(data_summaries))
+        if data_summaries and data_values:
+            overview = self._build_data_overview(data_summaries, data_values)
+            if overview:
+                sections.append(overview)
 
         # 三、指标分析
         if calc_results:
@@ -121,29 +124,45 @@ class Reporter:
 **子任务详情：**
 {task_list}"""
 
-    def _build_data_overview(self, summaries: List[str]) -> str:
-        """构建数据概览章节"""
-        items = "\n".join(f"- {s}" for s in summaries)
+    def _build_data_overview(self, summaries: List[str], data_values: dict) -> str:
+        """构建数据概览 — 数据已从 SQL 查得，直接格式化展示"""
+        if not data_values:
+            return ''
+        items = []
+        for k, v in data_values.items():
+            items.append(f'- {k}: {self._fmt_num(v)}')
         return f"""## 二、数据概览
 
-{items}"""
+{chr(10).join(items)}"""
+
+    @staticmethod
+    def _fmt_num(v: float) -> str:
+        if abs(v) >= 1e8: return f'{v/1e8:.2f}亿'
+        if abs(v) >= 1e4: return f'{v/1e4:.2f}万'
+        if isinstance(v, float) and v == int(v): return f'{int(v)}'
+        return f'{v:.2f}'
 
     def _build_indicator_analysis(self, calc_results: List[dict]) -> str:
-        """构建指标分析章节"""
+        """构建指标分析章节（简洁版，不暴露中间变量）"""
         lines = ["## 三、指标计算"]
-
         for cr in calc_results:
             if cr.get("success"):
-                lines.append(f"\n### {cr.get('display_name', '指标')}")
-                lines.append(f"\n{cr.get('expression', '')}")
+                display = cr.get('display_name', '指标')
+                expression = cr.get('expression', '')
+                result = cr.get('result')
+                unit = cr.get('unit', '')
+                # 简洁展示：公式 = 结果
+                if result is not None:
+                    lines.append(f"\n- **{display}**：{result}{unit}")
+                else:
+                    lines.append(f"\n- **{display}**：{expression}")
             else:
-                lines.append(f"\n- ❌ {cr.get('display_name', '未知指标')}: {cr.get('error', '计算失败')}")
-
+                lines.append(f"\n- ❌ **{cr.get('display_name', '未知指标')}**：{cr.get('error', '计算失败')}")
         return "\n".join(lines)
 
     def _build_rag_section(self, insights: List[str], quotations: List[dict]) -> str:
         """构建 RAG 原文解读章节"""
-        lines = ["## 三、原文解读（来自年报/研报）\n"]
+        lines = ["## 四、原文解读（来自年报/研报）\n"]
         if insights:
             for ins in insights:
                 lines.append(f"- {ins}")
@@ -156,7 +175,7 @@ class Reporter:
 
     def _build_chart_section(self, chart_count: int) -> str:
         """构建图表展示章节"""
-        return f"""## 四、可视化图表
+        return f"""## 五、可视化图表
 
 > 共生成 {chart_count} 张图表，请在报告下方查看。"""
 
@@ -177,8 +196,8 @@ class Reporter:
         if calc_results:
             context += "## 计算结果\n"
             for cr in calc_results:
-                if cr.get("success"):
-                    context += f"- {cr.get('expression', '')}\n"
+                if cr.get("success") and cr.get("result") is not None:
+                    context += f"- {cr.get('display_name', '指标')}: {cr['result']}{cr.get('unit', '')}\n"
 
         if rag_insights:
             context += "\n## 年报/研报原文解读\n"
@@ -201,7 +220,7 @@ class Reporter:
    - 高度不确定：30-55%
 
 输出格式（Markdown）：
-## 五、结论与建议
+## 六、结论与建议
 
 ### 核心发现
 - **发现1** [置信度: 85%]
@@ -222,7 +241,7 @@ class Reporter:
             return response
         except Exception as e:
             logger.warning(f"LLM 生成洞察失败: {e}")
-            return f"""## 五、结论与建议
+            return f"""## 六、结论与建议
 
 > 基于以上数据指标，各项财务指标已计算完成。详细分析解读请参考指标计算章节。
 
