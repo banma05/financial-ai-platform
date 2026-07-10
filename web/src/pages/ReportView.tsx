@@ -51,9 +51,32 @@ export default function ReportView() {
             </p>
           )}
         </div>
-        <div className="flex gap-4 text-xs text-gray-400">
-          <span>⏱ {result.processing_time.toFixed(1)} 秒</span>
-          <span>📝 {result.task_count} 个子任务</span>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-4 text-xs text-gray-400">
+            <span>⏱ {result.processing_time.toFixed(1)} 秒</span>
+            <span>📝 {result.task_count} 个子任务</span>
+          </div>
+          {/* 导出按钮 */}
+          <button
+            onClick={() => window.print()}
+            className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+          >
+            🖨 打印/导出PDF
+          </button>
+          <button
+            onClick={() => {
+              const blob = new Blob([result.report], { type: 'text/markdown;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `分析报告-${selectedCompany || 'report'}.md`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+          >
+            📥 导出文本
+          </button>
         </div>
       </div>
 

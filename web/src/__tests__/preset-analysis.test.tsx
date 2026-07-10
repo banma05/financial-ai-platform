@@ -65,6 +65,35 @@ describe('预设分析页面', () => {
     });
   });
 
+  it('选择公司和模板后 → 显示推荐问题，点击可填入输入框', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    // 点击公司
+    await user.click(await screen.findByText('贵州茅台'));
+    // 点击模板
+    await user.click(screen.getByText('盈利能力评估'));
+
+    // 推荐问题出现
+    await waitFor(() => {
+      expect(screen.getByText(/推荐问题/)).toBeInTheDocument();
+    });
+
+    // 点击推荐问题按钮（第二个含"毛利率"的按钮，第一个是模板卡片描述）
+    const qBtns = screen.getAllByRole('button', { name: /毛利率/ });
+    expect(qBtns.length).toBeGreaterThanOrEqual(2);
+    await user.click(qBtns[1]);
+
+    // 输入框被填入问题文本
+    const input = screen.getByRole('textbox', { name: /自定义分析问题/ }) as HTMLInputElement;
+    expect(input.value).toContain('毛利率');
+  });
+
   it('未选公司时分析按钮禁用', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>

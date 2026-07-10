@@ -5,11 +5,11 @@ import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 /** 预设公司列表（前端常量，不调 API） */
 const PRESET_COMPANIES = [
-  { code: '600519', name: '贵州茅台', short: '茅台' },
-  { code: '002594', name: '比亚迪', short: '比亚迪' },
-  { code: '300750', name: '宁德时代', short: '宁德' },
-  { code: '000858', name: '五粮液', short: '五粮液' },
-  { code: '600036', name: '招商银行', short: '招商' },
+  { code: '600519', name: '贵州茅台', short: '茅台', hasPDF: true },
+  { code: '002594', name: '比亚迪', short: '比亚迪', hasPDF: true },
+  { code: '300750', name: '宁德时代', short: '宁德', hasPDF: true },
+  { code: '000858', name: '五粮液', short: '五粮液', hasPDF: true },
+  { code: '600036', name: '招商银行', short: '招商', hasPDF: false },
 ];
 
 /**
@@ -67,6 +67,43 @@ export default function PresetAnalysis() {
     }
   }, [selectedCompany, selectedTemplate, customQuery, templates, isAnalyzing, setAnalyzing, setResult, setError]);
 
+  // 推荐分析问题（根据公司+模板动态生成）
+  const recommendedQuestions = (() => {
+    if (!selectedCompany) return [];
+    const company = selectedCompany;
+    const year = '2024年';
+
+    switch (selectedTemplate) {
+      case 'profitability':
+        return [
+          `${company} ${year}毛利率、净利率分别是多少？`,
+          `${company} ROE和ROA变化趋势如何？`,
+          `${company} 盈利能力在同行业中处于什么水平？`,
+          `${company} ${year}营业收入和净利润增长率对比？`,
+        ];
+      case 'dupont':
+        return [
+          `${company} 杜邦三因子分解结果？`,
+          `${company} ROE的主要驱动因素是什么？`,
+          `${company} 如何提升资产周转率？`,
+          `${company} 权益乘数变化对ROE的影响有多大？`,
+        ];
+      case 'growth':
+        return [
+          `${company} 近三年营收CAGR是多少？`,
+          `${company} 净利润增长率趋势如何？`,
+          `${company} 营收增长是内生的还是并购驱动？`,
+          `${company} 未来三年营收增长预期？`,
+        ];
+      default:
+        return [
+          `${company} ${year}财务整体表现如何？`,
+          `${company} ${year}营收同比增长了多少？`,
+          `${company} 有哪些财务风险需要关注？`,
+        ];
+    }
+  })();
+
   // 能不能分析
   const canAnalyze = selectedCompany && !isAnalyzing;
 
@@ -102,7 +139,12 @@ export default function PresetAnalysis() {
 
       {/* 公司标签 */}
       <section className="mb-6">
-        <h2 className="text-sm font-medium text-gray-600 mb-3">选择公司</h2>
+        <h2 className="text-sm font-medium text-gray-600 mb-3">
+          选择公司
+          <span className="ml-2 text-xs text-gray-400 font-normal">
+            ({PRESET_COMPANIES.filter(c => c.hasPDF).length}家有年报PDF可用)
+          </span>
+        </h2>
         <div className="flex flex-wrap gap-2">
           {PRESET_COMPANIES.map((company) => (
             <button
@@ -115,9 +157,17 @@ export default function PresetAnalysis() {
               }`}
             >
               {company.name}
+              {company.hasPDF && (
+                <span className="ml-1 text-xs opacity-70" title="已有年报PDF">📥</span>
+              )}
             </button>
           ))}
         </div>
+        <p className="mt-2 text-xs text-gray-400">
+          带 📥 的公司已有年报PDF，可在
+          <a href="/upload" className="text-blue-500 hover:underline mx-0.5">文档上传</a>
+          页面上传后做 RAG 问答分析
+        </p>
       </section>
 
       {/* 分析模板卡片 */}
@@ -145,6 +195,26 @@ export default function PresetAnalysis() {
         )}
       </section>
 
+      {/* 推荐问题 */}
+      {recommendedQuestions.length > 0 && (
+        <section className="mb-6">
+          <h2 className="text-sm font-medium text-gray-600 mb-3">
+            💡 推荐问题（点击填入）
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {recommendedQuestions.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => setCustomQuery(q)}
+                className="px-3 py-1.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* 自定义问题输入 */}
       <section className="mb-6">
         <h2 className="text-sm font-medium text-gray-600 mb-3">自定义分析问题（可选）</h2>
@@ -152,6 +222,7 @@ export default function PresetAnalysis() {
           type="text"
           value={customQuery}
           onChange={(e) => setCustomQuery(e.target.value)}
+          aria-label="自定义分析问题"
           placeholder={`例如：${selectedCompany ? selectedCompany : '贵州茅台'} 2024年营收同比增长了多少？`}
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
         />
