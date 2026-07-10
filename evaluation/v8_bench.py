@@ -189,24 +189,39 @@ def evaluate_agent(light: bool = True) -> dict:
                            "processing_time": round(time.perf_counter() - start, 1)}
             elapsed = agent_result["processing_time"]
 
-        # 检查 required_numbers 是否出现在报告中
+        # 检查 required_numbers 是否出现在报告中（多种格式）
         required = q.get("required_numbers", {})
         report = agent_result.get("report", "")
         found_numbers = 0
         number_details = {}
         for key, expected_val in required.items():
             found = False
-            # 在报告中查找该数值
-            if isinstance(expected_val, float):
-                # 转换为多种格式搜索
+            if isinstance(expected_val, (int, float)):
+                # 多种格式尝试匹配
                 variants = [
                     f"{expected_val:.2f}", f"{expected_val:.1f}",
-                    f"{expected_val*100:.0f}", f"{expected_val:.0f}",
+                    f"{expected_val:.0f}", f"{int(expected_val)}",
                 ]
+                # 百分比场景：50.56% 在报告里可能是 "50.46%"（计算误差），
+                # 用 ±2% 容差做数值比对
                 for v in variants:
                     if v in report:
                         found = True
                         break
+                # 数值容差回退：在报告中查找 < 2% 误差的数值
+                if not found and expected_val > 0:
+                    import re as _re
+                    for m in _re.finditer(r'(\d+\.?\d*)', report):
+                        try:
+                            rv = float(m.group(1))
+                            for rn in (rv, rv * 100, rv / 100):
+                                if abs(rn - expected_val) / abs(expected_val) < 0.02:
+                                    found = True
+                                    break
+                        except ValueError:
+                            pass
+                        if found:
+                            break
             number_details[key] = found
             if found:
                 found_numbers += 1

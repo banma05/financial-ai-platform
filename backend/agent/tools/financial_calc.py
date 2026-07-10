@@ -485,9 +485,8 @@ class FinancialCalcTool:
 
             result = func(*args)
 
-            # 构建计算表达式
-            param_str = ", ".join(f"{k}={v}" for k, v in params.items())
-            expr = f"{entry['display_name']} = {entry['formula_text']}\n计算: f({param_str}) = {result}{entry['unit']}"
+            # 构建计算表达式（简洁版：只显示公式名和结果，不暴露中间参数）
+            expr = f"{entry['formula_text']} = {result}{entry['unit']}"
 
             return {
                 "success": True,
