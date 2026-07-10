@@ -4,9 +4,10 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.139-green)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/Frontend-React_19-blue)](https://react.dev/)
 [![LangGraph](https://img.shields.io/badge/Agent-LangGraph-purple)](https://langchain-ai.github.io/langgraph/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek_v4-purple)](https://www.deepseek.com/)
-[![Tests](https://img.shields.io/badge/Tests-162%2F162-green)]()
+[![Tests](https://img.shields.io/badge/Tests-162_backend_%2B_14_frontend-green)]()
 
 ---
 
@@ -55,10 +56,12 @@
 
 ```bash
 cd D:\实战项目\financial-ai-platform
-source ../.venv/Scripts/activate   # 激活虚拟环境
-pip install -r requirements.txt    # 首次安装依赖
-python backend/main.py             # 后端 :8001
-streamlit run frontend/app.py      # 前端 :8501 (即将替换为 React)
+# 后端 :8001
+source ../.venv/Scripts/activate
+python backend/main.py
+
+# 前端 :5173（开发模式，自动代理 /api → :8001）
+cd web && npm install && npx vite
 ```
 
 ## 📁 项目结构
@@ -73,7 +76,10 @@ financial-ai-platform/
 │   ├── api/           # FastAPI 路由 (上传/分析/问答)
 │   ├── utils/         # 重试/日志/监控
 │   └── tests/         # 162 单元测试
-├── frontend/          # Streamlit (→ 即将替换为 React)
+├── web/               # React 前端 (Vite + TypeScript) [NEW]
+│   ├── src/pages/     # 预设分析/文档上传/报告展示
+│   ├── src/stores/    # Zustand 状态管理
+│   └── src/__tests__/ # 14 前端测试
 ├── evaluation/        # 50题三层评测 + 运行器
 ├── docs/              # BRD/架构图/V8实施计划
 └── data/              # 文档/ChromaDB/模型

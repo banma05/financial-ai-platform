@@ -66,7 +66,12 @@ backend/
 
 ```bash
 cd D:\实战项目\financial-ai-platform
+
+# 后端 :8001
 source ../.venv/Scripts/activate
-python backend/main.py              # 后端 :8001
-streamlit run frontend/app.py       # 前端 :8501
+python backend/main.py
+
+# 前端 :5173（开发模式，自动代理 /api → :8001）
+cd web
+npx vite
 ```
