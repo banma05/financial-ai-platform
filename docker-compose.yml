@@ -54,17 +54,14 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # ── Streamlit 前端 ──
+  # ── React 前端 (Vite + Nginx) ──
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: fa-frontend
     ports:
-      - "8501:8501"
-    environment:
-      - API_BASE_URL=http://backend:8001
-      - PYTHONPATH=/app
+      - "80:80"
     depends_on:
       - backend
     restart: unless-stopped
