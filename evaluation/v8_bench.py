@@ -181,7 +181,7 @@ def evaluate_agent(light: bool = True) -> dict:
     for q in questions:
         start = time.perf_counter()
         try:
-            plan = planner.plan(q["query"], template=q.get("template"))
+            plan = planner.plan(q["query"], template_name=q.get("template"))
             agent_result = run_agent_sync(q["query"], plan=plan)
             elapsed = round(time.perf_counter() - start, 1)
         except Exception as e:
