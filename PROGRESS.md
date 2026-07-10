@@ -2,7 +2,7 @@
 
 > 📅 最后更新：2026-07-10
 > 🎯 当前版本：**V8.0** — SQL优先 + RAG辅助 + 规则提取 + 诚实评测
-> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ⏳
+> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ✅ → V8.1质量打磨 ⏳
 
 ---
 
@@ -27,7 +27,7 @@
 |------|------|:--:|
 | **A** 引擎补完 | 规则提取 + RAG任务 + 上传闭环 | ✅ |
 | **B** 体验优化 | React前端 + 预设标签 + 报告展示 | ✅ |
-| **C** 质量防线 | Agent/RAG评测 + 回归验证 | ⏳ |
+| **C** 质量防线 | Agent/RAG评测 + 回归验证 | ✅ |
 
 ---
 
@@ -94,8 +94,16 @@ cd web && npx vite
 ## 测试
 
 ```bash
-python scripts/run_tests.py     # 后端 162测试
+python scripts/run_tests.py     # 后端 385测试
 cd web && npx vitest run        # 前端 14测试
+```
+
+## 评测
+
+```bash
+python evaluation/v8_bench.py --layer sql     # SQL 20题
+python evaluation/v8_bench.py --layer agent   # Agent 15题
+python evaluation/v8_bench.py --layer rag     # RAG 15题
 ```
 
 ---
