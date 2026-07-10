@@ -31,9 +31,9 @@ def _table_to_markdown(pymupdf_table) -> str:
                 # 跳过全是 ColN 占位符的行
                 if any(c for c in cells if c):
                     lines.append("| " + " | ".join(cells) + " |")
-                    if i == 0:  # 表头分隔行
+                    if len(lines) == 1:  # 第一个有效行后加分隔行
                         lines.append("|" + "|".join(["---"] * len(cells)) + "|")
-            if len(lines) > 2:  # 至少有表头+分隔行+一行数据
+            if len(lines) >= 3:  # 至少有表头+分隔行+一行数据
                 return "\n".join(lines)
     except Exception:
         pass
