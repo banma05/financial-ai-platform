@@ -7,3 +7,23 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* 打印/导出PDF 样式 */
+@media print {
+  aside, button, nav, input, .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+    font-size: 12pt;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  section, article {
+    box-shadow: none !important;
+    border: none !important;
+    page-break-inside: avoid;
+  }
+}

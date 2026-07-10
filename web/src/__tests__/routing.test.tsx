@@ -25,8 +25,9 @@ describe('页面路由', () => {
       </MemoryRouter>,
     );
 
-    // 点击侧边栏"文档上传"链接
-    await user.click(screen.getByRole('link', { name: /文档上传/ }));
+    // 点击侧边栏"文档上传"链接（用 getAllByRole 取第一个，因为页面里可能还有别的同名链接）
+    const links = screen.getAllByRole('link', { name: /文档上传/ });
+    await user.click(links[0]);
 
     // 页面主标题变为"文档上传"
     expect(screen.getByRole('heading', { name: '文档上传' })).toBeInTheDocument();
