@@ -63,12 +63,12 @@ export default function ReportView() {
       </section>
 
       {/* 图表区域 */}
-      {result.charts.length > 0 && (
+      {result.charts && result.charts.length > 0 && (
         <section className="bg-white rounded-xl p-6 shadow-sm border mb-6">
           <h2 className="text-lg font-semibold mb-4">📈 可视化图表</h2>
           <div className="space-y-4">
             {result.charts.map((chartData, i) => (
-              <div key={i} className="border rounded-lg p-4">
+              <div key={`chart-${i}`} className="border rounded-lg p-4">
                 {chartData.startsWith('data:image') ? (
                   <img src={chartData} alt={`图表 ${i + 1}`} className="max-w-full" />
                 ) : (
