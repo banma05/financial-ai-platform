@@ -256,6 +256,82 @@ def evaluate_agent(light: bool = True) -> dict:
     }
 
 
+# ==================== RAG 层评测 ====================
+
+def evaluate_rag() -> dict:
+    """15 题 RAG 端到端评测：检索 + LLM 生成答案 + 来源引用检查"""
+    from rag.retriever import rag_query
+
+    with open(DATA_DIR / "rag_questions.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    questions = data["questions"]
+    results = []
+    total_sources = found_sources = 0
+    total_latency = 0.0
+
+    for q in questions:
+        start = time.perf_counter()
+        try:
+            result = rag_query(q["query"], top_k=5)
+            elapsed = round(time.perf_counter() - start, 1)
+            answer = result.get("answer", "")
+            sources = result.get("sources", [])
+
+            # 评分维度
+            source_count = len(sources)
+            min_required = q.get("min_sources", 1)
+            sources_ok = source_count >= min_required
+
+            # 答案质量（基础检查）
+            has_citation = "[^" in answer  # 引用标记
+            answer_len = len(answer)
+            too_short = answer_len < 50
+            hallucination_phrase = "文档中未找到" in answer
+
+            total_sources += source_count
+            if sources_ok:
+                found_sources += 1
+            total_latency += elapsed
+
+            results.append({
+                "id": q["id"],
+                "query": q["query"],
+                "category": q.get("category", ""),
+                "difficulty": q.get("difficulty", ""),
+                "elapsed_s": elapsed,
+                "sources_found": source_count,
+                "sources_min": min_required,
+                "sources_ok": sources_ok,
+                "answer_len": answer_len,
+                "has_citation": has_citation,
+                "hallucination_phrase": hallucination_phrase,
+            })
+        except Exception as e:
+            elapsed = round(time.perf_counter() - start, 1)
+            results.append({
+                "id": q["id"],
+                "query": q["query"],
+                "elapsed_s": elapsed,
+                "sources_found": 0,
+                "sources_min": q.get("min_sources", 1),
+                "sources_ok": False,
+                "error": str(e)[:100],
+            })
+
+    total = len(questions)
+    source_rate = f"{found_sources}/{total}"
+
+    return {
+        "layer": "RAG",
+        "total_questions": total,
+        "avg_elapsed_s": round(total_latency / max(total, 1), 1),
+        "source_qualify_rate": source_rate,
+        "avg_sources_per_q": round(total_sources / max(total, 1), 1),
+        "results": results,
+    }
+
+
 # ==================== CLI ====================
 
 if __name__ == "__main__":
@@ -272,7 +348,7 @@ if __name__ == "__main__":
     elif layer == "agent":
         result = evaluate_agent(light=light)
     elif layer == "rag":
-        result = {"layer": "RAG", "status": "skipped — needs ChromaDB + rebuilt index"}
+        result = evaluate_rag()
     else:
         print(f"Unknown layer: {layer}")
         sys.exit(1)
@@ -293,6 +369,11 @@ if __name__ == "__main__":
             if "expected_count" in r:
                 print(f"  {r['id']} {status}: hits={r['hits']}/{r['expected_count']}, "
                       f"acc={r['accurate']}, {r['latency_ms']:.0f}ms | {r['query'][:40]}")
+            elif "sources_found" in r:
+                src_ok = "OK" if r.get("sources_ok") else "LOW"
+                err = r.get("error", "")
+                print(f"  {r['id']} {src_ok}: sources={r['sources_found']}/{r.get('sources_min','?')}, "
+                      f"{r['elapsed_s']}s{', err='+err if err else ''} | {r['query'][:40]}")
             else:
                 print(f"  {r['id']} {status}: {r['elapsed_s']}s, "
                       f"nums={r.get('numbers_found','?')}, "
