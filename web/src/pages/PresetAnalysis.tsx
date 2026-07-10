@@ -37,10 +37,12 @@ export default function PresetAnalysis() {
   // 加载模板列表
   useEffect(() => {
     if (templates.length > 0) return; // 已加载则跳过
+    let cancelled = false;
     apiClient
       .get('/agent/templates')
-      .then((data) => setTemplates(data as unknown as Template[]))
-      .catch(() => setError('加载模板失败'));
+      .then((data) => { if (!cancelled) setTemplates(data as unknown as Template[]); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : '加载模板失败'); });
+    return () => { cancelled = true; };
   }, [templates.length, setTemplates, setError]);
 
   // 开始分析
@@ -51,8 +53,6 @@ export default function PresetAnalysis() {
     const query = customQuery.trim() || `${selectedCompany} ${template?.display_name || '财务分析'}`;
 
     setAnalyzing(true);
-    setResult(null);
-    setError(null);
 
     try {
       const data = await apiClient.post('/agent/analyze', {

@@ -31,13 +31,18 @@ export default function DocumentUpload() {
   // 加载文档列表
   useEffect(() => {
     if (documents.length > 0) return;
+    let cancelled = false;
     apiClient
       .get('/rag/documents')
       .then((data) => {
+        if (cancelled) return;
         const resp = data as unknown as { documents: DocInfo[] };
         setDocuments(resp.documents || []);
       })
-      .catch(() => setUploadError('加载文档列表失败'));
+      .catch((err) => {
+        if (!cancelled) setUploadError(err instanceof Error ? err.message : '加载文档列表失败');
+      });
+    return () => { cancelled = true; };
   }, [documents.length, setDocuments, setUploadError]);
 
   // 自动滚动到底部
@@ -131,10 +136,14 @@ export default function DocumentUpload() {
 
         {/* 拖拽上传区 */}
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="上传 PDF 文件"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
           className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
             isDragOver
               ? 'border-blue-500 bg-blue-50'
@@ -204,7 +213,7 @@ export default function DocumentUpload() {
             </p>
           )}
           {chatHistory.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div key={`${msg.role}-${i}-${msg.content.slice(0, 20)}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-xl p-3 text-sm ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white'
@@ -241,8 +250,9 @@ export default function DocumentUpload() {
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { handleSend().catch(() => {}); } }}
             placeholder="输入问题..."
+            aria-label="输入分析问题"
             className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400"
           />
           <button
