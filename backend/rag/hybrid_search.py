@@ -120,6 +120,12 @@ def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]]
     boost_sources = get_entity_boost_sources(query)
     ENTITY_BOOST_FACTOR = 1.5
 
+    # —— 年份加权：query 中提到具体年份时，匹配年份的文档额外加权 ——
+    import re as _re
+    _year_match = _re.search(r'(20\d{2})\s*年', query)
+    _query_year = _year_match.group(1) if _year_match else None
+    YEAR_BOOST_FACTOR = 1.2
+
     ranked = []
     for i, score in enumerate(scores):
         source = metas[i].get("source", "")
@@ -129,6 +135,9 @@ def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]]
         # 实体加权
         if boost_sources and source in boost_sources:
             score = score * ENTITY_BOOST_FACTOR
+        # 年份加权：query 说 2024年 → 文件名含 2024 的文档加分
+        if _query_year and _query_year in source:
+            score = score * YEAR_BOOST_FACTOR
         ranked.append((i, score))
 
     ranked.sort(key=lambda x: x[1], reverse=True)
