@@ -60,15 +60,13 @@ def evaluate_sql() -> dict:
         tolerance = q.get("tolerance_pct", TOLERANCE_PCT["sql"])
         data_dict = result.get("data", {}) if result else {}
 
-        # 统计预期值命中情况
-        # 匹配策略: 把预期键和返回键都拆成 {公司, 指标, 年份} 三元组,交叉比对
-        import re as _re
+        # 统计预期值命中情况（根因已修：数据键名不再有 "净利"/"净利率" 歧义）
+        # 匹配策略：直接相等 > 双向子串 > 部件交叉匹配
         hits = {}
         for key, expected_val in expected.items():
+            key_parts = key.split('_')
             found = False
             accurate = False
-            # 解析预期键: "毛利率_贵州茅台_2024" or "茅台_毛利率" or "营业收入_2024" or "ROE"
-            key_parts = key.split('_')
 
             for dk, dv in data_dict.items():
                 dk_parts = dk.split('_')
@@ -80,28 +78,16 @@ def evaluate_sql() -> dict:
                 if not match:
                     match = (key in dk or dk in key)
 
-                # 策略3: 拆成部件后交叉匹配（所有部件都出现在对方键中）
+                # 策略3: 拆成部件后交叉匹配（所有部件互相包含）
                 if not match and len(key_parts) >= 2 and len(dk_parts) >= 2:
                     match = all(
                         any(kp in dp for dp in dk_parts) or any(dp in kp for dp in dk_parts)
                         for kp in key_parts
                     )
 
-                # 策略4: 指标名匹配（去掉公司和年份，只比指标）
-                if not match:
-                    known_metrics = {'营业收入','营收','净利润','净利','净利率','毛利率','ROE','ROA',
-                                    '资产负债率','权益乘数','研发费用','经营现金流','经营活动现金流净额'}
-                    k_metric = next((m for m in known_metrics if m in key), None)
-                    d_metric = next((m for m in known_metrics if m in dk), None)
-                    if k_metric and d_metric:
-                        k_base = k_metric.replace('净','').replace('毛','').replace('总','').replace('营收','营收')
-                        d_base = d_metric.replace('净','').replace('毛','').replace('总','').replace('营收','营收')
-                        match = (k_base in d_base or d_base in k_base)
-
                 if match:
                     found = True
                     if expected_val and dv:
-                        # 单位统一：expected 是亿（< 10^6），SQL 返回元（> 10^6）
                         sql_val = dv / 1e8 if abs(dv) > 1e6 else dv
                         pct_diff = abs(sql_val - expected_val) / abs(expected_val) * 100
                         accurate = pct_diff <= tolerance
