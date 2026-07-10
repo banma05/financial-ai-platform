@@ -7,7 +7,7 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// 响应拦截器：统一提取 data
+// 响应拦截器：统一提取 data（类型擦除后用，调用处自行 cast）
 apiClient.interceptors.response.use(
   (res) => res.data,
   (error) => {
