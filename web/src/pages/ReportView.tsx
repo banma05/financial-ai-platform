@@ -1,17 +1,5 @@
-import ReactECharts from 'echarts-for-react';
 import { useAnalysisStore } from '@/stores/analysis';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
-
-/** 默认柱状图选项（图表的兜底样式） */
-function defaultChartOption(title: string) {
-  return {
-    title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
-    tooltip: {},
-    xAxis: { type: 'category', data: ['指标1', '指标2', '指标3'] },
-    yAxis: { type: 'value' },
-    series: [{ type: 'bar', data: [0, 0, 0] }],
-  };
-}
 
 /**
  * 报告展示页面 — Markdown 渲染 + ECharts 图表 + 元信息
@@ -92,14 +80,8 @@ export default function ReportView() {
           <div className="space-y-4">
             {result.charts.map((chartData, i) => (
               <div key={`chart-${i}`} className="border rounded-lg p-4">
-                {chartData.startsWith('data:image') ? (
-                  <img src={chartData} alt={`图表 ${i + 1}`} className="max-w-full" />
-                ) : (
-                  <ReactECharts
-                    option={defaultChartOption(`图表 ${i + 1}`)}
-                    style={{ height: 300 }}
-                  />
-                )}
+                {/* V8.1 D7: 后端始终生成 base64 图片，移除 ECharts 死代码 */}
+                <img src={chartData} alt={`图表 ${i + 1}`} className="max-w-full" />
               </div>
             ))}
           </div>

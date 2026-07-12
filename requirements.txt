@@ -32,7 +32,6 @@ chromadb==1.5.9
 # 文档解析
 pymupdf==1.28.0
 python-docx==1.1.0
-markdown==3.7
 
 # 本地 Embedding（BAAI/bge-base-zh-v1.5）
 sentence-transformers==5.6.0
@@ -47,7 +46,6 @@ jieba==0.42.1
 # 工具
 python-dotenv==1.2.2
 pydantic==2.10.0
-pydantic-settings==2.7.0
 loguru==0.7.0
 
 # 业务数据库

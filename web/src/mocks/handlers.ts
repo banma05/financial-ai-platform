@@ -42,6 +42,13 @@ export const MOCK_CHAT_RESPONSE = {
 };
 
 export const handlers = [
+  // ── V8.1 D17: 公司列表 API ──
+  http.get('/api/v1/companies', () => {
+    return HttpResponse.json({
+      companies: MOCK_COMPANIES.map(({ code, name }) => ({ code, name })),
+    });
+  }),
+
   // ── Agent API ──
   http.get('/api/v1/agent/templates', () => {
     return HttpResponse.json(MOCK_TEMPLATES);

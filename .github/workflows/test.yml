@@ -7,7 +7,7 @@ on:
     branches: [master, main]
 
 jobs:
-  test:
+  backend-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,12 +27,8 @@ jobs:
         env:
           PYTHONPATH: backend
         run: |
-          # ✅ rag/__init__.py 已改为惰性加载——轻量子模块（entity_router/corpus_manager/
-          #    evaluator/query_processor/model_router）可安全导入，不再触发全家桶依赖。
-          # 🔒 仍排除 3 个（子模块自身导入重依赖）：
-          #   test_hybrid_search  → hybrid_search.py → sentence_transformers
-          #   test_table_extraction → loader.py → pymupdf
-          #   test_integration    → retriever.py → hybrid_search → sentence_transformers
+          # ✅ rag/__init__.py 已改为惰性加载——轻量子模块可安全导入
+          # 🔒 仍排除依赖重模型（sentence_transformers/pymupdf）的测试
           python -m pytest \
             backend/tests/test_agent_financial_calc.py \
             backend/tests/test_param_injection.py \
@@ -46,3 +42,23 @@ jobs:
             backend/tests/test_query_processor.py \
             backend/tests/test_agent_planner.py \
             -q --tb=short
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    # V8.1 D20: 新增前端测试 Job
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装依赖
+        working-directory: web
+        run: npm ci
+
+      - name: 运行前端测试
+        working-directory: web
+        run: npm test
