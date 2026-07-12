@@ -1,8 +1,8 @@
 # 智能财务分析平台 — 项目进度
 
-> 📅 最后更新：2026-07-10
-> 🎯 当前版本：**V8.0** — SQL优先 + RAG辅助 + 规则提取 + 诚实评测
-> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ✅ → V8.1质量打磨 ⏳
+> 📅 最后更新：2026-07-12
+> 🎯 当前版本：**V8.1** — 质量打磨进行中
+> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ✅ → D-A安全防线 ✅ → D-B并发稳定 ⏳
 
 ---
 
@@ -67,7 +67,7 @@ financial-ai-platform/
 │   ├── db/                   # SQLite 业务库
 │   ├── api/                  # FastAPI 路由
 │   ├── models/               # Pydantic 模型
-│   └── tests/                # 162单元测试
+│   └── tests/                # 385单元测试
 ├── web/                      # React 前端 (:5173) [NEW]
 │   ├── src/pages/            # 三页面 + 组件
 │   ├── src/stores/           # Zustand 状态管理
@@ -108,6 +108,23 @@ python evaluation/v8_bench.py --layer rag     # RAG 15题
 
 ---
 
+## V8.1 质量打磨 (2026-07-12)
+
+### D-A 安全防线 ✅
+
+| # | 修复 | 文件 | 说明 |
+|---|------|------|------|
+| D1 | OpenAI 超时 | `model_router.py` | `timeout=60s`，`request_timeout=60s` |
+| D2 | CORS :5173 | `main.py` | 默认源新增 `http://localhost:5173` |
+| D4 | 开发模式鉴权 | `auth.py` | API_KEY 为空时自动生成 `dev-*` 密钥 |
+| D12 | MIME 收紧 | `api/rag.py` | 移除 octet-stream 直接放行 |
+
+> 测试：385/385 ✅ | Auth：17/17 ✅
+
+### D-B 并发稳定 ⏳ (D3+D5+D14)
+
+---
+---
 ## 已知限制 (诚实)
 
 - 口语化表达未支持 ("赚了多少钱")
