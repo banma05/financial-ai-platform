@@ -16,10 +16,51 @@ V8.0 核心组件：零 LLM 参与，纯规则匹配 + SQL 直查。
   - 找不到数据 → 返回 None（不瞎猜）
   - 支持多年份、多指标批量查询
 """
+import ast
+import operator as _op
 import re
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 from loguru import logger
+
+# ============ V8.1 D13: 安全数学表达式求值器（替换 eval） ============
+
+# 白名单：仅允许数学运算的 AST 节点类型
+_ALLOWED_NODES = {ast.Expression, ast.BinOp, ast.UnaryOp, ast.Name, ast.Constant,
+                  ast.Add, ast.Sub, ast.Mult, ast.Div,
+                  ast.USub, ast.UAdd}
+_MAX_EXPR_LENGTH = 200  # 公式最大字符数，防止极端输入
+
+
+def _safe_eval(expression: str, variables: dict) -> float:
+    """
+    安全地计算数学表达式，仅允许 + - * / 和变量引用。
+
+    与 eval(expr, {"__builtins__": {}}, vars) 不同，此函数：
+    - 使用 AST 白名单严格限制可执行的操作
+    - 拒绝任何函数调用、属性访问、位运算、比较运算等
+    - 限制表达式最大长度
+    - 无 DoS 风险（如指数爆炸 `a**a**a`）
+
+    抛出: ValueError（表达式不安全）或 ZeroDivisionError
+    """
+    if len(expression) > _MAX_EXPR_LENGTH:
+        raise ValueError(f"表达式过长 ({len(expression)} > {_MAX_EXPR_LENGTH})")
+
+    tree = ast.parse(expression.strip(), mode='eval')
+
+    # 递归验证 AST 节点，确保所有节点类型在白名单内
+    def _validate(node):
+        if type(node) not in _ALLOWED_NODES:
+            raise ValueError(f"不允许的操作: {type(node).__name__}")
+        for child in ast.iter_child_nodes(node):
+            _validate(child)
+
+    _validate(tree)
+
+    # 编译并执行（此时 AST 已通过安全验证）
+    code = compile(tree, '<formula>', 'eval')
+    return code.eval({}, variables)
 
 # ── 公司名 → symbol 映射 ──
 COMPANY_ALIASES: Dict[str, str] = {
@@ -232,8 +273,12 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
             if formula and len(keys) >= 2 and all(k in values for k in keys):
                 try:
                     safe_vars = {k: v for k, v in values.items() if k in keys}
-                    result = eval(formula, {"__builtins__": {}}, safe_vars)
+                    # V8.1 D13: 用 AST 白名单求值器替换 eval，仅允许 + - * /
+                    result = _safe_eval(formula, safe_vars)
                     data[f"{key_prefix}{metric_name}{year_suffix}"] = round(result, 2)
+                except (ValueError, ZeroDivisionError, TypeError) as e:
+                    logger.debug(f"公式计算失败 [{formula}]: {e}")
+                    continue
                 except Exception:
                     continue
             elif not formula:

@@ -5,7 +5,7 @@ import os
 import json
 import asyncio
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
@@ -24,76 +24,40 @@ from models.schemas import (
 from rag import load_document, add_documents, rag_query, get_document_list
 from rag.semantic_splitter import semantic_chunk_per_page
 from rag.model_router import chat_stream, init_usage, save_token_usage
-from db import SessionLocal, Document, ChatHistory, QueryLog
+from db import SessionLocal, Document, ChatHistory, QueryLog, get_db
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 
-# ============ 会话管理（内存缓存，用于多轮对话） ============
-# 生产环境应迁移到 Redis 或 chat_history 表
-import threading
-import time as _time_module
-# V8.1 D5: 每个 session 记录最后访问时间，TTL 过期自动清理
-_session_store: dict = {}        # {session_id: {"history": [...], "last_access": timestamp}}
-_session_lock = threading.Lock()
-MAX_HISTORY_TURNS = 10           # 每个会话最多保留 10 轮对话
-SESSION_TTL_SECONDS = 3600       # V8.1: 会话 1 小时无访问自动过期
-MAX_SESSIONS = 1000              # V8.1: 最多保留 1000 个会话，超出时清理最旧的
+# ============ 会话管理（SessionStore + ChatHistory 双写） ============
+# V8.1 D9: 统一使用 redis_client.SessionStore 作为会话存储入口
+# 支持 Redis 优先 + 内存回退，消除三套存储竞争
+# ChatHistory 表保留作为持久化审计日志
+from utils.redis_client import get_session_store
 
-
-def _cleanup_expired_sessions():
-    """清理过期会话（TTL 超时 + 总数上限）。调用方需持有 _session_lock"""
-    now = _time_module.time()
-    # 1. 清理 TTL 过期的会话
-    expired = [
-        sid for sid, v in _session_store.items()
-        if now - v.get("last_access", 0) > SESSION_TTL_SECONDS
-    ]
-    for sid in expired:
-        del _session_store[sid]
-    if expired:
-        logger.debug(f"会话清理: 过期 {len(expired)} 个，剩余 {len(_session_store)} 个")
-    # 2. 超过总数上限时，清理最旧的非活跃会话（LRU）
-    if len(_session_store) > MAX_SESSIONS:
-        sorted_sessions = sorted(
-            _session_store.items(), key=lambda x: x[1].get("last_access", 0)
-        )
-        overflow = len(_session_store) - MAX_SESSIONS
-        for sid, _ in sorted_sessions[:overflow]:
-            del _session_store[sid]
-        logger.warning(f"会话清理: 超过上限 {MAX_SESSIONS}，驱逐 {overflow} 个最旧会话")
+_session_store = get_session_store()  # 全局单例，Redis 可用时自动切换
 
 
 def _get_history(session_id: str) -> list:
-    with _session_lock:
-        entry = _session_store.get(session_id)
-        if entry:
-            entry["last_access"] = _time_module.time()
-            return list(entry.get("history", []))
-        return []
+    """从 SessionStore 读取对话历史"""
+    return _session_store.get_history(session_id)
 
 
 def _save_turn(session_id: str, role: str, content: str, processing_time: float = 0.0,
                sources: list = None):
-    """双写：内存缓存（读加速）+ chat_history 表（持久化）"""
-    with _session_lock:
-        # V8.1 D5: 保存前先清理过期会话
-        _cleanup_expired_sessions()
-        if session_id not in _session_store:
-            _session_store[session_id] = {"history": [], "last_access": _time_module.time()}
-        entry = _session_store[session_id]
-        entry["history"].append({"role": role, "content": content})
-        entry["last_access"] = _time_module.time()
-        # 超过上限时保留最近 N 轮
-        if len(entry["history"]) > MAX_HISTORY_TURNS * 2:
-            entry["history"] = entry["history"][-(MAX_HISTORY_TURNS * 2):]
-    # ── V6.0: 同时写入 DB 持久化 ──
+    """双写：SessionStore（内存/Redis）+ ChatHistory 表（持久化审计）"""
+    # 运行时存储（Redis 优先，内存回退，自带 TTL + max history）
+    _session_store.add_message(session_id, role, content)
+    # ── V6.0: DB 持久化审计日志 ──
     from rag.retriever import save_chat_turn
     save_chat_turn(session_id, role, content, processing_time=processing_time, sources=sources)
 
 
-def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, processing_time: float):
-    """写入查询日志（失败不影响主流程）"""
-    db = SessionLocal()
+def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int,
+               processing_time: float, db=None):
+    """写入查询日志（失败不影响主流程）。V8.1 D6: 接受可选 db session 支持依赖注入"""
+    own_db = db is None
+    if own_db:
+        db = SessionLocal()
     try:
         log = QueryLog(
             query=query,
@@ -109,20 +73,19 @@ def _log_query(query: str, processed_query: str, top_k: int, chunks_count: int, 
         db.rollback()
         logger.warning(f"写入查询日志失败: {e}")
     finally:
-        db.close()
+        if own_db:
+            db.close()
 
 
 @router.post("/session/clear")
-async def clear_session(session_id: str = "default"):
+async def clear_session(session_id: str = "default", db=Depends(get_db)):
     """
     清除指定会话的对话历史（内存 + 数据库）
     """
-    # 内存清除（V8.1 D5: 加锁保证线程安全）
-    with _session_lock:
-        if session_id in _session_store:
-            del _session_store[session_id]
+    # 运行时存储清除（V8.1 D9: 委托给 SessionStore，自动处理 Redis/内存）
+    _session_store.clear(session_id)
     # ── V6.0: 同步清除 DB 记录 ──
-    db = SessionLocal()
+    # V8.1 D6: 使用 Depends(get_db) 依赖注入，不再直接 SessionLocal()
     try:
         deleted = db.query(ChatHistory).filter(ChatHistory.session_id == session_id).delete()
         db.commit()
@@ -130,13 +93,12 @@ async def clear_session(session_id: str = "default"):
     except Exception as e:
         db.rollback()
         logger.warning(f"清除 DB 会话记录失败: {e}")
-    finally:
-        db.close()
     return {"message": "会话已清除", "session_id": session_id}
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+async def upload_document(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
+                          db=Depends(get_db)):  # V8.1 D6: 依赖注入
     """
     上传文档到知识库
     支持 PDF / Word / Markdown / TXT 格式
@@ -201,8 +163,7 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
     # 6. 存入向量数据库
     chunk_count = add_documents(chunks)
 
-    # 7. 写入业务数据库（文档元数据）
-    db = SessionLocal()
+    # 7. 写入业务数据库（文档元数据）— V8.1 D6: db 由 Depends(get_db) 注入
     try:
         doc = Document(
             filename=file.filename or "unknown",
@@ -216,8 +177,6 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
     except Exception as e:
         db.rollback()
         logger.warning(f"写入文档记录失败（不影响知识库）: {e}")
-    finally:
-        db.close()
 
     # ── V8.0: 规则提取表格数字 → 写入 SQL（不阻塞主流程）──
     def _extract_tables_to_sql():
@@ -309,7 +268,7 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest):
+async def chat_stream_endpoint(request: ChatRequest, db=Depends(get_db)):  # V8.1 D6
     """
     向知识库提问（流式输出 SSE + 多轮对话支持）
 
@@ -382,7 +341,8 @@ async def chat_stream_endpoint(request: ChatRequest):
                        processing_time=processing_time, sources=source_list)
 
             # Step 5: 写入查询日志
-            _log_query(request.query, processed_query, request.top_k, len(sources) if sources else 0, processing_time)
+            _log_query(request.query, processed_query, request.top_k, len(sources) if sources else 0,
+                       processing_time, db=db)  # V8.1 D6: 传入注入的 db session
             # V6.0: 持久化 token 用量
             save_token_usage(session_id, "rag_chat_stream")
 
@@ -402,11 +362,10 @@ async def chat_stream_endpoint(request: ChatRequest):
 
 
 @router.get("/documents", response_model=DocumentListResponse)
-async def list_documents():
+async def list_documents(db=Depends(get_db)):  # V8.1 D6: 依赖注入
     """
     列出知识库中的所有文档（优先从业务数据库读取）
     """
-    db = SessionLocal()
     try:
         db_docs = db.query(Document).filter(Document.status == "active").order_by(Document.upload_time.desc()).all()
         if db_docs:
@@ -422,8 +381,6 @@ async def list_documents():
             )
     except Exception as e:
         logger.warning(f"数据库读取失败，回退 ChromaDB: {e}")
-    finally:
-        db.close()
 
     # 数据库不可用时回退 ChromaDB
     docs = get_document_list()
