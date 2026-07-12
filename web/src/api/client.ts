@@ -4,7 +4,11 @@ import axios from 'axios';
 const _client = axios.create({
   baseURL: '/api/v1',
   timeout: 120000, // Agent 分析可能较慢
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    // V8.1 D4: 开发模式下从环境变量读取 API Key
+    ...(import.meta.env['VITE_API_KEY'] ? { 'X-API-Key': import.meta.env['VITE_API_KEY'] } : {}),
+  },
 });
 
 // 响应拦截器：统一错误处理
