@@ -25,7 +25,7 @@ app = FastAPI(
 # CORS 配置（前端跨域访问）
 # 生产环境应通过 CORS_ORIGINS 环境变量指定具体域名（如 "http://localhost:8501,https://app.example.com"）
 # 开发环境默认允许本地 Streamlit（8501）和 localhost
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000").split(",")
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000,http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins if o.strip()],
