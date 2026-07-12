@@ -32,7 +32,6 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 # 生产环境应迁移到 Redis 或 chat_history 表
 import threading
 import time as _time_module
-from collections import defaultdict
 # V8.1 D5: 每个 session 记录最后访问时间，TTL 过期自动清理
 _session_store: dict = {}        # {session_id: {"history": [...], "last_access": timestamp}}
 _session_lock = threading.Lock()
