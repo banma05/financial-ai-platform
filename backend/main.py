@@ -160,6 +160,20 @@ async def admin_cost_stats():
         db.close()
 
 
+@app.get("/api/v1/companies")
+async def api_companies():
+    """V8.1 D17: 返回可用公司列表，与后端 COMPANY_ALIASES 保持同步"""
+    from db.financial_query import COMPANY_ALIASES
+    # 从别名表中提取唯一公司，返回 code + name
+    seen = set()
+    companies = []
+    for name, code in COMPANY_ALIASES.items():
+        if code not in seen:
+            seen.add(code)
+            companies.append({"code": code, "name": name})
+    return {"companies": sorted(companies, key=lambda c: c["code"])}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -167,5 +181,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("启动智能财务分析平台...")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    port = int(os.getenv("BACKEND_PORT", "8001"))
+    logger.info(f"启动智能财务分析平台 (0.0.0.0:{port})...")
+    uvicorn.run(app, host="0.0.0.0", port=port)

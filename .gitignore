@@ -18,3 +18,4 @@ build/
 .vscode/
 .idea/
 *.log
+evaluation/reports/

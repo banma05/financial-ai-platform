@@ -13,9 +13,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: parseInt(process.env['VITE_PORT'] || '5173'),
     proxy: {
-      '/api': 'http://localhost:8001',
+      '/api': process.env['VITE_API_TARGET'] || 'http://localhost:8001',
     },
   },
   test: {

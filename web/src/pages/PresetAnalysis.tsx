@@ -1,16 +1,12 @@
 import { useEffect, useCallback, useState } from 'react';
-import { apiClient } from '@/api/client';
-import { useAnalysisStore, type Template } from '@/stores/analysis';
+import { api } from '@/api/client';
+import { useAnalysisStore, type Template, type AnalysisResult } from '@/stores/analysis';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 
-/** 预设公司列表（前端常量，不调 API） */
-const PRESET_COMPANIES = [
-  { code: '600519', name: '贵州茅台', short: '茅台', hasPDF: true },
-  { code: '002594', name: '比亚迪', short: '比亚迪', hasPDF: true },
-  { code: '300750', name: '宁德时代', short: '宁德', hasPDF: true },
-  { code: '000858', name: '五粮液', short: '五粮液', hasPDF: true },
-  { code: '600036', name: '招商银行', short: '招商', hasPDF: false },
-];
+/** 公司信息 */
+interface CompanyInfo { code: string; name: string; short: string; hasPDF: boolean }
+// V8.1 D17: hasPDF 静态对照表（API 返回的公司是否在知识库中有 PDF 年报）
+const _PDF_COMPANIES = new Set(['600519', '002594', '300750', '000858']);
 
 /**
  * 预设分析页面 — 选择公司 + 模板 → 一键生成分析报告
@@ -33,14 +29,30 @@ export default function PresetAnalysis() {
 
   const [customQuery, setCustomQuery] = useState('');
   const [showResult, setShowResult] = useState(false);  // 本地视图切换，不清 store
+  const [companies, setCompanies] = useState<CompanyInfo[]>([]);
+
+  // V8.1 D17: 从后端 API 动态获取公司列表
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ companies: { code: string; name: string }[] }>('/companies')
+      .then((resp) => {
+        if (cancelled) return;
+        setCompanies(resp.companies.map((c) => ({
+          ...c,
+          short: c.name.replace(/[（(].*$/, ''),  // 用完整名称作为简称
+          hasPDF: _PDF_COMPANIES.has(c.code),
+        })));
+      })
+      .catch(() => { /* 网络不可用时使用空列表，不崩溃 */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // 加载模板列表
   useEffect(() => {
     if (templates.length > 0) return; // 已加载则跳过
     let cancelled = false;
-    apiClient
-      .get('/agent/templates')
-      .then((data) => { if (!cancelled) setTemplates(data as unknown as Template[]); })
+    api.get<Template[]>('/agent/templates')
+      .then((data) => { if (!cancelled) setTemplates(data); })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : '加载模板失败'); });
     return () => { cancelled = true; };
   }, [templates.length, setTemplates, setError]);
@@ -55,12 +67,12 @@ export default function PresetAnalysis() {
     setAnalyzing(true);
 
     try {
-      const data = await apiClient.post('/agent/analyze', {
+      const data = await api.post<AnalysisResult>('/agent/analyze', {
         query,
         template: selectedTemplate || undefined,
         session_id: `preset-${Date.now()}`,
       });
-      setResult(data as unknown as { report: string; charts: string[]; processing_time: number; task_count: number; clarification: string | null });
+      setResult(data);
       setShowResult(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : '分析请求失败');
@@ -71,7 +83,8 @@ export default function PresetAnalysis() {
   const recommendedQuestions = (() => {
     if (!selectedCompany) return [];
     const company = selectedCompany;
-    const year = '2024年';
+    // V8.1 D18: 使用当前年份，不再硬编码 2024年
+    const year = `${new Date().getFullYear()}年`;
 
     switch (selectedTemplate) {
       case 'profitability':
@@ -142,11 +155,11 @@ export default function PresetAnalysis() {
         <h2 className="text-sm font-medium text-gray-600 mb-3">
           选择公司
           <span className="ml-2 text-xs text-gray-400 font-normal">
-            ({PRESET_COMPANIES.filter(c => c.hasPDF).length}家有年报PDF可用)
+            ({companies.filter(c => c.hasPDF).length}家有年报PDF可用)
           </span>
         </h2>
         <div className="flex flex-wrap gap-2">
-          {PRESET_COMPANIES.map((company) => (
+          {companies.map((company) => (
             <button
               key={company.code}
               onClick={() => setCompany(company.name)}
@@ -223,7 +236,7 @@ export default function PresetAnalysis() {
           value={customQuery}
           onChange={(e) => setCustomQuery(e.target.value)}
           aria-label="自定义分析问题"
-          placeholder={`例如：${selectedCompany ? selectedCompany : '贵州茅台'} 2024年营收同比增长了多少？`}
+          placeholder={`例如：${selectedCompany ? selectedCompany : '贵州茅台'} ${new Date().getFullYear()}年营收同比增长了多少？`}
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
         />
       </section>

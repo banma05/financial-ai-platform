@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState, type DragEvent, type ChangeEvent } from 'react';
-import { apiClient } from '@/api/client';
+import { api } from '@/api/client';
 import { useDocumentStore, type DocInfo, type ChatMessage } from '@/stores/document';
 
 /**
@@ -32,11 +32,9 @@ export default function DocumentUpload() {
   useEffect(() => {
     if (documents.length > 0) return;
     let cancelled = false;
-    apiClient
-      .get('/rag/documents')
-      .then((data) => {
+    api.get<{ documents: DocInfo[] }>('/rag/documents')
+      .then((resp) => {
         if (cancelled) return;
-        const resp = data as unknown as { documents: DocInfo[] };
         setDocuments(resp.documents || []);
       })
       .catch((err) => {
@@ -61,10 +59,10 @@ export default function DocumentUpload() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const data = await apiClient.post('/rag/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const resp = data as unknown as { filename: string; chunk_count: number; file_size: number; message: string };
+      const resp = await api.post<{ filename: string; chunk_count: number; file_size: number; message: string }>(
+        '/rag/upload', formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
       addDocument({
         filename: resp.filename,
         chunk_count: resp.chunk_count,
@@ -108,12 +106,11 @@ export default function DocumentUpload() {
     setChatError(null);
 
     try {
-      const data = await apiClient.post('/rag/chat', {
+      const resp = await api.post<{ answer: string; sources: ChatMessage['sources']; processing_time: number }>('/rag/chat', {
         query: q,
         top_k: 5,
         session_id: `rag-${Date.now()}`,
       });
-      const resp = data as unknown as { answer: string; sources: ChatMessage['sources']; processing_time: number };
       addMessage({
         role: 'assistant',
         content: resp.answer,
