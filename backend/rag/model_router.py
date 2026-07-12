@@ -98,7 +98,11 @@ _client = None
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+        _client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+            timeout=60.0,  # V8.1: 连接+读取总超时 60 秒，防止 LLM 无响应时永久阻塞 worker
+        )
     return _client
 
 
@@ -218,4 +222,5 @@ def get_langchain_llm(model: str = None) -> "ChatOpenAI":
         model=_model,
         temperature=0.3,
         max_tokens=4000,
+        request_timeout=60.0,  # V8.1: 防止 Agent LLM 调用永久阻塞
     )

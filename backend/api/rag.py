@@ -111,7 +111,6 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
         "application/msword",                    # .doc
         "text/markdown", "text/plain",           # .md / .txt
-        "application/octet-stream",              # 浏览器有时无法识别 → 靠扩展名兜底
     }
     file_ext = os.path.splitext(file.filename or "")[1].lower()
     if file_ext not in allowed_exts:
@@ -119,11 +118,16 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
             status_code=400,
             detail=f"不支持的文件格式 [{file_ext}]，仅支持: {', '.join(allowed_exts)}",
         )
+    # V8.1: 移除 octet-stream 直接放行。浏览器无法识别 MIME 时靠扩展名兜底，
+    # 未知 MIME 仅警告不拒绝（安全：已通过扩展名白名单校验）
     if file.content_type and file.content_type not in allowed_mimes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"文件 MIME 类型不匹配 ({file.content_type})，仅支持 PDF/Word/Markdown/TXT",
-        )
+        if file.content_type == "application/octet-stream":
+            logger.debug(f"MIME 为 octet-stream，靠扩展名 {file_ext} 放行: {file.filename}")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件 MIME 类型不匹配 ({file.content_type})，仅支持 PDF/Word/Markdown/TXT",
+            )
 
     # 2. 校验文件大小
     content = await file.read()
