@@ -70,47 +70,71 @@ def route_query(query: str) -> str:
 
 # ============ BM25 关键词检索 ============
 
-# BM25 索引缓存（避免每次查询从 ChromaDB 重建）
-_bm25_cache: dict = {"bm25": None, "docs": [], "metas": [], "doc_count": -1}
+# BM25 索引缓存（V8.1 D14: 只缓存 ID+元数据+分词索引，不复制全部文档文本）
+_bm25_cache: dict = {"bm25": None, "ids": [], "metas": [], "doc_count": -1}
+_BM25_MEMORY_WARN_THRESHOLD = 5000  # 超过 5000 chunk 时发出内存警告
 
 
 def _get_bm25_index():
-    """获取 BM25 索引（线程安全缓存，仅在文档数变化时重建）"""
+    """获取 BM25 索引（线程安全缓存，仅在文档数变化时重建）
+
+    V8.1 D14: 缓存 ID+元数据（轻量）+ BM25 分词索引，文档正文按需从 ChromaDB 查询。
+    避免万级 chunk 时在 Python 进程中重复存储全部文档文本。
+    """
     chroma = _get_chroma()
     data = chroma.get()
     current_count = len(data.get("documents") or [])
 
     if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
-        return _bm25_cache["bm25"], _bm25_cache["docs"], _bm25_cache["metas"]
+        return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
     with _bm25_lock:
         # 双重检查：可能在等锁期间已被其他线程构建
         if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
-            return _bm25_cache["bm25"], _bm25_cache["docs"], _bm25_cache["metas"]
+            return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
         if not data["documents"]:
             _bm25_cache["doc_count"] = 0
             _bm25_cache["bm25"] = None
+            _bm25_cache["ids"] = []
+            _bm25_cache["metas"] = []
             return None, [], []
+
+        # V8.1 D14: 内存压力警告
+        if current_count > _BM25_MEMORY_WARN_THRESHOLD:
+            logger.warning(
+                f"BM25 索引文档数 ({current_count}) 超过 {_BM25_MEMORY_WARN_THRESHOLD}，"
+                f"建议启用 Redis 或分片存储"
+            )
 
         tokenized = tokenize_docs(data["documents"])
         bm25 = BM25Okapi(tokenized)
         _bm25_cache["bm25"] = bm25
-        _bm25_cache["docs"] = data["documents"]
-        _bm25_cache["metas"] = data["metadatas"]
+        _bm25_cache["ids"] = data.get("ids", [])
+        _bm25_cache["metas"] = data.get("metadatas", [])
         _bm25_cache["doc_count"] = current_count
-        logger.info(f"BM25 索引已缓存: {current_count} 文档")
-    return bm25, data["documents"], data["metadatas"]
+        logger.info(f"BM25 索引已缓存: {current_count} 文档 (仅 ID+元数据模式)")
+
+    return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
 
 def _invalidate_bm25_cache():
     """使 BM25 缓存失效（文档变更后调用）"""
     _bm25_cache["doc_count"] = -1
     _bm25_cache["bm25"] = None
+    _bm25_cache["ids"] = []
+    _bm25_cache["metas"] = []
+
+
+def _get_docs_by_ids(chroma, ids: list) -> dict:
+    """按 ID 从 ChromaDB 获取文档内容（V8.1 D14: 按需加载，不缓存全文）"""
+    if not ids:
+        return {"documents": [], "metadatas": [], "ids": []}
+    return chroma.get(ids=ids, include=["documents", "metadatas"])
 
 
 def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]] = None) -> List[dict]:
-    bm25, docs, metas = _get_bm25_index()
+    bm25, doc_ids, metas = _get_bm25_index()
     if bm25 is None:
         return []
     tokenized_query = tokenize_for_search(query)
@@ -142,11 +166,22 @@ def bm25_search(query: str, top_k: int = 10, filter_sources: Optional[List[str]]
 
     ranked.sort(key=lambda x: x[1], reverse=True)
 
+    # V8.1 D14: 按 ID 从 ChromaDB 按需获取 Top-K 文档正文（不缓存全部文本）
+    top_indices = [idx for idx, _ in ranked[:top_k]]
+    top_ids = [doc_ids[idx] for idx in top_indices]
+    docs_by_id = _get_docs_by_ids(_get_chroma(), top_ids)
+    id_to_doc = {did: {"content": doc, "meta": meta}
+                  for did, doc, meta in zip(docs_by_id.get("ids", []),
+                                            docs_by_id.get("documents", []),
+                                            docs_by_id.get("metadatas", []))}
+
     results = []
     for i, score in ranked:
+        did = doc_ids[i]
+        doc_info = id_to_doc.get(did, {})
         source = metas[i].get("source", "")
         results.append({
-            "content": docs[i],
+            "content": doc_info.get("content", ""),
             "source": source,
             "page": metas[i].get("page", 1),
             "score": float(score),
