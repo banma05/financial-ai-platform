@@ -19,6 +19,19 @@ from rag.hybrid_search import (
 )
 
 
+# ============ V8.1 D14: 测试间清理 BM25 缓存 ============
+
+@pytest.fixture(autouse=True)
+def _clear_bm25_cache():
+    """每个测试前清理 BM25 缓存，避免 mock 数据污染"""
+    from rag.hybrid_search import _bm25_cache
+    _bm25_cache["doc_count"] = -1
+    _bm25_cache["bm25"] = None
+    _bm25_cache["ids"] = []
+    _bm25_cache["metas"] = []
+    yield
+
+
 # ============ 测试辅助 ============
 
 
@@ -201,6 +214,7 @@ class TestBM25Search:
     def test_基本检索(self):
         """mock ChromaDB 返回文档列表"""
         mock_data = {
+            "ids": ["id1", "id2", "id3"],
             "documents": ["营收达到100亿", "公司成立", "毛利率50%"],
             "metadatas": [
                 {"source": "a.pdf", "page": 1},
@@ -227,6 +241,7 @@ class TestBM25Search:
     def test_文档过滤(self):
         """filter_sources 生效"""
         mock_data = {
+            "ids": ["id1", "id2"],
             "documents": ["营收100亿", "净利润50亿"],
             "metadatas": [
                 {"source": "a.pdf", "page": 1},
@@ -241,6 +256,7 @@ class TestBM25Search:
 
     def test_top_k限制(self):
         mock_data = {
+            "ids": [f"id{i}" for i in range(20)],
             "documents": [f"文档{i}" for i in range(20)],
             "metadatas": [{"source": "a.pdf", "page": i} for i in range(20)],
         }

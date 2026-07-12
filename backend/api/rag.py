@@ -31,25 +31,62 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG 知识库"])
 # ============ 会话管理（内存缓存，用于多轮对话） ============
 # 生产环境应迁移到 Redis 或 chat_history 表
 import threading
+import time as _time_module
 from collections import defaultdict
-_session_store: dict = defaultdict(list)  # {session_id: [{role, content}, ...]}
+# V8.1 D5: 每个 session 记录最后访问时间，TTL 过期自动清理
+_session_store: dict = {}        # {session_id: {"history": [...], "last_access": timestamp}}
 _session_lock = threading.Lock()
-MAX_HISTORY_TURNS = 10  # 每个会话最多保留 10 轮对话
+MAX_HISTORY_TURNS = 10           # 每个会话最多保留 10 轮对话
+SESSION_TTL_SECONDS = 3600       # V8.1: 会话 1 小时无访问自动过期
+MAX_SESSIONS = 1000              # V8.1: 最多保留 1000 个会话，超出时清理最旧的
+
+
+def _cleanup_expired_sessions():
+    """清理过期会话（TTL 超时 + 总数上限）。调用方需持有 _session_lock"""
+    now = _time_module.time()
+    # 1. 清理 TTL 过期的会话
+    expired = [
+        sid for sid, v in _session_store.items()
+        if now - v.get("last_access", 0) > SESSION_TTL_SECONDS
+    ]
+    for sid in expired:
+        del _session_store[sid]
+    if expired:
+        logger.debug(f"会话清理: 过期 {len(expired)} 个，剩余 {len(_session_store)} 个")
+    # 2. 超过总数上限时，清理最旧的非活跃会话（LRU）
+    if len(_session_store) > MAX_SESSIONS:
+        sorted_sessions = sorted(
+            _session_store.items(), key=lambda x: x[1].get("last_access", 0)
+        )
+        overflow = len(_session_store) - MAX_SESSIONS
+        for sid, _ in sorted_sessions[:overflow]:
+            del _session_store[sid]
+        logger.warning(f"会话清理: 超过上限 {MAX_SESSIONS}，驱逐 {overflow} 个最旧会话")
 
 
 def _get_history(session_id: str) -> list:
     with _session_lock:
-        return list(_session_store.get(session_id, []))
+        entry = _session_store.get(session_id)
+        if entry:
+            entry["last_access"] = _time_module.time()
+            return list(entry.get("history", []))
+        return []
 
 
 def _save_turn(session_id: str, role: str, content: str, processing_time: float = 0.0,
                sources: list = None):
     """双写：内存缓存（读加速）+ chat_history 表（持久化）"""
     with _session_lock:
-        _session_store[session_id].append({"role": role, "content": content})
+        # V8.1 D5: 保存前先清理过期会话
+        _cleanup_expired_sessions()
+        if session_id not in _session_store:
+            _session_store[session_id] = {"history": [], "last_access": _time_module.time()}
+        entry = _session_store[session_id]
+        entry["history"].append({"role": role, "content": content})
+        entry["last_access"] = _time_module.time()
         # 超过上限时保留最近 N 轮
-        if len(_session_store[session_id]) > MAX_HISTORY_TURNS * 2:
-            _session_store[session_id] = _session_store[session_id][-(MAX_HISTORY_TURNS * 2):]
+        if len(entry["history"]) > MAX_HISTORY_TURNS * 2:
+            entry["history"] = entry["history"][-(MAX_HISTORY_TURNS * 2):]
     # ── V6.0: 同时写入 DB 持久化 ──
     from rag.retriever import save_chat_turn
     save_chat_turn(session_id, role, content, processing_time=processing_time, sources=sources)
@@ -81,9 +118,10 @@ async def clear_session(session_id: str = "default"):
     """
     清除指定会话的对话历史（内存 + 数据库）
     """
-    # 内存清除
-    if session_id in _session_store:
-        del _session_store[session_id]
+    # 内存清除（V8.1 D5: 加锁保证线程安全）
+    with _session_lock:
+        if session_id in _session_store:
+            del _session_store[session_id]
     # ── V6.0: 同步清除 DB 记录 ──
     db = SessionLocal()
     try:
@@ -260,7 +298,8 @@ async def chat(request: ChatRequest):
     session_id = request.session_id or "default"
     init_usage()  # V6.0: 初始化 token 计数
     history = _get_history(session_id)
-    result = rag_query(query=request.query, top_k=request.top_k, history=history)
+    # V8.1 D3: 用 asyncio.to_thread 卸载同步 LLM 调用，避免阻塞事件循环
+    result = await asyncio.to_thread(rag_query, query=request.query, top_k=request.top_k, history=history)
     save_token_usage(session_id, "rag_chat")  # V6.0: 持久化用量
     # 保存到会话历史（V6.0：双写内存+DB）
     _save_turn(session_id, "user", request.query)
@@ -297,11 +336,11 @@ async def chat_stream_endpoint(request: ChatRequest):
         processed_query = request.query
 
         try:
-            # Step 1: Query 处理
-            processed_query = process_query(request.query)
+            # Step 1: Query 处理（V8.1 D3: 卸载到线程池，避免阻塞事件循环）
+            processed_query = await asyncio.to_thread(process_query, request.query)
 
-            # Step 2: 混合检索
-            sources = hybrid_search(processed_query, top_k=request.top_k)
+            # Step 2: 混合检索（V8.1 D3: 卸载到线程池）
+            sources = await asyncio.to_thread(hybrid_search, processed_query, top_k=request.top_k)
             logger.info(f"[{session_id}] 流式检索到 {len(sources)} chunks")
 
             if not sources:
