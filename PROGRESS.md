@@ -2,7 +2,7 @@
 
 > 📅 最后更新：2026-07-12
 > 🎯 当前版本：**V8.1** — 质量打磨进行中
-> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ✅ → D-A安全防线 ✅ → D-B并发稳定 ✅ → D-C架构清理 ✅ → D-D质量收尾 ⏳
+> 🏗️ 状态：阶段A ✅ → 阶段B ✅ → 阶段C ✅ → V8.1 四阶段全部完成 ✅
 
 ---
 
@@ -139,9 +139,34 @@ python evaluation/v8_bench.py --layer rag     # RAG 15题
 | D9 | 会话统一 | `api/rag.py` | 统一为 `redis_client.SessionStore`，消除三套竞争 |
 | D13 | eval 替换 | `financial_query.py` | AST 白名单安全求值器，仅允许 + - * / |
 
-> 测试：全量验证中 | 核心：105/105 ✅
+> 测试：385/385 ✅ | 核心：105/105 ✅
 
-### D-D 质量收尾 ⏳ (D7+D8+D15-D21 共11项)
+### D-D 质量收尾 ✅
+
+| # | 修复 | 文件 | 说明 |
+|---|------|------|------|
+| D7 | ECharts 死代码 | `ReportView.tsx` | 移除 ~120KB 无用依赖 |
+| D8 | 类型断言 | 3 文件 | 消除 5 处 `as unknown as`，新增 `api.get<T>` |
+| D15 | 无用包 | `requirements.txt` | 移除 pydantic-settings, markdown |
+| D16 | tslib | `package.json` | esbuild 不需要 tslib |
+| D17 | 公司列表 | PresetAnalysis + main.py | 新增 `/api/v1/companies`，前端动态获取 |
+| D18 | 硬编码年份 | `PresetAnalysis.tsx` | 改为 `new Date().getFullYear()` |
+| D19 | 配置硬编码 | main.py + vite.config.ts | 端口/代理改用环境变量 |
+| D20 | CI 补全 | `test.yml` | 新增 frontend-test job |
+| D21 | .gitignore | `.gitignore` | 添加 `evaluation/reports/` |
+
+> 前端：14/14 ✅ | TypeScript：零错误 | CI：双 Job
+
+---
+## V8.1 总结
+
+| 阶段 | 项目数 | 测试 |
+|------|:--:|:--:|
+| D-A 安全防线 | 4 | 385/385 |
+| D-B 并发稳定 | 3 | 385/385 |
+| D-C 架构清理 | 3 | 385/385 |
+| D-D 质量收尾 | 11 | 14/14 前端 + 385/385 后端 |
+| **合计** | **21/21** | **全部通过** |
 
 ---
 ---
