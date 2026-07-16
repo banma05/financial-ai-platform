@@ -28,11 +28,12 @@ jobs:
           PYTHONPATH: backend
         run: |
           # ✅ rag/__init__.py 已改为惰性加载——轻量子模块可安全导入
-          # V8.2: 新增 test_text_utils/test_corpus_monitor/test_integration（mock 解除重依赖）
-          # 🔒 仍排除依赖重模型（sentence_transformers/pymupdf）的测试：
+          # 🔒 排除依赖重模型的测试（sentence_transformers/pymupdf/chromadb/langchain_chroma）：
           #    - test_pdf_loader.py: 需要 pymupdf
           #    - test_hybrid_search.py: 需要 sentence_transformers + chromadb
           #    - test_table_extraction.py: 需要 pymupdf + camelot
+          #    - test_integration.py: 需要 sentence_transformers + langchain_chroma（RAG 集成测试）
+          #    - test_corpus_monitor.py: 需要 langchain_chroma（语料库监控）
           python -m pytest \
             backend/tests/test_agent_financial_calc.py \
             backend/tests/test_param_injection.py \
@@ -46,8 +47,6 @@ jobs:
             backend/tests/test_query_processor.py \
             backend/tests/test_agent_planner.py \
             backend/tests/test_text_utils.py \
-            backend/tests/test_corpus_monitor.py \
-            backend/tests/test_integration.py \
             -q --tb=short
 
   frontend-test:
