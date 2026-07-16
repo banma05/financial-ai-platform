@@ -23,6 +23,8 @@ from .tools.chart import ChartTool
 from .tools.rag_context import RAGContextTool
 from utils.logger import TraceTimer, set_trace_id
 from rag.model_router import init_usage, save_token_usage
+# AGENT_TASK_TIMEOUT 不再在 executor_node 中使用（V8.2 安全修复：移除 ThreadPoolExecutor 嵌套）
+# 超时保护由 OpenAI client(60s) + 熔断器(5次→OPEN) 提供
 
 
 # ==================== State 定义 ====================
@@ -169,6 +171,12 @@ def executor_node(state: AgentState) -> dict:
                     for dep_id in task.depends_on if dep_id in result_map
                 ]
                 try:
+                    # V8.2: 直接调用执行（已有多层超时保护）
+                    # - OpenAI client 层：60s 超时（model_router.py:111）
+                    # - LLM 熔断器：5 次连续失败→熔断，30s 冷却（model_router.py:98-102）
+                    # - 不再使用 ThreadPoolExecutor(max_workers=1) 嵌套线程：
+                    #   V6.1 已发现 DAG 并行+线程嵌套导致 GPU 双重加载→OOM，
+                    #   ThreadPoolExecutor 嵌套同样有线程调度开销+锁竞争风险→系统不稳定
                     result = _executor.tools.execute_task(task, dep_results)
                     result_map[task.task_id] = result.model_dump()
                 except Exception as e:

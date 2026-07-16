@@ -54,6 +54,7 @@ export const handlers = [
     return HttpResponse.json(MOCK_TEMPLATES);
   }),
 
+  // ── V8.2: 同步接口（保留兼容）──
   http.post('/api/v1/agent/analyze', async ({ request }) => {
     const body = await request.json() as { query: string; template?: string };
     if (!body.query || body.query.trim().length === 0) {
@@ -65,6 +66,39 @@ export const handlers = [
     return HttpResponse.json({
       ...MOCK_ANALYSIS_RESULT,
       report: `## ${body.query}分析报告\n\n分析完成，耗时 2.5 秒。`,
+    });
+  }),
+
+  // ── V8.2: SSE 流式接口 ──
+  http.post('/api/v1/agent/analyze/stream', async ({ request }) => {
+    const body = await request.json() as { query: string; template?: string };
+    if (!body.query || body.query.trim().length === 0) {
+      return HttpResponse.json(
+        { detail: 'query 不能为空' },
+        { status: 422 },
+      );
+    }
+
+    // 构建 SSE 事件流
+    const events = [
+      JSON.stringify({ type: 'plan_start', task_count: 3, tasks: [
+        { id: '1', type: 'data_query', desc: '查询财务数据' },
+        { id: '2', type: 'calculate', desc: '计算盈利指标' },
+        { id: '3', type: 'analyze', desc: '综合分析生成结论' },
+      ], message: '已规划 3 个子任务' }),
+      JSON.stringify({ type: 'task_start', task_id: '1', description: '查询财务数据', task_idx: 1, total: 3 }),
+      JSON.stringify({ type: 'task_complete', task_id: '1', success: true, summary: '营收1709.90亿元，净利润862.28亿元' }),
+      JSON.stringify({ type: 'task_start', task_id: '2', description: '计算盈利指标', task_idx: 2, total: 3 }),
+      JSON.stringify({ type: 'task_complete', task_id: '2', success: true, summary: '毛利率92.01%，净利率50.56%，ROE36.99%' }),
+      JSON.stringify({ type: 'task_start', task_id: '3', description: '综合分析生成结论', task_idx: 3, total: 3 }),
+      JSON.stringify({ type: 'task_complete', task_id: '3', success: true, summary: '分析结论已生成' }),
+      JSON.stringify({ type: 'done', report: `## ${body.query}分析报告\n\n分析完成。`, charts: [], task_count: 3, processing_time: 2.5, message: '分析完成，耗时 2.5 秒' }),
+    ];
+
+    const sseText = events.map((e) => `data: ${e}\n\n`).join('');
+
+    return new HttpResponse(sseText, {
+      headers: { 'Content-Type': 'text/event-stream' },
     });
   }),
 
