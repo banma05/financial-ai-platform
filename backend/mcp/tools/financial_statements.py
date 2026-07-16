@@ -6,7 +6,7 @@ MCP 工具：财务报表查询
 """
 from typing import Dict, Any, Optional
 from loguru import logger
-from mcp import mock_data
+from mcp import datasource
 
 
 class FinancialStatementsTool:
@@ -32,7 +32,7 @@ class FinancialStatementsTool:
         """
         logger.info(f"[FinancialStatements] {symbol}, type={statement_type}")
 
-        result = mock_data.get_financial_statements(symbol, statement_type, period)
+        result = datasource.get_financial_statements(symbol, statement_type, period)
         if "error" in result:
             return {"success": False, "error": result["error"], "data": None}
 

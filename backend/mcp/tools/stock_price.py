@@ -5,7 +5,7 @@ MCP 工具：股票行情查询
 """
 from typing import Dict, Any, Optional
 from loguru import logger
-from mcp import mock_data
+from mcp import datasource
 
 
 class StockPriceTool:
@@ -29,7 +29,7 @@ class StockPriceTool:
         """
         logger.info(f"[StockPrice] 查询 {symbol}, period={period}")
 
-        result = mock_data.get_stock_price(symbol, period)
+        result = datasource.get_stock_price(symbol, period)
         if "error" in result:
             logger.warning(f"[StockPrice] {result['error']}")
             return {"success": False, "error": result["error"], "data": None}

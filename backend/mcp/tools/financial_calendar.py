@@ -5,7 +5,7 @@ MCP 工具：财报日历
 """
 from typing import Dict, Any
 from loguru import logger
-from mcp import mock_data
+from mcp import datasource
 
 
 class FinancialCalendarTool:
@@ -29,7 +29,7 @@ class FinancialCalendarTool:
         """
         logger.info(f"[FinancialCalendar] {symbol}, {year}")
 
-        result = mock_data.get_financial_calendar(symbol, year)
+        result = datasource.get_financial_calendar(symbol, year)
         if "error" in result:
             return {"success": False, "error": result["error"], "data": None}
 

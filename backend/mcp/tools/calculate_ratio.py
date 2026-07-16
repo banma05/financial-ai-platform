@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional
 from loguru import logger
 from agent.tools.financial_calc import FORMULA_REGISTRY
 from agent.tools.param_injection import FINANCIAL_TERM_TO_PARAM, parse_financial_value
-from mcp import mock_data
+from mcp import datasource
 
 
 class CalculateRatioTool:
@@ -60,12 +60,12 @@ class CalculateRatioTool:
         logger.info(f"[CalculateRatio] {symbol}, ratios={ratios}")
 
         # 1. 获取财务报表数据
-        stmt = mock_data.get_financial_statements(symbol, "all")
+        stmt = datasource.get_financial_statements(symbol, "all")
         if "error" in stmt:
             return {"success": False, "error": stmt["error"], "data": None}
 
         # 2. 获取股价（PE/PB 需要）
-        price_data = mock_data.get_stock_price(symbol)
+        price_data = datasource.get_stock_price(symbol)
 
         # 3. 组装公式参数
         params = self._assemble_params(stmt, price_data)
