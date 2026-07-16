@@ -1,5 +1,5 @@
 # 智能财务分析平台 — React 前端 (Vite)
-FROM node:24-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

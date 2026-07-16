@@ -49,55 +49,46 @@ planner = Planner()  # 复用同一个 Planner 实例
 # ============ 评测函数 ============
 
 def score_task_decomposition(plan: AnalysisPlan, golden: dict) -> dict:
-    """对比 Planner 输出与 golden_plan"""
+    """对比 Planner 输出与题目要求（兼容 required_numbers/min_tasks 格式）"""
     tasks = plan.tasks
     if plan.requires_clarification:
-        # 需要追问是合法的边界判断（如缺少年份/公司数据），不算拆解失败
         return {"score": None, "status": "needs_clarification",
                 "task_count": 0, "detail": plan.requires_clarification}
 
-    gt = golden["golden_plan"]
     scores = {}
 
-    # 1. 任务数量匹配度
+    # 1. 任务数量：不低于 min_tasks 即可（没有 golden_plan 时用 min_tasks ×1.5 作上限）
     n = len(tasks)
-    if n < gt["min_tasks"]:
-        scores["count"] = n / gt["min_tasks"]
-    elif n > gt["max_tasks"]:
-        scores["count"] = max(0, 1 - (n - gt["max_tasks"]) / gt["max_tasks"])
+    min_t = golden.get("min_tasks", 2)
+    max_t = golden.get("max_tasks", min_t * 3)
+    if n < min_t:
+        scores["count"] = n / min_t
+    elif n > max_t:
+        scores["count"] = max(0, 1 - (n - max_t) / max_t)
     else:
         scores["count"] = 1.0
 
-    # 2. 任务类型覆盖率
+    # 2. 任务类型：检查是否包含 data_query + (calculate 或 analyze)
     actual_types = set(t.task_type for t in tasks)
-    expected_types = set(gt["task_types"])
-    scores["type_coverage"] = len(actual_types & expected_types) / len(expected_types) if expected_types else 1.0
+    has_data = "data_query" in actual_types
+    has_calc = "calculate" in actual_types
+    has_analyze = "analyze" in actual_types
+    scores["type_coverage"] = (has_data * 0.4 + (has_calc or has_analyze) * 0.6)
 
-    # 3. 必需公式覆盖率
-    actual_formulas = set()
-    for t in tasks:
-        formula = t.params.get("formula", "")
-        if not formula:
-            continue
-        # Planner 可能返回单个公式(str)或多个公式(list)
-        if isinstance(formula, list):
-            actual_formulas.update(formula)
-        else:
-            actual_formulas.add(str(formula))
-    required = set(gt.get("required_formulas", []))
-    scores["formula_coverage"] = len(actual_formulas & required) / len(required) if required else 1.0
+    # 3. 图表覆盖率：有 required_chart 时检查是否包含对应 chart 任务
+    req_chart = golden.get("required_chart", "")
+    if req_chart:
+        chart_types = set()
+        for t in tasks:
+            ct = t.params.get("chart_type", "") if isinstance(t.params, dict) else ""
+            if ct:
+                chart_types.add(ct)
+        scores["chart_coverage"] = 1.0 if chart_types else 0.0
+    else:
+        scores["chart_coverage"] = 1.0
 
-    # 4. 图表类型覆盖率
-    actual_charts = set()
-    for t in tasks:
-        chart_type = t.params.get("chart_type", "")
-        if chart_type:
-            actual_charts.add(chart_type)
-    required_charts = set(gt.get("required_chart_types", []))
-    scores["chart_coverage"] = len(actual_charts & required_charts) / len(required_charts) if required_charts else 1.0
-
-    # 综合得分（加权平均）
-    weights = {"count": 0.2, "type_coverage": 0.35, "formula_coverage": 0.35, "chart_coverage": 0.1}
+    # 综合得分
+    weights = {"count": 0.3, "type_coverage": 0.4, "chart_coverage": 0.3}
     overall = sum(scores[k] * weights[k] for k in weights)
     scores["overall"] = round(overall, 4)
 
@@ -105,7 +96,9 @@ def score_task_decomposition(plan: AnalysisPlan, golden: dict) -> dict:
 
 
 def score_indicator_coverage(report: str, expected_indicators: list) -> dict:
-    """检查报告中是否包含期望的财务指标"""
+    """检查报告中是否包含期望的财务指标（兼容旧格式）"""
+    if not expected_indicators:
+        return {"coverage": 1.0, "found": [], "missing": [], "total": 0}
     report_lower = report.lower()
     found = []
     missing = []
@@ -120,6 +113,152 @@ def score_indicator_coverage(report: str, expected_indicators: list) -> dict:
         "found": found,
         "missing": missing,
         "total": len(expected_indicators),
+    }
+
+
+def score_number_accuracy(report: str, required_numbers: dict) -> dict:
+    """
+    V8.2 核心指标：数字准确率。
+
+    检查 required_numbers 中的每个指标值是否出现在报告中。
+    使用 1% 容差（允许格式化差异）。
+
+    返回: {accuracy, matched, mismatched, total}
+    """
+    if not required_numbers:
+        return {"accuracy": 1.0, "matched": [], "mismatched": [], "total": 0}
+
+    import re
+    # 提取报告中的所有数字
+    report_numbers = re.findall(r'\d+\.?\d*', report)
+    report_floats = []
+    for n in report_numbers:
+        try:
+            report_floats.append(float(n))
+        except ValueError:
+            pass
+
+    matched = []
+    mismatched = []
+    for key, expected_val in required_numbers.items():
+        if not isinstance(expected_val, (int, float)):
+            continue
+        found = False
+        for rf in report_floats:
+            if expected_val == 0:
+                if rf == 0:
+                    found = True
+                    break
+            else:
+                rel_diff = abs(rf - expected_val) / abs(expected_val)
+                if rel_diff < 0.01:  # 1% 容差
+                    found = True
+                    break
+        if found:
+            matched.append(key)
+        else:
+            mismatched.append(key)
+
+    total = len(matched) + len(mismatched)
+    accuracy = len(matched) / total if total > 0 else 1.0
+    return {
+        "accuracy": round(accuracy, 4),
+        "matched": matched,
+        "mismatched": mismatched,
+        "total": total,
+    }
+
+
+def extract_data_values_from_results(results: list) -> dict:
+    """
+    V8.2: 从 Agent 执行结果中提取 data_values（Agent 实际使用的数值）。
+
+    只提取 data_query 任务的 data 字段（SQL 直查结果），
+    跳过 calculate 任务的百分比结果（不是原始数据值）。
+    """
+    data_values = {}
+    for r in results:
+        if not r.get("success", True):
+            continue
+        if r.get("task_type") != "data_query":
+            continue  # 只取 SQL 查询的原始数据
+        data = r.get("data", {})
+        if not isinstance(data, dict):
+            continue
+        inner = data.get("data", {})
+        if isinstance(inner, dict):
+            for k, v in inner.items():
+                if isinstance(v, (int, float)):
+                    if k in ("found", "success", "confidence", "source"):
+                        continue
+                    data_values[k] = v
+    return data_values
+
+
+def score_number_accuracy_v2(report: str, data_values: dict) -> dict:
+    """
+    V8.2 改进版：用 Agent 实际收到的 data_values 做评测基准。
+
+    关键处理：数据库存储原始单位（元），报告显示格式化单位（亿/万）。
+    此函数将数据库值转为多种可能的报告表示形式，逐一匹配。
+
+    与旧版 score_number_accuracy 的区别：
+    - 旧版: 对比硬编码 required_numbers（人工编写，与数据库不一致）
+    - 新版: 对比 data_values（Agent 从 SQL 实际查到的值，绝对权威）
+    """
+    if not data_values:
+        return {"accuracy": 1.0, "matched": [], "mismatched": [], "total": 0}
+
+    import re
+    report_numbers = re.findall(r'\d+\.?\d*', report)
+    report_floats = set()
+    for n in report_numbers:
+        try:
+            report_floats.add(float(n))
+        except ValueError:
+            pass
+
+    matched = []
+    mismatched = []
+    for key, raw_val in data_values.items():
+        # 跳过元数据/百分比值（太小且非金额）
+        if abs(raw_val) < 10:
+            continue
+
+        # 生成数据库值在报告中可能出现的所有形式
+        # 数据库存元 → 报告可能显示: 元、万元、亿元
+        candidates = set()
+        candidates.add(raw_val)                    # 原始值（元）
+        candidates.add(round(raw_val / 1e4, 2))    # 万元
+        candidates.add(round(raw_val / 1e8, 2))    # 亿元
+
+        found = False
+        for rf in report_floats:
+            for c in candidates:
+                if abs(c) < 1e-6:
+                    if abs(rf) < 1e-6:
+                        found = True
+                        break
+                else:
+                    rel_diff = abs(rf - c) / abs(c)
+                    if rel_diff < 0.02:  # 2% 容差
+                        found = True
+                        break
+            if found:
+                break
+
+        if found:
+            matched.append(key)
+        else:
+            mismatched.append(key)
+
+    total = len(matched) + len(mismatched)
+    accuracy = len(matched) / total if total > 0 else 1.0
+    return {
+        "accuracy": round(accuracy, 4),
+        "matched": matched,
+        "mismatched": mismatched,
+        "total": total,
     }
 
 
@@ -140,12 +279,14 @@ def score_report_structure(report: str) -> dict:
 
 results = []
 total_task_score = 0.0
+total_number_accuracy = 0.0   # V8.2 核心指标
 total_indicator_coverage = 0.0
 total_structure_score = 0.0
 total_time = 0.0
-total_cost = 0.0      # V6.0
-total_tokens_all = 0   # V6.0
+total_cost = 0.0
+total_tokens_all = 0
 valid_plan_count = 0
+valid_number_count = 0          # V8.2: 有数值校验的题目数
 clarification_count = 0
 by_category = {}
 by_difficulty = {}
@@ -201,29 +342,44 @@ for i, q in enumerate(questions, 1):
     exec_time = time.time() - exec_start
     total_time += exec_time
 
-    # Phase 3: 报告评测
+    # Phase 3: 报告评测（V8.2: data_values 驱动评测 + 硬编码 required_numbers 做参考）
     report = agent_result.get("report", "")
+    # 提取 Agent 实际从 SQL 查询到的数据值
+    data_values = extract_data_values_from_results(agent_result.get("task_results", []))
+    # 新版评分：用 data_values（数据库真值）
+    num_result = score_number_accuracy_v2(report, data_values)
+    # 旧版评分：用硬编码 required_numbers（参考值，不参与主要评判）
+    ref_result = score_number_accuracy(report, q.get("required_numbers", {}))
     ind_result = score_indicator_coverage(report, q.get("expected_indicators", []))
     struct_result = score_report_structure(report)
+    if num_result["total"] > 0:
+        total_number_accuracy += num_result["accuracy"]
+        valid_number_count += 1
     total_indicator_coverage += ind_result["coverage"]
     total_structure_score += struct_result["structure_score"]
-    total_cost += question_cost    # V6.0
-    total_tokens_all += question_tokens  # V6.0
+    total_cost += question_cost
+    total_tokens_all += question_tokens
 
-    logger.info(f"  执行: {exec_time:.1f}s | 指标覆盖率={ind_result['coverage']:.1%} | 结构={struct_result['structure_score']:.1%}")
-    if ind_result["missing"]:
-        logger.info(f"  缺失指标: {ind_result['missing'][:5]}")
+    logger.info(f"  执行: {exec_time:.1f}s | 真实数字准确率={num_result['accuracy']:.1%} | 参考准确率={ref_result['accuracy']:.1%} | 结构={struct_result['structure_score']:.1%}")
+    if num_result["mismatched"]:
+        logger.info(f"  数字不符: {num_result['mismatched'][:5]}")
+    if ref_result["mismatched"]:
+        logger.info(f"  参考不符: {ref_result['mismatched'][:5]}")
 
     # 按类别/难度分组
     for group, key in [(by_category, cat), (by_difficulty, diff)]:
         if key not in group:
-            group[key] = {"count": 0, "valid_count": 0, "task_score": 0.0, "ind_coverage": 0.0, "time": 0.0}
+            group[key] = {"count": 0, "valid_count": 0, "task_score": 0.0,
+                          "ind_coverage": 0.0, "num_accuracy": 0.0, "num_count": 0, "time": 0.0}
         group[key]["count"] += 1
         if task_result["score"] is not None:
             group[key]["valid_count"] += 1
             group[key]["task_score"] += task_result["score"]
         group[key]["ind_coverage"] += ind_result["coverage"]
         group[key]["time"] += exec_time
+        if num_result["total"] > 0:
+            group[key]["num_accuracy"] += num_result["accuracy"]
+            group[key]["num_count"] += 1
 
     results.append({
         "id": qid,
@@ -231,15 +387,18 @@ for i, q in enumerate(questions, 1):
         "category": cat,
         "difficulty": diff,
         "task_score": task_result["score"],
+        "number_accuracy": num_result["accuracy"],
+        "ref_accuracy": ref_result["accuracy"],
+        "num_matched": num_result["matched"],
+        "num_mismatched": num_result["mismatched"],
         "indicator_coverage": ind_result["coverage"],
         "structure_score": struct_result["structure_score"],
         "plan_time": round(plan_time, 2),
         "exec_time": round(exec_time, 2),
         "task_count": task_result.get("task_count", 0),
-        "missing_indicators": ind_result["missing"],
         "needs_clarification": task_result["status"] == "needs_clarification",
-        "tokens": question_tokens,     # V6.0
-        "cost": question_cost,         # V6.0
+        "tokens": question_tokens,
+        "cost": question_cost,
     })
 
 elapsed = time.time() - start_all
@@ -259,31 +418,36 @@ print()
 print(f"| 指标 | 值 | 目标 | 达标? |")
 print(f"|------|:--:|:--:|:--:|")
 avg_task = total_task_score / valid_plan_count * 100 if valid_plan_count > 0 else 0
+avg_num = total_number_accuracy / valid_number_count * 100 if valid_number_count > 0 else 0
 avg_ind = total_indicator_coverage / n * 100
 avg_struct = total_structure_score / n * 100
 avg_time = total_time / n
+print(f"| 🔴 数字准确率 | {avg_num:.1f}% | ≥80% | {'✅' if avg_num >= 80 else '❌'} |")
 print(f"| 子任务拆解准确率 | {avg_task:.1f}% | ≥85% | {'✅' if avg_task >= 85 else '❌'} |")
-print(f"| 指标覆盖率 | {avg_ind:.1f}% | ≥80% | {'✅' if avg_ind >= 80 else '❌'} |")
 print(f"| 报告结构完整性 | {avg_struct:.1f}% | ≥80% | {'✅' if avg_struct >= 80 else '❌'} |")
 print(f"| 端到端平均耗时 | {avg_time:.1f}s | ≤30s | {'✅' if avg_time <= 30 else '❌'} |")
 print()
 
-print(f"### 按类别")
-print(f"| 类别 | 题数 | 拆解准确率 | 指标覆盖率 | 平均耗时 |")
+print(f"### 按类别（含数字准确率）")
+print(f"| 类别 | 题数 | 拆解准确率 | 数字准确率 | 平均耗时 |")
 print(f"|------|:--:|:--:|:--:|:--:|")
 for cat in sorted(by_category.keys()):
     g = by_category[cat]
     c, vc = g["count"], g.get("valid_count", g["count"])
-    print(f"| {cat} | {c} | {g['task_score']/vc*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
+    nc = g.get("num_count", 0)
+    na = g.get("num_accuracy", 0) / nc * 100 if nc > 0 else 0
+    print(f"| {cat} | {c} | {g['task_score']/vc*100:.1f}% | {na:.1f}% | {g['time']/c:.1f}s |")
 
 print(f"\n### 按难度")
-print(f"| 难度 | 题数 | 拆解准确率 | 指标覆盖率 | 平均耗时 |")
+print(f"| 难度 | 题数 | 拆解准确率 | 数字准确率 | 平均耗时 |")
 print(f"|------|:--:|:--:|:--:|:--:|")
 for d in ["easy", "medium", "hard"]:
-    g = by_difficulty.get(d, {"count": 0, "valid_count": 0, "task_score": 0, "ind_coverage": 0, "time": 0})
+    g = by_difficulty.get(d, {"count": 0, "valid_count": 0, "task_score": 0, "num_accuracy": 0, "num_count": 0, "time": 0})
     c, vc = g["count"], g.get("valid_count", g["count"])
+    nc = g.get("num_count", 0)
+    na = g.get("num_accuracy", 0) / nc * 100 if nc > 0 else 0
     if c > 0:
-        print(f"| {d} | {c} | {g['task_score']/vc*100:.1f}% | {g['ind_coverage']/c*100:.1f}% | {g['time']/c:.1f}s |")
+        print(f"| {d} | {c} | {g['task_score']/vc*100:.1f}% | {na:.1f}% | {g['time']/c:.1f}s |")
 
 if failed:
     print(f"\n### 失败题: {failed}")

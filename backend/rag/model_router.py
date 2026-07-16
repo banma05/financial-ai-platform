@@ -15,7 +15,7 @@ from loguru import logger
 from openai import OpenAI
 
 from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, AGENT_LLM_MODEL
-from utils.retry import llm_retry
+from utils.retry import llm_retry, CircuitBreaker, CircuitBreakerOpenError
 
 # ── V6.0: Token 用量追踪（contextvar，线程安全）──
 # 用法：请求开始时 _init_usage()，结束时 get_usage() + save_token_usage()
@@ -94,6 +94,13 @@ COMPLEX_KEYWORDS = [
 
 _client = None
 
+# ── V8.2: LLM 调用熔断器（5次连续失败→熔断，30s冷却）──
+_llm_circuit_breaker = CircuitBreaker(
+    name="llm_api",
+    failure_threshold=5,
+    cooldown_seconds=30.0,
+)
+
 
 def _get_client() -> OpenAI:
     global _client
@@ -123,12 +130,12 @@ def _resolve_task(query: Optional[str], task_type: TaskType) -> dict:
 
 
 @llm_retry(max_retries=3, base_delay=1.0)
-def chat(
+def _chat_impl(
     messages: list,
     task_type: TaskType = TaskType.AUTO,
     query: Optional[str] = None,
 ) -> str:
-    """LLM 调用，支持按任务类型调整参数"""
+    """LLM 调用实现（含重试），外层由熔断器保护"""
     if query is None:
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -151,12 +158,25 @@ def chat(
     return response.choices[0].message.content
 
 
+# V8.2: 熔断器包裹（外层：5次连续失败→熔断，30s冷却）
+chat = _llm_circuit_breaker(_chat_impl)
+chat.__name__ = "chat"
+chat.__doc__ = """LLM 调用（含重试+熔断保护：5次连续失败→熔断，30s冷却后半开探测）"""
+
+
 def chat_stream(
     messages: list,
     task_type: TaskType = TaskType.AUTO,
     query: Optional[str] = None,
 ):
-    """LLM 流式调用，逐 token 返回"""
+    """LLM 流式调用，逐 token 返回（V8.2: 熔断器状态检查）"""
+    # V8.2: 熔断器快速失败检查（生成器不能直接包裹，手动检查状态）
+    if _llm_circuit_breaker.state == _llm_circuit_breaker.OPEN:
+        raise CircuitBreakerOpenError(
+            f"[熔断器:llm_api] 电路断开中，"
+            f"{_llm_circuit_breaker.cooldown_seconds - (__import__('time').time() - _llm_circuit_breaker._opened_at):.0f}s 后恢复"
+        )
+
     if query is None:
         for msg in reversed(messages):
             if msg.get("role") == "user":

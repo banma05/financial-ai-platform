@@ -476,7 +476,7 @@ class Planner:
 5. analyze 任务通常放在最后
 6. 如果用户没有指定具体公司或年份，requires_clarification 设为需要追问的问题
 7. 如果需求足够明确，requires_clarification 设为 null
-8. 任务数量控制在 3-7 个，不要过度拆分
+8. 任务数量控制在 2-5 个，不要过度拆分。简单查询（单公司单指标）2 个任务即可（1 个 data_query + 1 个 analyze），复杂对比最多 5 个
 
 ## ⚠️ 参数精确性铁律（违反则任务执行失败）
 1. **formula 必须严格从上方"可用财务公式"列表中选取**，一字不差。需要多个公式时用逗号分隔："roe,net_profit_margin,gross_profit_margin"

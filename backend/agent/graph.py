@@ -495,6 +495,7 @@ def run_agent_sync(
             "charts": [r.chart_base64 for r in results if r.chart_base64],
             "task_count": len(plan.tasks),
             "processing_time": processing_time,
+            "task_results": [r.model_dump() for r in results],  # V8.2: 供评测提取 data_values
         }
         save_analysis_log(session_id, user_input, template_name,
                           task_count=len(plan.tasks),
@@ -537,6 +538,7 @@ def run_agent_sync(
         "charts": [r.get("chart_base64") for r in task_results if r.get("chart_base64")],
         "task_count": len(task_results),
         "processing_time": processing_time,
+        "task_results": task_results,  # V8.2: 供评测提取 data_values
     }
     save_analysis_log(session_id, user_input, template_name,
                       task_count=len(task_results),

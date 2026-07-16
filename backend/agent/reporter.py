@@ -96,7 +96,8 @@ class Reporter:
             sections.append(self._build_chart_section(chart_count))
 
         # 五、结论与建议（LLM 生成，含 RAG 上下文）
-        insights = self._generate_insights(user_input, data_summaries, calc_results, rag_insights)
+        # V8.2: 传入 data_values（结构化精确值）替代 data_summaries（文本），根除 LLM 数字幻觉
+        insights = self._generate_insights(user_input, data_values, calc_results, rag_insights)
         if insights:
             sections.append(insights)
 
@@ -180,41 +181,73 @@ class Reporter:
 > 共生成 {chart_count} 张图表，请在报告下方查看。"""
 
     def _generate_insights(
-        self, user_input: str, data_summaries: List[str],
+        self, user_input: str, data_values: dict,
         calc_results: List[dict], rag_insights: List[str] = None,
     ) -> str:
-        """LLM 生成分析洞察和建议（含 RAG 上下文）"""
-        if not data_summaries and not calc_results:
+        """
+        LLM 生成分析洞察和建议（V8.2 深层修复：用结构化数据替代文本，消除数字幻觉）。
+
+        V8.2 根因修复：
+        - 旧版传入 data_summaries（文本），LLM 需要"阅读"文本再提取数字 → 引入幻觉
+        - 新版传入 data_values（dict），以表格呈现精确值，LLM 只需引用 → 零幻觉
+        - 添加铁律约束：禁止修改任何数字，禁止四舍五入，禁止凭记忆补充
+        """
+        if not data_values and not calc_results:
             return ""
 
-        # 构建 LLM 上下文
-        context = f"用户需求：{user_input}\n\n"
+        # ── 构建结构化数据表格（V8.2：替代旧版文本拼接）──
+        context_parts = [f"## 用户需求\n{user_input}\n"]
 
-        if data_summaries:
-            context += "## 检索到的数据\n" + "\n".join(f"- {s}" for s in data_summaries) + "\n\n"
+        # 数据概览表格
+        if data_values:
+            context_parts.append("## 精确数据表（⚠️ 以下数值为权威来源，必须严格使用，禁止修改）\n")
+            context_parts.append("| 指标名称 | 精确数值 |")
+            context_parts.append("|----------|----------|")
+            for k, v in data_values.items():
+                context_parts.append(f"| {k} | {self._fmt_num(v)} |")
+            context_parts.append("")
 
+        # 计算结果
         if calc_results:
-            context += "## 计算结果\n"
+            context_parts.append("## 指标计算结果（⚠️ 以下数值已经过精确计算，禁止重新计算或估算）\n")
+            context_parts.append("| 指标 | 计算结果 | 计算公式 |")
+            context_parts.append("|------|----------|----------|")
             for cr in calc_results:
                 if cr.get("success") and cr.get("result") is not None:
-                    context += f"- {cr.get('display_name', '指标')}: {cr['result']}{cr.get('unit', '')}\n"
+                    display = cr.get("display_name", "指标")
+                    result = cr.get("result", "")
+                    expr = cr.get("expression", "")
+                    context_parts.append(f"| {display} | {result}{cr.get('unit', '')} | {expr} |")
+            context_parts.append("")
 
+        # RAG 原文解读
         if rag_insights:
-            context += "\n## 年报/研报原文解读\n"
+            context_parts.append("## 年报/研报原文解读（仅供参考，不覆盖数据表中的精确值）\n")
             for ins in rag_insights:
-                context += f"- {ins}\n"
+                context_parts.append(f"- {ins}")
+            context_parts.append("")
+
+        context = "\n".join(context_parts)
 
         prompt = f"""{context}
 
-请基于以上数据和计算结果，生成一份专业的财务分析结论。要求：
+请基于以上精确数据，生成专业的财务分析结论。
 
-1. **核心发现**（2-3 条）：从数据中提炼最关键的趋势或异常
+## ⚠️ 数字准确性铁律（违反任一条即为严重错误）
+
+1. **只能使用上面表格中的精确数值**，不得做任何修改
+2. **禁止四舍五入**：表中写 36.99 就必须写 36.99，不能写"约37"或"37%"
+3. **禁止自行计算**：所有指标值已在上面给出，不要重新计算（可能因精度差异产生偏差）
+4. **禁止凭记忆补充**：即使你知道某公司的其他数据，如果上面表格中没有，就不能写
+5. **数据不足就说不足**：如果某个分析维度缺少数据，坦诚说明，不要编造
+
+## 输出格式要求
+
+1. **核心发现**（2-3 条）：从数据中提炼最关键的趋势或异常，每个数字必须与上面表格一致
 2. **分析解读**：解释指标背后的业务含义
 3. **建议**（1-2 条）：基于分析给出合理建议
 4. 语言简洁专业，每条控制在 2-3 句话
-5. 如果数据不足无法判断，坦诚说明而非编造
-6. **V6.0 新增：每条核心发现和建议后标注置信度 `[置信度: XX%]`**
-   - 置信度基于：数据完整性、数据时效性、推理确定性
+5. 每条核心发现和建议后标注置信度 `[置信度: XX%]`
    - 数据充分且结论明确：85-95%
    - 部分推断或数据有限：60-80%
    - 高度不确定：30-55%
@@ -223,26 +256,131 @@ class Reporter:
 ## 六、结论与建议
 
 ### 核心发现
-- **发现1** [置信度: 85%]
-- **发现2** [置信度: 70%]
+- **发现1**：...[置信度: 85%]
+- **发现2**：...[置信度: 70%]
 
 ### 分析解读
 ...
 
 ### 建议
-- **建议1** [置信度: 80%]"""
+- **建议1**：...[置信度: 80%]"""
 
         try:
             messages = [
-                {"role": "system", "content": "你是一位资深的财务分析师。请基于提供的数据给出专业、诚实的分析。"},
+                {"role": "system", "content": (
+                    "你是一位资深财务分析师。你的分析必须严格基于提供的精确数据表。"
+                    "表中的每个数字都是权威来源，禁止修改、禁止四舍五入、禁止自行计算、禁止凭记忆补充。"
+                    "如果表格中没有某个数据，就坦诚说缺少该数据。"
+                )},
                 {"role": "user", "content": prompt},
             ]
             response = chat(messages, query=user_input, task_type=TaskType.SIMPLE)
-            return response
+            # ── V8.2: 后处理数值校验 ──
+            return self._verify_numbers(response, data_values, calc_results)
         except Exception as e:
             logger.warning(f"LLM 生成洞察失败: {e}")
-            return f"""## 六、结论与建议
+            # 降级：直接基于计算结果显示
+            return self._build_fallback_insights(data_values, calc_results)
 
-> 基于以上数据指标，各项财务指标已计算完成。详细分析解读请参考指标计算章节。
+    def _verify_numbers(
+        self, response: str, data_values: dict, calc_results: List[dict]
+    ) -> str:
+        """
+        V8.2 后处理数值校验：检查 LLM 输出中的数字是否与数据源一致。
 
-*注：AI 深度分析生成失败（{e}），请手动解读。*"""
+        策略：
+        1. 先剔除元数据文本（置信度标注、Markdown 表格分隔行）避免误报
+        2. 提取剩余文本中的数字，与 data_values 和 calc_results 对比
+        3. 使用 1% 相对容差 + 0.1 绝对容差（兼容格式化后的数值差异）
+        4. 发现不一致时记录警告（不修改输出，保持可读性，但标记潜在幻觉供评测追踪）
+        """
+        import re
+
+        # ── 预处理：剔除元数据文本，避免误报 ──
+        cleaned = response
+        # 移除置信度标注 [置信度: XX%] 及其中的数字
+        cleaned = re.sub(r'\[置信度[：:]\s*\d+%\]', '', cleaned)
+        # 移除 Markdown 表格分隔行（如 |---|:--:|...）
+        cleaned = re.sub(r'^\s*\|[\s\-:|]+\|\s*$', '', cleaned, flags=re.MULTILINE)
+
+        # 提取清理后文本中的所有数字（含小数点）
+        numbers_in_output = re.findall(r'\d+\.?\d*', cleaned)
+        if not numbers_in_output:
+            return response
+
+        # 构建"允许出现的数字"集合（来自数据源）
+        allowed_values = set()
+        for v in data_values.values():
+            if isinstance(v, (int, float)):
+                allowed_values.add(str(v))
+                allowed_values.add(self._fmt_num(v))
+
+        for cr in calc_results:
+            if cr.get("success") and cr.get("result") is not None:
+                r = cr.get("result")
+                allowed_values.add(str(r))
+                allowed_values.add(self._fmt_num(r))
+
+        # 解析所有允许值及其格式化变体为 float 列表（用于容差比较）
+        allowed_floats = []
+        for av in allowed_values:
+            try:
+                allowed_floats.append(float(av))
+            except ValueError:
+                pass
+
+        # 检查输出中的数字
+        suspicious = []
+        for num in numbers_in_output:
+            # 年份数字跳过
+            if re.match(r'^20\d{2}$', num):
+                continue
+            # 小于 100 的整数跳过（通常是百分比置信度、序号等元数据，非财务数值）
+            try:
+                if '.' not in num and int(num) < 100:
+                    continue
+            except ValueError:
+                continue
+
+            # 精确匹配
+            if num in allowed_values:
+                continue
+
+            # 容差匹配：1% 相对容差 或 0.1 绝对容差
+            found_close = False
+            try:
+                num_f = float(num)
+                for af in allowed_floats:
+                    if af == 0:
+                        continue
+                    rel_diff = abs(num_f - af) / abs(af)
+                    abs_diff = abs(num_f - af)
+                    if rel_diff < 0.01 or abs_diff < 0.1:
+                        found_close = True
+                        break
+            except ValueError:
+                pass
+
+            if not found_close:
+                suspicious.append(num)
+
+        if suspicious:
+            logger.warning(
+                f"[数值校验] 发现 {len(suspicious)} 个未在数据源中的数字: {suspicious[:5]}"
+            )
+
+        return response
+
+    def _build_fallback_insights(self, data_values: dict, calc_results: List[dict]) -> str:
+        """V8.2 降级方案：LLM 调用失败时，基于结构化数据直接生成结论（零 LLM）"""
+        lines = ["## 六、结论与建议", "", "> ⚠️ AI 深度分析暂时不可用，以下为基于数据的自动摘要。"]
+        lines.append("")
+        lines.append("### 关键指标")
+        for k, v in data_values.items():
+            lines.append(f"- **{k}**：{self._fmt_num(v)}")
+        for cr in calc_results:
+            if cr.get("success") and cr.get("result") is not None:
+                lines.append(f"- **{cr.get('display_name', '指标')}**：{cr['result']}{cr.get('unit', '')}")
+        lines.append("")
+        lines.append("*注：以上为自动生成的数据摘要。AI 深度分析生成失败，请手动解读或重试。*")
+        return "\n".join(lines)
