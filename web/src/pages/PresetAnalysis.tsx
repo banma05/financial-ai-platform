@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { api } from '@/api/client';
 import { useAnalysisStore, type Template, type AnalysisResult } from '@/stores/analysis';
+import { useAnalysisStream } from '@/hooks/useAnalysisStream';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 /** 公司信息 */
@@ -31,6 +32,9 @@ export default function PresetAnalysis() {
   const [showResult, setShowResult] = useState(false);  // 本地视图切换，不清 store
   const [companies, setCompanies] = useState<CompanyInfo[]>([]);
 
+  // V8.2: 流式分析 hook（替代同步 api.post）
+  const { progress, startStream, abort } = useAnalysisStream();
+
   // V8.1 D17: 从后端 API 动态获取公司列表
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +61,7 @@ export default function PresetAnalysis() {
     return () => { cancelled = true; };
   }, [templates.length, setTemplates, setError]);
 
-  // 开始分析
+  // V8.2: 流式分析 — SSE 实时推送进度，告别 16 秒白屏
   const handleAnalyze = useCallback(async () => {
     if (!selectedCompany || isAnalyzing) return;
 
@@ -65,19 +69,42 @@ export default function PresetAnalysis() {
     const query = customQuery.trim() || `${selectedCompany} ${template?.display_name || '财务分析'}`;
 
     setAnalyzing(true);
+    setShowResult(false);
 
     try {
-      const data = await api.post<AnalysisResult>('/agent/analyze', {
+      await startStream({
         query,
         template: selectedTemplate || undefined,
-        session_id: `preset-${Date.now()}`,
       });
-      setResult(data);
-      setShowResult(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '分析请求失败');
+    } catch {
+      // 错误由 progress.phase === 'error' 处理
     }
-  }, [selectedCompany, selectedTemplate, customQuery, templates, isAnalyzing, setAnalyzing, setResult, setError]);
+  }, [selectedCompany, selectedTemplate, customQuery, templates, isAnalyzing, setAnalyzing, startStream]);
+
+  // 流式完成后同步结果到 store
+  useEffect(() => {
+    if (progress.phase === 'done' && progress.report && isAnalyzing) {
+      setResult({
+        report: progress.report,
+        charts: progress.charts,
+        processing_time: progress.processingTime ?? 0,
+        task_count: progress.total,
+        clarification: null,
+      });
+      setAnalyzing(false);
+      setShowResult(true);
+    }
+    if (progress.phase === 'error' && isAnalyzing) {
+      setError(progress.error || '分析失败');
+      setAnalyzing(false);
+    }
+  }, [progress.phase, progress.report, progress.error, isAnalyzing, setResult, setAnalyzing, setError, setShowResult]);
+
+  // 取消分析
+  const handleCancel = useCallback(() => {
+    abort();
+    setAnalyzing(false);
+  }, [abort, setAnalyzing]);
 
   // 推荐分析问题（根据公司+模板动态生成）
   const recommendedQuestions = (() => {
@@ -248,6 +275,56 @@ export default function PresetAnalysis() {
         </div>
       )}
 
+      {/* ── V8.2: 流式分析进度 ── */}
+      {isAnalyzing && progress.phase !== 'idle' && (
+        <section className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-800">
+              {progress.phase === 'planning' && '🔍 正在规划分析步骤...'}
+              {progress.phase === 'executing' && `⚡ ${progress.currentTask || '执行中...'}`}
+              {progress.phase === 'done' && '✅ 分析完成'}
+              {progress.phase === 'error' && '❌ 分析失败'}
+            </span>
+            <button
+              onClick={handleCancel}
+              className="text-xs text-blue-500 hover:text-red-500 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+          {/* 进度条 */}
+          {progress.total > 0 && (
+            <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${Math.round((progress.completed / progress.total) * 100)}%` }}
+              />
+            </div>
+          )}
+          {/* 子任务列表 */}
+          {progress.tasks.length > 0 && (
+            <div className="space-y-0.5">
+              {progress.tasks.map((t) => (
+                <div key={t.id} className="flex items-center gap-1.5 text-xs">
+                  <span>{t.success ? '✅' : t.summary ? '❌' : '⏳'}</span>
+                  <span className={t.success ? 'text-green-700' : 'text-gray-500'}>
+                    {t.desc}
+                  </span>
+                  {t.summary && (
+                    <span className="text-gray-400 truncate">— {t.summary}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {progress.phase === 'done' && (
+            <p className="text-xs text-blue-600 mt-2">
+              总耗时 {progress.processingTime?.toFixed(1)} 秒 · {progress.total} 个子任务
+            </p>
+          )}
+        </section>
+      )}
+
       {/* 分析按钮 */}
       <button
         onClick={handleAnalyze}
@@ -256,9 +333,9 @@ export default function PresetAnalysis() {
           canAnalyze
             ? 'bg-blue-600 text-white hover:bg-blue-700'
             : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-        } ${isAnalyzing ? 'animate-pulse' : ''}`}
+        } ${isAnalyzing ? 'hidden' : ''}`}
       >
-        {isAnalyzing ? '分析中...' : '开始分析'}
+        开始分析
       </button>
     </div>
   );

@@ -32,7 +32,7 @@ def get_embedding_model() -> HuggingFaceEmbeddings:
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 _embedding_model = HuggingFaceEmbeddings(
                     model_name=model_path,
-            model_kwargs={"device": device},
-            encode_kwargs={"normalize_embeddings": True},
-        )
+                    model_kwargs={"device": device},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
     return _embedding_model
