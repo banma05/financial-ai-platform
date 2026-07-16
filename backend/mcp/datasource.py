@@ -12,9 +12,9 @@ MCP 数据提供器 — AKShare 真实数据优先 + Mock 兜底
 V8.2: 接入熔断器 — AKShare 连续 3 次失败→熔断 60s，防止外部数据源故障拖垮系统。
 """
 
-import time
 from typing import Dict, List, Optional, Any
 from datetime import date, timedelta
+from contextlib import contextmanager
 from loguru import logger
 
 from utils.retry import CircuitBreaker, CircuitBreakerOpenError
@@ -24,26 +24,37 @@ from utils.retry import CircuitBreaker, CircuitBreakerOpenError
 _USE_AKSHARE = True  # True=优先AKShare真实数据, False=只用Mock
 
 # ── V8.2: AKShare 熔断器（3次连续失败→熔断，60s冷却）──
-_akshare_circuit_breaker = CircuitBreaker(
+_akshare_cb = CircuitBreaker(
     name="akshare",
     failure_threshold=3,
     cooldown_seconds=60.0,
 )
 
 
-def _guard_akshare_call() -> bool:
+@contextmanager
+def _akshare_guard():
     """
-    V8.2: AKShare 调用守卫 — 熔断器快速失败检查。
+    V8.2: AKShare 调用守卫（上下文管理器），自动处理熔断+结果上报。
 
-    返回 True 表示可以调用 AKShare，False 表示熔断器断路，应降级 Mock。
-    调用成功后必须显式调用 _akshare_circuit_breaker._on_success()，
-    调用失败时调用 _akshare_circuit_breaker._on_failure()。
+    用法:
+        with _akshare_guard() as ok:
+            if not ok:
+                return  # 熔断中 → 调用方降级 Mock
+            result = ... AKShare 调用 ...
+        return result  # 成功 → 自动上报 _on_success()
+
+    异常时自动上报 _on_failure() 并继续抛出，由外层 try/except 捕获降级。
     """
-    cb = _akshare_circuit_breaker
-    if cb.state == cb.OPEN:
-        logger.warning(f"[AKShare熔断] 电路断开（冷却{cb.cooldown_seconds}s），本次降级Mock")
-        return False
-    return True
+    if _akshare_cb.state == _akshare_cb.OPEN:
+        logger.warning(f"[AKShare熔断] 电路断开（冷却{_akshare_cb.cooldown_seconds}s），降级Mock")
+        yield False
+        return
+    try:
+        yield True
+        _akshare_cb._on_success()
+    except Exception:
+        _akshare_cb._on_failure()
+        raise
 
 # ==================== 标的索引 ====================
 
@@ -69,14 +80,12 @@ def get_stock_price(symbol: str, period: str = "realtime") -> Dict[str, Any]:
     name = SYMBOLS.get(norm)
 
     if _USE_AKSHARE and norm in ("600519", "002594"):
-        if _guard_akshare_call():
-            try:
-                result = _akshare_stock_price(norm, name, period)
-                _akshare_circuit_breaker._on_success()
-                return result
-            except Exception as e:
-                _akshare_circuit_breaker._on_failure()
-                logger.info(f"[AKShare] 行情获取失败({symbol})，静默降级 Mock")
+        with _akshare_guard() as ok:
+            if ok:
+                try:
+                    return _akshare_stock_price(norm, name, period)
+                except Exception:
+                    logger.info(f"[AKShare] 行情获取失败({symbol})，降级Mock")
 
     return _mock_stock_price(norm, period)
 
@@ -156,14 +165,12 @@ def get_financial_statements(
     name = SYMBOLS.get(norm)
 
     if _USE_AKSHARE and norm in ("600519", "002594"):
-        if _guard_akshare_call():
-            try:
-                result = _akshare_statements(norm, name, statement_type)
-                _akshare_circuit_breaker._on_success()
-                return result
-            except Exception as e:
-                _akshare_circuit_breaker._on_failure()
-                logger.info(f"[AKShare] 报表获取失败({symbol})，静默降级 Mock")
+        with _akshare_guard() as ok:
+            if ok:
+                try:
+                    return _akshare_statements(norm, name, statement_type)
+                except Exception:
+                    logger.info(f"[AKShare] 报表获取失败({symbol})，降级Mock")
 
     return _mock_statements(norm, statement_type)
 
@@ -237,22 +244,18 @@ def get_industry_comparison(
     if not metrics:
         metrics = ["pe", "pb", "roe", "revenue_growth"]
 
-    # AKShare 补充最新股价（用于 PE/PB 实时推算）— V8.2: 熔断器保护
-    if _USE_AKSHARE and _guard_akshare_call():
-        akshare_ok = True
-        for peer in peers:
-            code = peer.get("code", "").replace(".SH", "").replace(".SZ", "")
-            try:
-                price = _akshare_latest_price(code)
-                if price:
-                    peer["price"] = price
-            except Exception as e:
-                logger.debug(f"行业对比-个股价格获取失败({code}): {e}")
-                akshare_ok = False
-        if akshare_ok:
-            _akshare_circuit_breaker._on_success()
-        else:
-            _akshare_circuit_breaker._on_failure()
+    # V8.2: 熔断器保护 — 批量获取同行最新股价
+    if _USE_AKSHARE:
+        with _akshare_guard() as ok:
+            if ok:
+                for peer in peers:
+                    code = peer.get("code", "").replace(".SH", "").replace(".SZ", "")
+                    try:
+                        price = _akshare_latest_price(code)
+                        if price:
+                            peer["price"] = price
+                    except Exception:
+                        logger.debug(f"行业对比-个股价格获取失败({code})")
 
     target_name = SYMBOLS.get(norm, symbol)
     target_peer = next((p for p in peers if p["name"] == target_name), None)
@@ -288,14 +291,12 @@ def _akshare_latest_price(code: str) -> Optional[float]:
 
 def get_market_index(index: str = "sh000001") -> Dict[str, Any]:
     if _USE_AKSHARE:
-        if _guard_akshare_call():
-            try:
-                result = _akshare_index(index)
-                _akshare_circuit_breaker._on_success()
-                return result
-            except Exception as e:
-                _akshare_circuit_breaker._on_failure()
-                logger.info(f"[AKShare] 指数获取失败({index})，静默降级 Mock")
+        with _akshare_guard() as ok:
+            if ok:
+                try:
+                    return _akshare_index(index)
+                except Exception:
+                    logger.info(f"[AKShare] 指数获取失败({index})，降级Mock")
 
     data = _INDEX_DATA.get(index)
     if not data:
@@ -329,18 +330,17 @@ def get_financial_calendar(symbol: str, year: int = 2026) -> Dict[str, Any]:
     # 从 Mock 获取基础事件
     events = list(_CALENDAR_DATA.get((norm, year), _CALENDAR_DATA.get(("default", year), [])))
 
-    # AKShare 补充真实分红日期 — V8.2: 熔断器保护
-    if _USE_AKSHARE and norm in ("600519", "002594") and _guard_akshare_call():
-        try:
-            div_events = _akshare_dividends(norm, year)
-            _akshare_circuit_breaker._on_success()
-            # 替换 Mock 中的分红事件为真实日期
-            events = [e for e in events if e["event_type"] != "dividend"]
-            events.extend(div_events)
-            events.sort(key=lambda x: x["date"])
-        except Exception as e:
-            _akshare_circuit_breaker._on_failure()
-            logger.info(f"[AKShare] 分红日历获取失败({symbol})，静默降级 Mock")
+    # V8.2: 熔断器保护 — AKShare 补充真实分红日期
+    if _USE_AKSHARE and norm in ("600519", "002594"):
+        with _akshare_guard() as ok:
+            if ok:
+                try:
+                    div_events = _akshare_dividends(norm, year)
+                    events = [e for e in events if e["event_type"] != "dividend"]
+                    events.extend(div_events)
+                    events.sort(key=lambda x: x["date"])
+                except Exception:
+                    logger.info(f"[AKShare] 分红日历获取失败({symbol})，降级Mock")
 
     return {"symbol": symbol, "name": name, "year": year, "events": events, "event_count": len(events)}
 

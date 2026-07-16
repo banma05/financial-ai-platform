@@ -53,7 +53,7 @@ backend/
 │   ├── hybrid_search.py, query_processor.py, entity_router.py
 │   ├── jieba_tokenizer.py, evaluator.py, model_router.py, retriever.py
 │   ├── keywords.py, corpus_manager.py
-├── mcp/                     # MCP 6工具（mock_data + tools/）
+├── mcp/                     # MCP 6工具（datasource.py + tools/）
 ├── db/                      # SQLite 业务库
 ├── api/                     # FastAPI 路由（rag + agent）
 ├── models/                  # Pydantic 数据模型

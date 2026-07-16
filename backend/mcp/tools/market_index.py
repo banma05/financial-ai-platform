@@ -5,7 +5,7 @@ MCP 工具：市场指数行情
 """
 from typing import Dict, Any
 from loguru import logger
-from mcp import mock_data
+from mcp import datasource
 
 
 class MarketIndexTool:
@@ -33,7 +33,7 @@ class MarketIndexTool:
         """
         logger.info(f"[MarketIndex] {index}")
 
-        result = mock_data.get_market_index(index)
+        result = datasource.get_market_index(index)
         if "error" in result:
             return {"success": False, "error": result["error"], "data": None}
 

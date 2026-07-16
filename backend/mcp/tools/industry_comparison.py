@@ -5,7 +5,7 @@ MCP 工具：行业对比分析
 """
 from typing import Dict, Any, List, Optional
 from loguru import logger
-from mcp import mock_data
+from mcp import datasource
 
 
 class IndustryComparisonTool:
@@ -29,7 +29,7 @@ class IndustryComparisonTool:
         """
         logger.info(f"[IndustryComparison] {symbol}, metrics={metrics}")
 
-        result = mock_data.get_industry_comparison(symbol, metrics)
+        result = datasource.get_industry_comparison(symbol, metrics)
         if "error" in result:
             return {"success": False, "error": result["error"], "data": None}
 
