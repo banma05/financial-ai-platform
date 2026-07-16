@@ -26,9 +26,11 @@ from loguru import logger
 # ============ V8.1 D13: 安全数学表达式求值器（替换 eval） ============
 
 # 白名单：仅允许数学运算的 AST 节点类型
+# V8.2 修复：添加 ast.Load/ast.Store/ast.Del 上下文节点（变量引用标记，非可执行代码）
 _ALLOWED_NODES = {ast.Expression, ast.BinOp, ast.UnaryOp, ast.Name, ast.Constant,
                   ast.Add, ast.Sub, ast.Mult, ast.Div,
-                  ast.USub, ast.UAdd}
+                  ast.USub, ast.UAdd,
+                  ast.Load, ast.Store, ast.Del}
 _MAX_EXPR_LENGTH = 200  # 公式最大字符数，防止极端输入
 
 
@@ -60,7 +62,8 @@ def _safe_eval(expression: str, variables: dict) -> float:
 
     # 编译并执行（此时 AST 已通过安全验证）
     code = compile(tree, '<formula>', 'eval')
-    return code.eval({}, variables)
+    # V8.2 修复：Python 3.12 中 code 对象没有 .eval() 方法，使用内置 eval()
+    return eval(code, {"__builtins__": {}}, variables)
 
 # ── 公司名 → symbol 映射 ──
 COMPANY_ALIASES: Dict[str, str] = {
