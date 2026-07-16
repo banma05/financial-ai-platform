@@ -1,37 +1,52 @@
-# 智能财务分析平台 — FastAPI 后端
+# ============================================================
+# 智能财务分析平台 — FastAPI 后端 (V8.2)
+#
+# 构建: docker build -t fa-backend -f Dockerfile.backend .
+# 运行: docker run -p 8001:8001 \
+#          -v ./data:/app/data \
+#          -e DEEPSEEK_API_KEY=sk-xxx \
+#          fa-backend
+#
+# 注意: 模型文件 (~3GB) 通过 volume 挂载，不在镜像中。
+#       首次启动会自动从 HuggingFace 下载缺失的模型。
+# ============================================================
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# 系统依赖（PyMuPDF + matplotlib）
+# ── 系统依赖 ──
+# libgl1: OpenGL（matplotlib 图表渲染）
+# libglib2.0-0t64 + libsm6 + libxext6 + libxrender1: PyMuPDF PDF 解析
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
+    libgl1 libglib2.0-0t64 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
+# ── Python 依赖 ──
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir redis
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 项目代码
+# ── 应用代码 ──
 COPY backend/ ./backend/
-COPY data/ ./data/
-COPY evaluation/ ./evaluation/
 COPY scripts/ ./scripts/
 
-# 环境变量
+# ── 创建运行时数据目录 ──
+RUN mkdir -p /app/data/documents /app/data/chroma_db /app/data/charts /app/logs
+
+# ── 环境变量 ──
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/backend
+ENV PYTHONPATH=/app
 ENV DEEPSEEK_API_KEY=""
 ENV CHROMA_PERSIST_DIR=/app/data/chroma_db
 ENV LOCAL_MODEL_PATH=/app/data/models/BAAI/bge-base-zh-v1___5
 ENV CHART_OUTPUT_DIR=/app/data/charts
 ENV UPLOAD_DIR=/app/data/documents
-ENV HF_HOME=/app/data/models
-
-# GPU 支持（可选，无 GPU 时自动回退 CPU）
 ENV TOKENIZERS_PARALLELISM=false
+ENV EVAL_LIGHT=0
 
 EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1
 
 CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]

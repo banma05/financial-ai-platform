@@ -1,7 +1,21 @@
+# ============================================================
+# 智能财务分析平台 — Docker Compose (V8.2)
+#
+# 启动:  docker-compose up -d
+# 查看:  docker-compose logs -f
+# 停止:  docker-compose down
+#
+# 服务: Redis (会话+限流) → Backend (:8001) → Frontend (:80)
+#
+# 首次启动前:
+#   1. 确保 data/models/ 下有嵌入模型（否则自动从 HuggingFace 下载，耗时较长）
+#   2. 设置 DEEPSEEK_API_KEY 环境变量（或创建 .env 文件）
+# ============================================================
+
 version: "3.8"
 
 services:
-  # ── Redis（会话 + 限流）──
+  # ── Redis（会话存储 + API 限流）──
   redis:
     image: redis:7-alpine
     container_name: fa-redis
@@ -25,43 +39,35 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      # 数据持久化
-      - ./data/documents:/app/data/documents
-      - ./data/chroma_db:/app/data/chroma_db
-      - ./data/models:/app/data/models
-      - ./data/charts:/app/data/charts
+      # 数据目录全量挂载（documents + chroma_db + charts + platform.db）
+      - ./data:/app/data
+      # 模型文件只读挂载（覆盖 data/models，防止容器内误修改）
+      - ./data/models:/app/data/models:ro
+      # 日志
       - ./logs:/app/logs
-      # 评测数据
-      - ./evaluation/data:/app/evaluation/data
-      - ./evaluation/reports:/app/evaluation/reports
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app/backend
       - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - LOCAL_MODEL_PATH=/app/data/models/BAAI/bge-base-zh-v1___5
+      - CHART_OUTPUT_DIR=/app/data/charts
+      - UPLOAD_DIR=/app/data/documents
       - TOKENIZERS_PARALLELISM=false
-      # GPU（有则加 deploy.resources）
+      # 轻量模式：设为 1 跳过 CrossEncoder 重排（省 2GB 内存，延迟更低）
+      - EVAL_LIGHT=${EVAL_LIGHT:-0}
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    # 如需 GPU，取消下面注释：
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
 
-  # ── React 前端 (Vite + Nginx) ──
+  # ── React 前端 (Nginx) ──
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: fa-frontend
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       - backend
     restart: unless-stopped

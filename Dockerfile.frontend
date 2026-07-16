@@ -1,23 +1,36 @@
-# 智能财务分析平台 — React 前端 (Vite)
-FROM node:22-alpine
+# ============================================================
+# 智能财务分析平台 — React 前端 (V8.2)
+#
+# 多阶段构建:
+#   Stage 1 (node):  npm ci → npm run build
+#   Stage 2 (nginx): 复制静态文件 + Nginx 反向代理
+# ============================================================
+
+# ── Stage 1: 构建 ──
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# 依赖
+# 依赖层（利用 Docker 缓存，package.json 不变时跳过 npm ci）
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
-# 源码
+# 源码 + 构建
 COPY web/ ./
-
-# 构建
 RUN npm run build
 
-# Nginx 托管静态文件
+# ── Stage 2: 生产运行 ──
 FROM nginx:alpine
-COPY --from=0 /app/dist /usr/share/nginx/html
+
+# 静态文件
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Nginx 配置（SPA 路由 + API 代理）
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD wget -qO- http://localhost/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
