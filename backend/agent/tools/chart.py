@@ -252,8 +252,21 @@ class ChartTool:
         """双轴图：柱状图（左轴）+ 折线图（右轴），适用于营收+增速等场景"""
         data = config.data
         labels = data.get("labels", [])
-        bar_values = data.get("bar_values", [])     # 左轴（绝对值）
-        line_values = data.get("line_values", [])   # 右轴（百分比）
+        bar_values = data.get("bar_values", [])
+        line_values = data.get("line_values", [])
+
+        # ── V8.2 防御：数据为空时降级为柱状图 ──
+        if not labels or not bar_values:
+            logger.warning("dual_axis 数据不完整，降级为柱状图")
+            # 尝试从 data 的 flat values 重建
+            flat_values = {k: v for k, v in data.items()
+                          if isinstance(v, (int, float)) and k not in ("labels", "bar_values", "line_values")}
+            if flat_values:
+                config.data["labels"] = list(flat_values.keys())
+                config.data["values"] = list(flat_values.values())
+                return self._bar_chart(config)
+            return _fig_to_base64(self._error_chart("数据不完整：缺少 labels 或 bar_values"))
+
         bar_label = data.get("bar_label", "数值")
         line_label = data.get("line_label", "增速")
 
@@ -269,18 +282,24 @@ class ChartTool:
         for i, v in enumerate(bar_values):
             ax1.text(i, v, str(v), ha="center", va="bottom", fontsize=9)
 
-        # 右轴：折线图
-        ax2 = ax1.twinx()
-        ax2.plot(labels, line_values, marker="s", linewidth=2, color="#A23B72", label=line_label)
-        ax2.set_ylabel(line_label + " (%)", color="#A23B72")
-        ax2.tick_params(axis="y", labelcolor="#A23B72")
+        # 右轴：折线图（仅当有增速数据时）
+        if line_values and len(line_values) == len(labels):
+            ax2 = ax1.twinx()
+            ax2.plot(labels, line_values, marker="s", linewidth=2, color="#A23B72", label=line_label)
+            ax2.set_ylabel(line_label + " (%)", color="#A23B72")
+            ax2.tick_params(axis="y", labelcolor="#A23B72")
+        else:
+            logger.info("dual_axis: 无增速数据，仅显示柱状图")
 
         ax1.set_title(config.title, fontsize=14, fontweight="bold")
 
         # 合并图例
         lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+        if line_values and len(line_values) == len(labels):
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+        elif lines1:
+            ax1.legend()
 
         return _fig_to_base64(fig)
 
