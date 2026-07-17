@@ -23,12 +23,26 @@ from rag.query_processor import process_query
 import json
 
 TEST_SET = Path(__file__).parent.parent / "data" / "rag_questions.json"
+BOUNDARY_SET = Path(__file__).parent.parent / "data" / "rag_questions_boundary.json"
 TOP_K = 5
+
+# ── 命令行参数 ──
+parser = argparse.ArgumentParser(description="RAG 快速评测")
+parser.add_argument("--include-boundary", action="store_true",
+                    help="同时运行边界测试（R14/R15）")
+args = parser.parse_args()
 
 with open(TEST_SET, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 questions = data["questions"]
+
+# 选择性加载边界测试
+if args.include_boundary and BOUNDARY_SET.exists():
+    with open(BOUNDARY_SET, "r", encoding="utf-8") as f:
+        boundary_data = json.load(f)
+    questions = questions + boundary_data["questions"]
+    logger.info(f"已加载 {len(boundary_data['questions'])} 道边界测试题")
 # 复用模块顶部已读取的轻量模式标记
 LIGHT_MODE = _LIGHT_MODE
 

@@ -4,6 +4,7 @@
     "version": "8.0",
     "created": "2026-07-09",
     "total_questions": 15,
+    "note_boundary": "旧 R14/R15（员工满意度/乱码）已移至 rag_questions_boundary.json",
     "description": "测试 RAG 的文字理解和信息定位能力。V8.0 架构下，RAG 不再用于查数字（那走 SQL），而是用于理解非结构化文本（风险/原因/业务描述/管理层讨论）。",
     "scoring": {
       "retrieval_quality": "检索到的 chunk 是否语义相关（SEM-R@k）",
@@ -152,23 +153,23 @@
     },
     {
       "id": "R14",
-      "category": "边界测试",
-      "difficulty": "easy",
-      "query": "比亚迪2024年的员工满意度调查结果如何",
-      "expected_answer_type": "坦诚告知文档中未找到",
-      "must_contain_sources": false,
-      "min_sources": 0,
-      "tests": "文档无答案时应明确说明，不编造"
+      "category": "管理层讨论",
+      "difficulty": "medium",
+      "query": "茅台招股说明书中描述的募集资金用途主要包括哪些项目",
+      "expected_answer_type": "列表式资金用途描述",
+      "must_contain_sources": true,
+      "min_sources": 2,
+      "tests": "招股说明书类文档检索能力（替代旧R14）"
     },
     {
       "id": "R15",
-      "category": "边界测试",
-      "difficulty": "easy",
-      "query": "？？？。。。",
-      "expected_answer_type": "识别为无效输入，友好提示",
-      "must_contain_sources": false,
-      "min_sources": 0,
-      "tests": "纯标点符号输入，不能崩溃或返回乱码"
+      "category": "风险识别",
+      "difficulty": "medium",
+      "query": "比亚迪年报中提到的供应链风险有哪些，公司计划如何应对",
+      "expected_answer_type": "风险+应对措施",
+      "must_contain_sources": true,
+      "min_sources": 2,
+      "tests": "风险识别+应对措施的联合检索（替代旧R15）"
     }
   ]
 }

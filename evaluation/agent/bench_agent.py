@@ -460,4 +460,51 @@ print(f"| 总 Token 用量 | {total_tokens_all:,} |")
 print(f"| 总费用 | ¥{total_cost:.4f} |")
 print(f"| 单题均费 | ¥{avg_cost:.4f} |")
 
+# ============ 报告持久化 ============
+from datetime import datetime
+reports_dir = Path(__file__).parent.parent / "reports"
+reports_dir.mkdir(exist_ok=True)
+report_path = reports_dir / f"agent_bench_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+report_data = {
+    "timestamp": datetime.now().isoformat(),
+    "elapsed_s": round(elapsed, 1),
+    "total_questions": n,
+    "valid_plan_count": valid_plan_count,
+    "valid_number_count": valid_number_count,
+    "clarification_count": clarification_count,
+    "failed_count": len(failed),
+    "failed_questions": [f"{qid}: {reason}" for qid, reason in failed],
+    "avg_number_accuracy": round(avg_num, 1),
+    "avg_task_accuracy": round(avg_task, 1),
+    "avg_structure_score": round(avg_struct, 1),
+    "avg_time_s": round(avg_time, 1),
+    "total_tokens": total_tokens_all,
+    "total_cost_rmb": round(total_cost, 4),
+    "avg_cost_rmb": round(avg_cost, 4),
+    "by_category": {
+        cat: {
+            "count": g["count"],
+            "task_accuracy": round(g["task_score"] / max(g.get("valid_count", g["count"]), 1) * 100, 1),
+            "num_accuracy": round(g.get("num_accuracy", 0) / max(g.get("num_count", 1), 1) * 100, 1),
+            "avg_time_s": round(g["time"] / max(g["count"], 1), 1),
+        }
+        for cat, g in by_category.items()
+    },
+    "by_difficulty": {
+        d: {
+            "count": g["count"],
+            "task_accuracy": round(g["task_score"] / max(g.get("valid_count", g["count"]), 1) * 100, 1),
+            "num_accuracy": round(g.get("num_accuracy", 0) / max(g.get("num_count", 1), 1) * 100, 1),
+            "avg_time_s": round(g["time"] / max(g["count"], 1), 1),
+        }
+        for d, g in by_difficulty.items()
+    },
+    "per_question": per_question,
+}
+
+with open(report_path, "w", encoding="utf-8") as f:
+    json.dump(report_data, f, ensure_ascii=False, indent=2)
+print(f"\n📄 报告已保存: {report_path}")
+
 print(f"\n评测完成 [OK]")
