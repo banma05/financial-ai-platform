@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "name": "RAG 边界测试用例",
+    "version": "8.3",
+    "created": "2026-07-17",
+    "total_questions": 2,
+    "description": "从主评测集移出的边界测试用例（R14/R15），包含无答案问题和乱码输入，用于测试鲁棒性。通过 --include-boundary 参数选择性运行。",
+    "note": "主评测集 rag_questions.json 现保留 48 道有效题。"
+  },
+  "questions": [
+    {
+      "id": "R14",
+      "category": "边界测试",
+      "difficulty": "easy",
+      "query": "比亚迪2024年的员工满意度调查结果如何",
+      "expected_answer_type": "坦诚告知文档中未找到",
+      "must_contain_sources": false,
+      "min_sources": 0,
+      "tests": "文档无答案时应明确说明，不编造"
+    },
+    {
+      "id": "R15",
+      "category": "边界测试",
+      "difficulty": "easy",
+      "query": "？？？。。。",
+      "expected_answer_type": "识别为无效输入，友好提示",
+      "must_contain_sources": false,
+      "min_sources": 0,
+      "tests": "纯标点符号输入，不能崩溃或返回乱码"
+    }
+  ]
+}

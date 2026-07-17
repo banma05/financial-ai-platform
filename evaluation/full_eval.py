@@ -47,7 +47,7 @@ def run_rag_eval() -> dict:
     result = subprocess.run(
         [sys.executable, str(EVAL_DIR / "rag" / "quick_eval.py")],
         cwd=str(PROJECT_ROOT),
-        capture_output=True, text=True, timeout=600,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
         env=_subprocess_env(),
     )
     elapsed = time.time() - start
