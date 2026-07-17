@@ -19,3 +19,4 @@ build/
 .idea/
 *.log
 evaluation/reports/
+chroma_db*
