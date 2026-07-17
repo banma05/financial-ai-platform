@@ -7,6 +7,11 @@ import time
 import json
 from pathlib import Path
 
+# Windows GBK 终端适配
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -514,7 +519,7 @@ report_data = {
         }
         for d, g in by_difficulty.items()
     },
-    "per_question": per_question,
+    "per_question": results,
 }
 
 with open(report_path, "w", encoding="utf-8") as f:
