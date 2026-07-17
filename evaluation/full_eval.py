@@ -18,6 +18,11 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+# Windows GBK 终端适配：强制 stdout 使用 UTF-8
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 PROJECT_ROOT = Path(__file__).parent.parent
 EVAL_DIR = Path(__file__).parent
 REPORTS_DIR = EVAL_DIR / "reports"
