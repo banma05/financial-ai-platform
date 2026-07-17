@@ -47,6 +47,11 @@ def route_query(query: str) -> str:
     默认 complex（混合检索 + LambdaMART 重排）——因为财务 query 大多需要精确数字
     仅极短问候类 query 走 simple（快，省计算）
     """
+    # 极短 query（< 20 字）走快速模式，无需重排
+    if len(query) < 20:
+        logger.info("检索路由: simple（短查询）→ 快速模式")
+        return "simple"
+
     # 先检查是否是明显的简单 query
     for pattern in SIMPLE_PATTERNS:
         if pattern in query:
@@ -331,8 +336,13 @@ def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> Li
             return candidates[:top_k]
         pairs = [[query, c["content"]] for c in candidates]
         # ── V6.0: GPU 推理加锁（DAG 并行时避免多线程 GPU 争抢）──
+        import time as _time
+        _t0 = _time.time()
         with _cross_encoder_lock:
             scores = model.predict(pairs)
+        _elapsed = _time.time() - _t0
+        if _elapsed > 5.0:
+            logger.warning(f"CrossEncoder 重排耗时 {_elapsed:.1f}s > 5s，建议启用轻量模式")
 
         for item, score in zip(candidates, scores):
             item["rerank_score"] = float(score)
