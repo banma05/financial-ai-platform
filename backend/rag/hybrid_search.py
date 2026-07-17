@@ -240,6 +240,10 @@ def reciprocal_rank_fusion(
 # ============ LambdaMART 统一打分 ============
 
 _reranker = None
+_reranker_failure_count = 0
+_reranker_circuit_open = False
+_reranker_failure_lock = threading.Lock()
+_RERANKER_MAX_FAILURES = 3  # 连续失败阈值
 
 
 def _get_lambda_mart():
@@ -259,11 +263,18 @@ def _get_lambda_mart():
     - 训练后 LambdaMART 比 Cross-Encoder 快 10x，精度接近
     - 特征维度：BM25 分数、语义相似度、文档长度、词重叠率等
     """
-    global _reranker
+    global _reranker, _reranker_failure_count, _reranker_circuit_open
+    if _reranker_circuit_open:
+        return None  # 熔断器已打开，跳过重排
     if _reranker is None:
         with _reranker_lock:
-            if _reranker is None:
-                local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
+            if _reranker is None and not _reranker_circuit_open:
+                # 使用 config 的绝对路径（避免 .env 相对路径问题）
+                try:
+                    from config import ROOT_DIR
+                    local_path = str(ROOT_DIR / "data" / "models" / "BAAI" / "bge-reranker-v2-m3")
+                except ImportError:
+                    local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
                 model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
                 # 自动选择设备：GPU 优先，不可用则回退 CPU
                 try:
@@ -271,9 +282,35 @@ def _get_lambda_mart():
                     device = "cuda" if torch.cuda.is_available() else "cpu"
                 except ImportError:
                     device = "cpu"
-                _reranker = _CrossEncoder(model_name, device=device)
-                logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
+                try:
+                    _reranker = _CrossEncoder(model_name, device=device)
+                    logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
+                    # 加载成功，重置失败计数
+                    with _reranker_failure_lock:
+                        _reranker_failure_count = 0
+                except Exception as e:
+                    with _reranker_failure_lock:
+                        _reranker_failure_count += 1
+                        logger.error(
+                            f"CrossEncoder 加载失败 ({_reranker_failure_count}/{_RERANKER_MAX_FAILURES}): {e}"
+                        )
+                        if _reranker_failure_count >= _RERANKER_MAX_FAILURES:
+                            _reranker_circuit_open = True
+                            logger.error(
+                                "熔断器已打开：CrossEncoder 连续加载失败 3 次，"
+                                "后续请求将跳过重排，直接使用 RRF 结果"
+                            )
     return _reranker
+
+
+def _reset_circuit_breaker():
+    """手动重置熔断器（用于运维/热重载）"""
+    global _reranker_circuit_open, _reranker_failure_count
+    with _reranker_lock:
+        _reranker_circuit_open = False
+        with _reranker_failure_lock:
+            _reranker_failure_count = 0
+        logger.info("熔断器已手动重置")
 
 
 def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> List[dict]:
@@ -289,6 +326,9 @@ def lambda_mart_rerank(query: str, candidates: List[dict], top_k: int = 5) -> Li
 
     try:
         model = _get_lambda_mart()
+        if model is None:
+            logger.info("CrossEncoder 不可用（熔断器打开），回退 RRF")
+            return candidates[:top_k]
         pairs = [[query, c["content"]] for c in candidates]
         # ── V6.0: GPU 推理加锁（DAG 并行时避免多线程 GPU 争抢）──
         with _cross_encoder_lock:

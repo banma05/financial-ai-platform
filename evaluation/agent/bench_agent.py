@@ -232,6 +232,20 @@ def score_number_accuracy_v2(report: str, data_values: dict) -> dict:
         candidates.add(round(raw_val / 1e4, 2))    # 万元
         candidates.add(round(raw_val / 1e8, 2))    # 亿元
 
+        # ── V8.3: 现金流指标特殊处理 ──
+        # 现金流值通常很大（百亿级别），报告中常以"亿元"显示，
+        # 且自由现金流 = 经营CF - 资本支出是计算值，容差需放宽
+        cf_patterns = ('operating_cf', 'investing_cf', 'financing_cf',
+                       'free_cash', '经营现金流', '投资现金流', '筹资现金流',
+                       '自由现金流', 'capex')
+        is_cash_flow = any(p in key.lower() for p in cf_patterns)
+        if is_cash_flow:
+            # 额外候选：去掉小数的亿元（如 615亿）、保留更多精度的亿元
+            yi = round(raw_val / 1e8, 2)
+            candidates.add(round(yi, 0))             # 615 亿（整数亿元）
+            candidates.add(round(raw_val / 1e8, 1))  # 615.2 亿（一位小数亿元）
+            candidates.add(round(raw_val / 1e8, 4))  # 高精度亿元
+
         found = False
         for rf in report_floats:
             for c in candidates:
