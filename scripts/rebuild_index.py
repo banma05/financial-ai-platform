@@ -13,7 +13,7 @@ from loguru import logger
 from config import ROOT_DIR
 from rag.loader import load_document
 from rag.semantic_splitter import semantic_chunk_per_page
-from rag.vector_store import add_documents, reset_database, get_document_list
+from rag.vector_store import add_documents, reset_database, get_document_list, wait_for_compaction
 
 DOCUMENTS_DIR = ROOT_DIR / "data" / "documents"
 
@@ -56,6 +56,10 @@ def main():
     for d in docs:
         logger.info(f"  📚 {d['filename']}: {d['chunk_count']} chunks, {d['page_count']} pages")
     logger.success(f"总计 {total_chunks} 个文本块，{len(docs)} 个文档")
+
+    # 5. 确认 HNSW 索引落盘后再退出（防止退出打断 compaction 留下残缺 segment）
+    logger.info("\n=== 第四步：确认索引落盘 ===")
+    wait_for_compaction()
 
 
 if __name__ == "__main__":
