@@ -87,17 +87,13 @@ def semantic_chunk_per_page(
     for page in pages:
         text = page.get("text", "")
 
-        # ── 预过滤：跳过无检索价值的页面 ──
-        # 封面、目录、签名页通常<100字且只有标题信息，对 RAG 检索零贡献
-        if len(text.strip()) < 100:
-            continue
-
         # ── V7.1: 大表格独立成 chunk（不参与语义切分，保持完整性）──
         # 财务报表（≥4行×3列）单独存为一个 chunk，附加页面上下文
         big_tables = [
             t for t in page.get("tables", [])
             if t.get("rows", 0) >= 4 and t.get("cols", 0) >= 3
         ]
+
         # 提取页面首行作为表格上下文（如"合并利润表"）
         page_context = text.strip().split("\n")[0] if text.strip() else ""
         for i, t in enumerate(big_tables):
