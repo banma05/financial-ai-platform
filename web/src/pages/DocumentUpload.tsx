@@ -50,8 +50,15 @@ export default function DocumentUpload() {
 
   // 文件上传
   const handleFile = useCallback(async (file: File) => {
-    if (file.type !== 'application/pdf') {
-      setUploadError('仅支持 PDF 文件');
+    if (file.type !== 'application/pdf'
+        && file.type !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        && file.type !== 'text/plain'
+        && file.type !== 'text/markdown'
+        && !file.name.endsWith('.docx')
+        && !file.name.endsWith('.doc')
+        && !file.name.endsWith('.md')
+        && !file.name.endsWith('.txt')) {
+      setUploadError('仅支持 PDF、Word (.docx/.doc)、Markdown、TXT 文件');
       return;
     }
     setIsUploading(true);
@@ -149,13 +156,16 @@ export default function DocumentUpload() {
         >
           <div className="text-3xl mb-2">📄</div>
           <p className="text-sm text-gray-600">
-            {isUploading ? '上传中...' : isDragOver ? '松开以上传' : '拖拽 PDF 到此处上传'}
+            {isUploading ? '上传中...' : isDragOver ? '松开以上传' : '拖拽 PDF/Word 文件到此处上传'}
           </p>
           <p className="text-xs text-gray-400 mt-1">或点击选择文件</p>
+          <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+            💡 建议上传<strong>年报 PDF</strong>、<strong>券商研报 .docx</strong>、<strong>招股说明书</strong>，以获得更全面的财务分析
+          </p>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf"
+            accept=".pdf,.docx,.doc,.md,.txt"
             onChange={onFileChange}
             className="hidden"
           />
