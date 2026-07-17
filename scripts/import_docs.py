@@ -69,6 +69,10 @@ def main():
     if result.get("new"):
         logger.success(f"新增文档: {[d['name'] for d in result['new']]}")
 
+    # 4. 确认 HNSW 索引落盘后再退出（防止退出打断 compaction 留下残缺 segment）
+    from rag.vector_store import wait_for_compaction
+    wait_for_compaction()
+
 
 if __name__ == "__main__":
     main()

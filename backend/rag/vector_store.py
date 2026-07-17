@@ -13,22 +13,82 @@ from .embedder import get_embedding_model
 
 COLLECTION_NAME = "financial_docs"
 
+# HNSW segment 完整落盘时应有的数据文件（缺任一即为残缺）
+_HNSW_BIN_FILES = ("data_level0.bin", "header.bin", "length.bin", "link_lists.bin")
+
 _chroma_store: Optional[Chroma] = None
 _chroma_lock = threading.Lock()
 
 
+def _find_corrupt_segments() -> List[Path]:
+    """找出写了一半的 HNSW segment（有 index_metadata.pickle 但缺数据文件）"""
+    persist_dir = Path(CHROMA_PERSIST_DIR)
+    if not persist_dir.exists():
+        return []
+    return [
+        seg for seg in persist_dir.iterdir()
+        if seg.is_dir()
+        and (seg / "index_metadata.pickle").exists()
+        and not all((seg / f).exists() for f in _HNSW_BIN_FILES)
+    ]
+
+
+def _heal_corrupt_segments() -> None:
+    """
+    启动自愈：删除残缺 HNSW segment，交给 WAL backfill 自动重建。
+
+    进程被杀/断电可能留下只有 pickle 缺数据文件的残缺 segment，
+    打开时报 "Error loading hnsw index"。WAL (chroma.sqlite3) 才是数据源，
+    segment 只是索引缓存，删除后 ChromaDB 自动从 WAL 重建，数据不丢
+    （ChromaDB 官方 Cookbook 推荐的恢复方式）。
+    注意：仅单进程访问时安全，本项目约定不多进程并发访问 ChromaDB。
+    """
+    import shutil
+
+    for seg in _find_corrupt_segments():
+        shutil.rmtree(seg, ignore_errors=True)
+        logger.warning(f"检测到残缺 HNSW segment，已删除待 WAL 自动重建: {seg.name}")
+
+
 def _get_chroma() -> Chroma:
-    """获取 Chroma 实例（线程安全懒加载）"""
+    """获取 Chroma 实例（线程安全懒加载，初始化前先自愈残缺索引）"""
     global _chroma_store
     if _chroma_store is None:
         with _chroma_lock:
             if _chroma_store is None:
+                _heal_corrupt_segments()
                 _chroma_store = Chroma(
                     collection_name=COLLECTION_NAME,
                     embedding_function=get_embedding_model(),
                     persist_directory=CHROMA_PERSIST_DIR,
                 )
     return _chroma_store
+
+
+def wait_for_compaction(timeout: float = 300.0) -> bool:
+    """
+    批量写入后确认 HNSW 索引完整落盘，再退出进程。
+
+    批量导入脚本（rebuild_index / import_docs）退出前调用，
+    降低进程退出打断后台 compaction 留下残缺 segment 的风险。
+    先做一次真实查询促使索引构建，再轮询直到无残缺 segment（或超时）。
+    超时不是致命错误——下次启动 _heal_corrupt_segments 会自动兜底。
+    """
+    import time
+
+    try:
+        search_similar("落盘确认", top_k=1)  # 触发读路径，促使索引构建
+    except Exception as e:
+        logger.warning(f"落盘确认查询失败: {e}")
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _find_corrupt_segments():
+            logger.info("HNSW 索引已完整落盘")
+            return True
+        time.sleep(1.0)
+    logger.warning(f"等待 HNSW 落盘超时 ({timeout}s)，下次启动将自动自愈")
+    return False
 
 
 def add_documents(chunks: List[dict]) -> int:
