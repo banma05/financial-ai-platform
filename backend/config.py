@@ -40,7 +40,9 @@ _raw_local = os.getenv("LOCAL_MODEL_PATH", str(ROOT_DIR / "data" / "models" / "B
 LOCAL_MODEL_PATH = str(Path(_raw_local).resolve()) if not Path(_raw_local).is_absolute() else _raw_local
 
 # ============ ChromaDB ============
-_raw_chroma = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db"))
+# 注意: chroma_db 目录因 Windows 幽灵进程锁死, 改用 chroma_db_v2
+# 重启后可删除旧 chroma_db 目录并改回原名
+_raw_chroma = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db_v2"))
 CHROMA_PERSIST_DIR = str(Path(_raw_chroma).resolve()) if not Path(_raw_chroma).is_absolute() else _raw_chroma
 
 # ============ 文件上传 ============
