@@ -198,8 +198,10 @@ def check_new_documents() -> Dict:
                     f"删除 {len(deleted_files)} | 不变 {len(unchanged_files)}"),
     }
 
-    # 保存当前快照
-    _save_metadata(current_files)
+    # 注意：_save_metadata 不在这里调用！
+    # 只有 incremental_rebuild 成功处理后才写入，
+    # 避免处理失败后文件被标记为"已索引"而永久跳过
+    result["_current_files"] = current_files
 
     logger.info(f"[Corpus] {result['summary']}")
     return result
@@ -235,7 +237,7 @@ def incremental_rebuild() -> Dict:
             # 加载和分块
             file_path = doc["path"]
             pages = load_document(file_path)
-            chunks = semantic_chunk_per_page(pages, source_name=doc["name"])
+            chunks = semantic_chunk_per_page(pages)
             if chunks:
                 add_documents(chunks, source=doc["name"])
                 total_processed += len(chunks)
@@ -243,8 +245,13 @@ def incremental_rebuild() -> Dict:
         except Exception as e:
             logger.error(f"[Corpus] 索引失败 {doc['name']}: {e}")
 
+    # 处理成功后才保存元数据快照（不在 check_new_documents 中保存，
+    # 避免处理失败后文件被标记为"已索引"而永久跳过）
+    if "_current_files" in changes and changes["_current_files"]:
+        _save_metadata(changes["_current_files"])
+
     return {
-        **changes,
+        **{k: v for k, v in changes.items() if k != "_current_files"},
         "total_chunks_added": total_processed,
     }
 

@@ -33,15 +33,19 @@ Path(HF_HOME).mkdir(parents=True, exist_ok=True)
 Path(MODELSCOPE_CACHE).mkdir(parents=True, exist_ok=True)
 
 # ============ Embedding 模型 ============
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
-# 本地模型路径（优先使用，已通过 ModelScope 下载，升级到 bge-base：768维 vs 原来 512维）
-LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH", str(ROOT_DIR / "data" / "models" / "BAAI" / "bge-base-zh-v1___5"))
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-zh-v1.5")
+# 本地模型路径（优先使用，已通过 ModelScope 下载）
+# 防护：若 .env 中配置了相对路径，基于 ROOT_DIR 解析为绝对路径
+_raw_local = os.getenv("LOCAL_MODEL_PATH", str(ROOT_DIR / "data" / "models" / "BAAI" / "bge-base-zh-v1___5"))
+LOCAL_MODEL_PATH = str(Path(_raw_local).resolve()) if not Path(_raw_local).is_absolute() else _raw_local
 
 # ============ ChromaDB ============
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db"))
+_raw_chroma = os.getenv("CHROMA_PERSIST_DIR", str(ROOT_DIR / "data" / "chroma_db"))
+CHROMA_PERSIST_DIR = str(Path(_raw_chroma).resolve()) if not Path(_raw_chroma).is_absolute() else _raw_chroma
 
 # ============ 文件上传 ============
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(ROOT_DIR / "data" / "documents")))
+_raw_upload = os.getenv("UPLOAD_DIR", str(ROOT_DIR / "data" / "documents"))
+UPLOAD_DIR = Path(str(Path(_raw_upload).resolve()) if not Path(_raw_upload).is_absolute() else _raw_upload)
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 
 # 确保目录存在
