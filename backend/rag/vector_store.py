@@ -1,6 +1,7 @@
 """
 向量数据库模块 - ChromaDB 管理
 """
+import atexit
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -15,19 +16,47 @@ COLLECTION_NAME = "financial_docs"
 
 # Chroma 实例缓存
 _chroma_store: Optional[Chroma] = None
+_chroma_client = None  # 底层 PersistentClient，用于关闭
 _chroma_lock = threading.Lock()
+
+
+def _cleanup_chroma():
+    """进程退出时关闭 ChromaDB 连接，防止文件锁残留"""
+    global _chroma_store, _chroma_client
+    if _chroma_store is not None:
+        try:
+            # langchain_chroma 没有显式 close，需通过底层 client 清理
+            if _chroma_client is not None:
+                _chroma_client._system.stop()
+                logger.debug("ChromaDB 连接已关闭")
+        except Exception:
+            pass
+    _chroma_store = None
+    _chroma_client = None
+
+
+# 注册进程退出时的清理钩子
+atexit.register(_cleanup_chroma)
 
 
 def _get_chroma() -> Chroma:
     """获取 Chroma 实例（线程安全懒加载）"""
-    global _chroma_store
+    global _chroma_store, _chroma_client
     if _chroma_store is None:
         with _chroma_lock:
             if _chroma_store is None:
+                import chromadb
+                _chroma_client = chromadb.PersistentClient(
+                    path=CHROMA_PERSIST_DIR,
+                    settings=chromadb.Settings(
+                        anonymized_telemetry=False,
+                        allow_reset=True,
+                    ),
+                )
                 _chroma_store = Chroma(
+                    client=_chroma_client,
                     collection_name=COLLECTION_NAME,
                     embedding_function=get_embedding_model(),
-                    persist_directory=CHROMA_PERSIST_DIR,
                 )
     return _chroma_store
 
