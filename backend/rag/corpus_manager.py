@@ -227,19 +227,19 @@ def incremental_rebuild() -> Dict:
     # 处理新增和修改
     for doc in changes["new"] + changes["modified"]:
         try:
-            # 如果是修改，先删旧索引
-            if doc in changes["modified"]:
-                try:
-                    delete_document(doc["name"])
-                except Exception as e:
-                    logger.warning(f"删除旧文档失败({doc['name']}): {e}")
+            # 始终先删旧索引，防止重复添加导致 HNSW 索引损坏
+            # （元数据可能不完整，即使标记为"新增"也可能已有旧 chunks）
+            try:
+                delete_document(doc["name"])
+            except Exception as e:
+                pass  # 文档不存在时可能会报错，忽略
 
             # 加载和分块
             file_path = doc["path"]
             pages = load_document(file_path)
             chunks = semantic_chunk_per_page(pages)
             if chunks:
-                add_documents(chunks, source=doc["name"])
+                add_documents(chunks)
                 total_processed += len(chunks)
                 logger.info(f"[Corpus] 已索引: {doc['name']} → {len(chunks)} chunks")
         except Exception as e:

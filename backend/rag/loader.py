@@ -183,23 +183,34 @@ def load_pdf(file_path: str) -> List[dict]:
 
 
 def load_docx(file_path: str) -> List[dict]:
-    """加载 Word 文档"""
+    """
+    加载 Word 文档，按段落分组为逻辑页。
+
+    修复原因：之前把所有段落拼成一个超长文本塞到 page:1，
+    导致 semantic_splitter 无法有效切分，整份研报只产出 1 个 chunk。
+    现在按 ~15 段一组拆分成多个逻辑页，每页文本量适中，切分器能正常工作。
+    """
     from docx import Document
     docs = []
     try:
         doc = Document(file_path)
-        full_text = []
-        for para in doc.paragraphs:
-            if para.text.strip():
-                full_text.append(para.text.strip())
-        if full_text:
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        if not paragraphs:
+            logger.warning(f"DOCX 无有效文本: {file_path}")
+            return docs
+
+        # 按段落分组：每 15 段为一"页"，避免单页文本过短或过长
+        PARAS_PER_PAGE = 15
+        for i in range(0, len(paragraphs), PARAS_PER_PAGE):
+            chunk_paras = paragraphs[i:i + PARAS_PER_PAGE]
             docs.append({
-                "text": "\n".join(full_text),
+                "text": "\n".join(chunk_paras),
                 "tables": [],
-                "page": 1,
+                "page": i // PARAS_PER_PAGE + 1,
                 "source": Path(file_path).name,
             })
-        logger.info(f"DOCX 加载完成: {file_path}")
+
+        logger.info(f"DOCX 加载完成: {file_path} → {len(paragraphs)} 段, {len(docs)} 逻辑页")
     except Exception as e:
         logger.error(f"DOCX 加载失败: {e}")
         raise
