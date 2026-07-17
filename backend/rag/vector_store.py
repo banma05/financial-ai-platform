@@ -21,16 +21,11 @@ _chroma_lock = threading.Lock()
 
 
 def _cleanup_chroma():
-    """进程退出时关闭 ChromaDB 连接，防止文件锁残留"""
+    """进程退出时释放 ChromaDB 引用（不主动关闭，让 Rust Drop 自然清理）"""
     global _chroma_store, _chroma_client
-    if _chroma_store is not None:
-        try:
-            # langchain_chroma 没有显式 close，需通过底层 client 清理
-            if _chroma_client is not None:
-                _chroma_client._system.stop()
-                logger.debug("ChromaDB 连接已关闭")
-        except Exception:
-            pass
+    # 注意: 不调用 _system.stop()！
+    # 它会立即杀死 Rust runtime，中断后台 HNSW compaction，导致 segment 文件损坏。
+    # 让 Python GC 和 Rust Drop trait 自然释放资源即可。
     _chroma_store = None
     _chroma_client = None
 
