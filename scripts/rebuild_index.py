@@ -1,10 +1,12 @@
 """
 重建向量索引 — 加载 data/documents 下所有年报并重建 ChromaDB
+
+用法:
+    python scripts/rebuild_index.py  # 全量重建（删除旧库再建新的）
 """
 import sys
 from pathlib import Path
 
-# 确保 backend 可导入
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 from loguru import logger
@@ -22,7 +24,7 @@ def main():
     reset_database()
     logger.success("数据库已清空")
 
-    # 2. 扫描所有文档（Windows 大小写不敏感，统一 glob 后去重）
+    # 2. 扫描所有文档
     allowed_exts = {".pdf", ".docx", ".md", ".txt"}
     all_files = sorted(set(
         f.resolve() for f in DOCUMENTS_DIR.iterdir()
@@ -40,10 +42,8 @@ def main():
         try:
             pages = load_document(str(file_path))
             logger.info(f"  加载 {len(pages)} 页")
-
             chunks = semantic_chunk_per_page(pages)
             logger.info(f"  语义切分 {len(chunks)} 块")
-
             n = add_documents(chunks)
             total_chunks += n
             logger.success(f"  ✅ 入库 {n} 块")
