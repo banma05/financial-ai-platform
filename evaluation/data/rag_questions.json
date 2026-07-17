@@ -29,7 +29,8 @@
       "expected_answer_type": "原因分析",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "RAG核心能力：从MD&A章节检索并解读财务指标变动原因"
+      "tests": "RAG核心能力：从MD&A章节检索并解读财务指标变动原因",
+      "expected_keywords": ["毛利率", "下降", "成本", "营业成本", "同比", "变动原因", "茅台"]
     },
     {
       "id": "R02",
@@ -39,7 +40,8 @@
       "expected_answer_type": "原因分析",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "理解公司对费用增长的官方解释"
+      "tests": "理解公司对费用增长的官方解释",
+      "expected_keywords": ["研发费用", "增长", "比亚迪", "研发投入", "技术", "创新", "解释"]
     },
     {
       "id": "R03",
@@ -49,7 +51,8 @@
       "expected_answer_type": "深度分析",
       "must_contain_sources": true,
       "min_sources": 3,
-      "tests": "财务指标差异的深层原因解读（折旧/应收应付等非现金项目）"
+      "tests": "财务指标差异的深层原因解读（折旧/应收应付等非现金项目）",
+      "expected_keywords": ["经营现金流", "净利润", "差异", "折旧", "应收应付", "非现金", "比亚迪"]
     },
     {
       "id": "R04",
@@ -59,7 +62,8 @@
       "expected_answer_type": "列表式风险描述",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "从年报风险提示章节提取信息"
+      "tests": "从年报风险提示章节提取信息",
+      "expected_keywords": ["经营风险", "茅台", "风险提示", "市场风险", "政策风险", "竞争"]
     },
     {
       "id": "R05",
@@ -69,7 +73,8 @@
       "expected_answer_type": "竞争格局分析",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "行业趋势类语义理解"
+      "tests": "行业趋势类语义理解",
+      "expected_keywords": ["新能源汽车", "竞争格局", "比亚迪", "行业", "市场", "变化", "趋势"]
     },
     {
       "id": "R06",
@@ -79,7 +84,8 @@
       "expected_answer_type": "业务描述",
       "must_contain_sources": true,
       "min_sources": 1,
-      "tests": "基础业务信息提取"
+      "tests": "基础业务信息提取",
+      "expected_keywords": ["业务板块", "比亚迪", "核心产品", "汽车", "电池", "电子", "轨道交通"]
     },
     {
       "id": "R07",
@@ -89,7 +95,8 @@
       "expected_answer_type": "经营计划描述",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "从年报经营计划章节提取信息"
+      "tests": "从年报经营计划章节提取信息",
+      "expected_keywords": ["经营目标", "茅台", "措施", "计划", "战略", "2024", "发展"]
     },
     {
       "id": "R08",
@@ -99,7 +106,8 @@
       "expected_answer_type": "行业分析 + 公司策略",
       "must_contain_sources": true,
       "min_sources": 3,
-      "tests": "跨文档（年报+研报）检索和综合"
+      "tests": "跨文档（年报+研报）检索和综合",
+      "expected_keywords": ["白酒行业", "趋势", "茅台", "五粮液", "战略", "2024", "券商研报", "竞争"]
     },
     {
       "id": "R09",
@@ -109,7 +117,8 @@
       "expected_answer_type": "管理层总结",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "MD&A章节的关键内容提取"
+      "tests": "MD&A章节的关键内容提取",
+      "expected_keywords": ["管理层", "经营成果", "比亚迪", "2024", "展望", "2025", "总结", "讨论与分析"]
     },
     {
       "id": "R10",
@@ -119,7 +128,8 @@
       "expected_answer_type": "专项深度解读",
       "must_contain_sources": true,
       "min_sources": 3,
-      "tests": "特定主题的精细检索和理解"
+      "tests": "特定主题的精细检索和理解",
+      "expected_keywords": ["i茅台", "数字营销", "直销", "收入", "茅台", "平台", "增长", "贡献"]
     },
     {
       "id": "R11",
@@ -129,7 +139,8 @@
       "expected_answer_type": "上下文缺失，需追问或返回通用定义",
       "must_contain_sources": false,
       "min_sources": 0,
-      "tests": "超短Query：无法确定公司和年份"
+      "tests": "超短Query：无法确定公司和年份",
+      "expected_keywords": ["毛利率", "定义", "计算", "公式"]
     },
     {
       "id": "R12",
@@ -139,7 +150,8 @@
       "expected_answer_type": "混合（数字走SQL + 原因走RAG）",
       "must_contain_sources": true,
       "min_sources": 1,
-      "tests": "中英混杂Query + 数字+原因混合问题"
+      "tests": "中英混杂Query + 数字+原因混合问题",
+      "expected_keywords": ["BYD", "revenue", "growth", "收入", "增长", "2024", "原因"]
     },
     {
       "id": "R13",
@@ -149,7 +161,8 @@
       "expected_answer_type": "术语纠错 + 语义理解",
       "must_contain_sources": true,
       "min_sources": 1,
-      "tests": "术语混淆：'资本负债率'→'资产负债率'的自动纠错"
+      "tests": "术语混淆：'资本负债率'→'资产负债率'的自动纠错",
+      "expected_keywords": ["资产负债率", "茅台", "负债", "变化", "资本负债率", "比率"]
     },
     {
       "id": "R14",
@@ -159,7 +172,8 @@
       "expected_answer_type": "列表式资金用途描述",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "招股说明书类文档检索能力（替代旧R14）"
+      "tests": "招股说明书类文档检索能力（替代旧R14）",
+      "expected_keywords": ["募集资金", "招股说明书", "茅台", "项目", "用途", "投资"]
     },
     {
       "id": "R15",
@@ -169,7 +183,8 @@
       "expected_answer_type": "风险+应对措施",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "风险识别+应对措施的联合检索（替代旧R15）"
+      "tests": "风险识别+应对措施的联合检索（替代旧R15）",
+      "expected_keywords": ["供应链", "风险", "比亚迪", "应对", "措施", "供应商", "原材料"]
     }
   ]
 }
