@@ -47,11 +47,6 @@ def route_query(query: str) -> str:
     默认 complex（混合检索 + LambdaMART 重排）——因为财务 query 大多需要精确数字
     仅极短问候类 query 走 simple（快，省计算）
     """
-    # 极短 query（< 20 字）走快速模式，无需重排
-    if len(query) < 20:
-        logger.info("检索路由: simple（短查询）→ 快速模式")
-        return "simple"
-
     # 先检查是否是明显的简单 query
     for pattern in SIMPLE_PATTERNS:
         if pattern in query:
