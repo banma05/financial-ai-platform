@@ -322,7 +322,17 @@ if __name__ == "__main__":
     init_db()
 
     if "--all" in sys.argv:
-        populate_all()
+        years = 5
+        if "--year" in sys.argv:
+            try:
+                yi = sys.argv.index("--year")
+                target_year = int(sys.argv[yi + 1])
+                current_year = datetime.now().year
+                years = current_year - target_year + 1
+            except (ValueError, IndexError):
+                print("错误: --year 需要指定年份（如 --year 2022）")
+                sys.exit(1)
+        populate_all(years=years)
     elif "--symbol" in sys.argv:
         try:
             idx = sys.argv.index("--symbol")
@@ -346,6 +356,7 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         print("用法:")
-        print("  python -m db.financial_populator --all           # 填充全部预设公司")
-        print("  python -m db.financial_populator --symbol 600519  # 单个公司")
-        print("  python -m db.financial_populator --top 10          # A股前10大")
+        print("  python -m db.financial_populator --all              # 填充全部预设公司")
+        print("  python -m db.financial_populator --all --year 2022  # 指定起始年份")
+        print("  python -m db.financial_populator --symbol 600519    # 单个公司")
+        print("  python -m db.financial_populator --top 10           # A股前10大")
