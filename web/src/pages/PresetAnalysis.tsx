@@ -66,7 +66,9 @@ export default function PresetAnalysis() {
     if (!selectedCompany || isAnalyzing) return;
 
     const template = templates.find((t) => t.name === selectedTemplate);
-    const query = customQuery.trim() || `${selectedCompany} ${template?.display_name || '财务分析'}`;
+    const query = customQuery.trim()
+      ? (customQuery.includes(selectedCompany) ? customQuery.trim() : `${selectedCompany} ${customQuery.trim()}`)
+      : `${selectedCompany} ${template?.display_name || '财务分析'}`;
 
     setAnalyzing(true);
     setShowResult(false);
