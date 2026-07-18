@@ -316,10 +316,12 @@ def run_agent_stream(
     template_name: Optional[str] = None,
 ) -> Generator[str, None, None]:
     """
-    流式执行 Agent 分析，yield SSE 事件字符串。
+    V8.3 重构：逐任务执行 + 实时推送 SSE。
 
-    通过 LangGraph graph.stream() 获取节点事件，
-    包装为前端可消费的 SSE 格式。
+    旧架构用 graph.stream() 只在节点边界推送事件——executor_node
+    内所有任务跑完才一次性返回，导致进度条 25 秒空白后瞬间跳满。
+    新架构 Planner 走 graph 拿计划，任务在 generator 中逐个执行，
+    每完成一个立即 yield SSE——工作与推送真正并步。
     """
     _init_components()
     start_time = time.time()
@@ -337,79 +339,109 @@ def run_agent_stream(
         logger.info(f"[请求开始] session={session_id}, query={user_input[:80]}")
         yield AgentEvent("plan_start", message="正在分析需求...").to_sse()
 
-        last_state = initial_state
-        task_count = 0
-        prev_result_count = 0
-
-        for event in graph.stream(initial_state, stream_mode="values"):
-            combined_state = {**last_state, **event}
-            last_state = combined_state
-
-            # 检查是否需要追问
-            if combined_state.get("clarification"):
-                yield AgentEvent(
-                    "clarification",
-                    question=combined_state["clarification"],
-                    message="需要更多信息",
-                ).to_sse()
+        # ── Phase 1: Planner 走 graph ──
+        plan_state = None
+        for event in graph.stream(initial_state, stream_mode="values", subgraphs=True):
+            plan_state = {**initial_state, **event}
+            if plan_state.get("clarification"):
+                yield AgentEvent("clarification",
+                    question=plan_state["clarification"],
+                    message="需要更多信息").to_sse()
                 return
+            if plan_state.get("tasks"):
+                break  # Planner 完成，立即开始逐任务执行
 
-            # 任务规划完成
-            tasks = combined_state.get("tasks", [])
-            if tasks and task_count == 0:
-                task_count = len(tasks)
-                yield AgentEvent(
-                    "plan_start",
-                    task_count=task_count,
-                    tasks=[{"id": t["task_id"], "type": t["task_type"],
-                            "desc": t.get("description", "")} for t in tasks],
-                    message=f"已规划 {task_count} 个子任务",
+        tasks = plan_state.get("tasks", []) if plan_state else []
+        if not tasks:
+            yield AgentEvent("error", message="未能生成分析计划").to_sse()
+            return
+
+        task_count = len(tasks)
+        yield AgentEvent("plan_start",
+            task_count=task_count,
+            tasks=[{"id": t["task_id"], "type": t["task_type"],
+                    "desc": t.get("description", "")} for t in tasks],
+            message=f"已规划 {task_count} 个子任务",
+        ).to_sse()
+
+        # ── Phase 2: 逐任务执行 + 实时推送 ──
+        result_map: Dict[str, dict] = {}
+        chart_count = 0
+
+        for idx, task_dict in enumerate(tasks, 1):
+            task = AnalysisTask(**task_dict)
+
+            # 推 task_start
+            yield AgentEvent("task_start",
+                task_id=task.task_id,
+                description=task.description or "",
+                task_idx=idx, total=task_count,
+                message=f"开始执行任务 [{idx}/{task_count}]",
+            ).to_sse()
+
+            # 检查前置依赖
+            dep_failed = False
+            for dep_id in task.depends_on:
+                dep = result_map.get(dep_id)
+                if dep and not dep.get("success", True):
+                    dep_failed = True
+                    break
+
+            if dep_failed:
+                result = TaskResult(
+                    task_id=task.task_id, task_type=task.task_type,
+                    success=False,
+                    error=f"前置任务失败，跳过「{task.description}」",
+                ).model_dump()
+            else:
+                dep_results = [
+                    TaskResult(**result_map[dep_id])
+                    for dep_id in task.depends_on if dep_id in result_map
+                ]
+                try:
+                    result = _executor.tools.execute_task(task, dep_results)
+                except Exception as e:
+                    logger.error(f"[Executor] 任务 {task.task_id} 异常: {e}")
+                    result = TaskResult(
+                        task_id=task.task_id, task_type=task.task_type,
+                        success=False, error=str(e),
+                    )
+
+            result_map[task.task_id] = result if isinstance(result, dict) else result.model_dump()
+            r = result_map[task.task_id]
+
+            # 图表事件
+            if r.get("chart_base64"):
+                chart_count += 1
+                yield AgentEvent("chart",
+                    task_id=task.task_id,
+                    chart_base64=r["chart_base64"],
+                    chart_index=chart_count,
+                    message="图表已生成",
                 ).to_sse()
 
-            # 任务执行进度
-            results = combined_state.get("task_results", [])
-            chart_count = combined_state.get("chart_count", 0)
-            if len(results) > prev_result_count:
-                for i, r in enumerate(results[prev_result_count:]):
-                    task_idx = prev_result_count + i + 1
-                    task_info = next((t for t in tasks if t["task_id"] == r["task_id"]), None)
-                    yield AgentEvent(
-                        "task_start",
-                        task_id=r["task_id"],
-                        description=task_info.get("description", "") if task_info else "",
-                        task_idx=task_idx,
-                        total=task_count,
-                        message=f"开始执行任务 [{task_idx}/{task_count}]",
-                    ).to_sse()
-                    if r.get("chart_base64"):
-                        yield AgentEvent(
-                            "chart",
-                            task_id=r["task_id"],
-                            chart_base64=r["chart_base64"],
-                            chart_index=chart_count,
-                            message="图表已生成",
-                        ).to_sse()
-                    yield AgentEvent(
-                        "task_complete",
-                        task_id=r["task_id"],
-                        success=r.get("success", False),
-                        summary=r.get("summary", ""),
-                        error=r.get("error"),
-                        message=f"{'✅' if r.get('success') else '❌'} {r.get('summary') or r.get('error') or '任务完成'}",
-                    ).to_sse()
-                prev_result_count = len(results)
+            # 推 task_complete
+            yield AgentEvent("task_complete",
+                task_id=task.task_id,
+                success=r.get("success", False),
+                summary=r.get("summary", ""),
+                error=r.get("error"),
+                message=f"{'✅' if r.get('success') else '❌'} {r.get('summary') or r.get('error') or '任务完成'} ({(time.time()-start_time):.1f}s)",
+            ).to_sse()
 
-            # 报告生成完成
-            if combined_state.get("final_report"):
-                report = combined_state["final_report"]
+        # ── Phase 3: Reporter 走 graph ──
+        task_results = [result_map[t["task_id"]] for t in tasks if t["task_id"] in result_map]
+        final_state = {"task_results": task_results, "chart_count": chart_count}
+        for event in graph.stream(final_state, stream_mode="values", subgraphs=True):
+            if isinstance(event, dict) and event.get("final_report"):
+                report = event["final_report"]
                 processing_time = round(time.time() - start_time, 1)
-                charts = [r.get("chart_base64") for r in results if r.get("chart_base64")]
+                charts = [r.get("chart_base64") for r in task_results if r.get("chart_base64")]
 
-                yield AgentEvent(
-                    "done",
+                yield AgentEvent("done",
                     report=report,
                     charts=charts,
-                    task_count=len(results),
+                    task_count=len(task_results),
                     processing_time=processing_time,
                     message=f"分析完成，耗时 {processing_time} 秒",
                 ).to_sse()

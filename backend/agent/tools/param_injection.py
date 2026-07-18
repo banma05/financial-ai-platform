@@ -51,6 +51,7 @@ FINANCIAL_TERM_TO_PARAM: Dict[str, str] = {
     # ── 估值 ──
     "基本每股收益": "eps", "每股收益": "eps", "EPS": "eps",
     "股价": "stock_price", "股票价格": "stock_price",
+    "price": "stock_price",  # MCP stock_price 返回的英文键名
     # ── 成长（跨年对比）──
     "上期营业收入": "previous_revenue", "上期营收": "previous_revenue",
     "上期净利润": "previous_profit",

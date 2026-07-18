@@ -451,9 +451,12 @@ class Planner:
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
 # MCP外部工具（6种，用于获取实时/外部数据）：
-# ⚠️ mcp_financial_statements 返回原始财报科目名（如"少数股东权益"），会与 SQL 精确数据冲突导致计算错误。
-#    财务指标查询（营收/利润/资产/现金流）只用 data_query！mcp_financial_statements 不要用！
-#    MCP 仅用于：实时股价(mcp_stock_price)、行业对比(mcp_industry_comparison)、大盘指数(mcp_market_index)、财报日历(mcp_financial_calendar)
+# ⚠️ 财务指标（营收/利润/资产/现金流/负债/费用）用 data_query（SQL精确数据）。
+#    mcp_stock_price：获取实时股价→用于计算市盈率(PE)/市净率(PB)
+#    mcp_financial_statements：仅用于获取 SQL 不覆盖的科目（如少数股东权益等细节）
+#    mcp_industry_comparison：行业横向对比
+#    mcp_market_index：大盘指数数据
+#    mcp_financial_calendar：财报日历/分红日程
 - mcp_stock_price / mcp_financial_statements / mcp_calculate_ratio / mcp_industry_comparison / mcp_market_index / mcp_financial_calendar
 
 ## 可用财务公式（共 19 个）
