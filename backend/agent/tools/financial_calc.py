@@ -485,6 +485,19 @@ class FinancialCalcTool:
 
             result = func(*args)
 
+            # ── V8.3: 合理性校验 — 财务数据宁缺毋滥 ──
+            sanity = FinancialCalcTool._sanity_check(formula, result, params)
+            if not sanity["ok"]:
+                return {
+                    "success": False,
+                    "result": None,
+                    "display_name": entry["display_name"],
+                    "category": entry["category"],
+                    "expression": "",
+                    "unit": entry["unit"],
+                    "error": sanity["reason"],
+                }
+
             # 构建计算表达式（简洁版：只显示公式名和结果，不暴露中间参数）
             expr = f"{entry['formula_text']} = {result}{entry['unit']}"
 
@@ -507,6 +520,29 @@ class FinancialCalcTool:
                 "unit": "",
                 "error": str(e),
             }
+
+    @staticmethod
+    def _sanity_check(formula: str, result: float, params: dict) -> dict:
+        """
+        V8.3: 计算结果合理性校验。
+
+        财务分析宁缺毋滥——数值超出合理范围说明输入数据有问题，
+        不应输出给用户。
+        """
+        checks = {
+            "roe": (0, 200, "ROE 超出合理范围 (0-200%)，可能净资产数据有误"),
+            "roa": (0, 100, "ROA 超出合理范围 (0-100%)，可能总资产数据有误"),
+            "gross_profit_margin": (0, 100, "毛利率超出合理范围 (0-100%)"),
+            "net_profit_margin": (0, 100, "净利率超出合理范围 (0-100%)"),
+            "debt_ratio": (0, 100, "资产负债率超出合理范围 (0-100%)"),
+            "revenue_growth": (-500, 500, "营收增长率超出合理范围 (-500%~500%)，可能年份数据错配"),
+            "net_profit_growth": (-500, 500, "净利润增长率超出合理范围 (-500%~500%)，可能年份数据错配"),
+        }
+        if formula in checks:
+            lo, hi, reason = checks[formula]
+            if not (lo <= result <= hi):
+                return {"ok": False, "reason": f"{reason}（计算值: {result}%）"}
+        return {"ok": True}
 
     @staticmethod
     def _auto_fill_params(formula: str, params: dict) -> dict:
