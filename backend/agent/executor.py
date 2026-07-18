@@ -262,17 +262,13 @@ class Executor:
     def __init__(self, tool_registry: ToolRegistry):
         self.tools = tool_registry
 
-    def execute(self, tasks: List[AnalysisTask]) -> List[TaskResult]:
+    def execute(self, tasks: List[AnalysisTask],
+                on_task_complete: callable = None) -> List[TaskResult]:
         """
         按顺序线性执行所有任务。
 
-        流程：
-        1. 按 task_id 排序
-        2. 依次执行
-        3. 失败的任务不阻塞后续任务，但标记依赖它的任务为失败
-
-        返回:
-            List[TaskResult]
+        回调:
+            on_task_complete(task, result, index, total) — 每完成一个任务时调用
         """
         if not tasks:
             return []
@@ -320,6 +316,10 @@ class Executor:
             result = self.tools.execute_task(task, dep_results)
             task.status = "completed" if result.success else "failed"
             results.append(result)
+
+            # V8.3: 通知回调（用于 SSE 实时推送）
+            if on_task_complete:
+                on_task_complete(task, result, len(results), len(sorted_tasks))
 
             logger.info(
                 f"任务 [{task.task_id}/{len(sorted_tasks)}] {task.status}: {task.description}"
