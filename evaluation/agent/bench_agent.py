@@ -215,7 +215,7 @@ def score_number_accuracy_v2(report: str, data_values: dict) -> dict:
         return {"accuracy": 1.0, "matched": [], "mismatched": [], "total": 0}
 
     import re
-    report_numbers = re.findall(r'\d+\.?\d*', report)
+    report_numbers = re.findall(r'-?\d+\.?\d*', report)
     report_floats = set()
     for n in report_numbers:
         try:
@@ -250,6 +250,15 @@ def score_number_accuracy_v2(report: str, data_values: dict) -> dict:
             candidates.add(round(yi, 0))             # 615 亿（整数亿元）
             candidates.add(round(raw_val / 1e8, 1))  # 615.2 亿（一位小数亿元）
             candidates.add(round(raw_val / 1e8, 4))  # 高精度亿元
+
+        # ── V8.3: 负值指标 abs() 候选 ──
+        # 报告常写"净流出710.68亿元"（语义负值、文本正数），
+        # 而数据库存负值 -710.68亿。添加 abs() 候选覆盖此写法。
+        if raw_val < 0:
+            abs_candidates = set()
+            for c in candidates:
+                abs_candidates.add(abs(c))
+            candidates.update(abs_candidates)
 
         found = False
         for rf in report_floats:
