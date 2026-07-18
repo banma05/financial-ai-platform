@@ -373,7 +373,8 @@ class Planner:
 
         # 多维度关键词 → multi_dimension
         multi_kw = ["全面评估", "综合分析", "多维度", "多维分析", "全方位",
-                     "系统性评估", "财务健康", "整体财务", "综合财务", "全面分析"]
+                     "系统性评估", "财务健康", "整体财务", "财务整体", "综合财务",
+                     "全面分析", "财务整体表现", "整体表现", "财务表现"]
         if any(kw in user_input for kw in multi_kw):
             return "multi_dimension"
 
