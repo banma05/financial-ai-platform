@@ -168,7 +168,7 @@ export default function PresetAnalysis() {
             {result.charts.map((chartData, i) => (
               <div key={`chart-${i}`} className="mb-4">
                 <img
-                  src={chartData}
+                  src={chartData.startsWith('data:') ? chartData : `data:image/png;base64,${chartData}`}
                   alt={`图表 ${i + 1}`}
                   className="max-w-full rounded-lg border"
                 />
