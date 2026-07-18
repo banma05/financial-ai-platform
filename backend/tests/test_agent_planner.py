@@ -87,9 +87,9 @@ class TestPlannerTemplates:
         assert "current_ratio" in formulas
         assert "quick_ratio" in formulas
         assert "interest_coverage" in formulas
-        # 验证雷达图
+        # 验证图表（V8.3: 雷达→柱状）
         chart_task = next(t for t in plan.tasks if t.task_type == "chart")
-        assert chart_task.params.get("chart_type") == "radar"
+        assert chart_task.params.get("chart_type") == "bar"
 
     def test_unknown_template(self):
         """未注册的模板名应该由 plan() 走 LLM 模式（此处只测不会崩溃）"""
