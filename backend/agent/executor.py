@@ -285,19 +285,28 @@ class Executor:
         for task in sorted_tasks:
             # 检查依赖是否都已成功
             dep_failed = False
+            has_any_success = False
             for dep_id in task.depends_on:
                 dep_result = next((r for r in results if r.task_id == dep_id), None)
-                if dep_result and not dep_result.success:
-                    dep_failed = True
-                    break
+                if dep_result:
+                    if dep_result.success:
+                        has_any_success = True
+                    elif dep_result.task_type == "calculate":
+                        # V8.3: 批量计算部分成功也算有可用数据
+                        batch_data = dep_result.data or {}
+                        if batch_data.get("results"):
+                            has_any_success = True
+                    elif not dep_result.success:
+                        dep_failed = True
 
-            if dep_failed:
+            # V8.3: 只有全部前置失败才跳过，至少一个成功就继续
+            if dep_failed and not has_any_success:
                 results.append(TaskResult(
                     task_id=task.task_id,
                     task_type=task.task_type,
                     success=False,
                     summary="",
-                    error=f"前置任务失败，跳过「{task.description}」",
+                    error=f"前置任务全部失败，跳过「{task.description}」",
                 ))
                 continue
 

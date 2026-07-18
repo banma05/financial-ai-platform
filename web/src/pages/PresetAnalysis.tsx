@@ -164,7 +164,16 @@ export default function PresetAnalysis() {
         </article>
         {result.charts.length > 0 && (
           <div className="mt-4 bg-white rounded-xl p-6 shadow-sm border">
-            <p className="text-sm text-gray-500">图表 ({result.charts.length} 张)</p>
+            <h2 className="text-lg font-semibold mb-4">📈 可视化图表</h2>
+            {result.charts.map((chartData, i) => (
+              <div key={`chart-${i}`} className="mb-4">
+                <img
+                  src={chartData}
+                  alt={`图表 ${i + 1}`}
+                  className="max-w-full rounded-lg border"
+                />
+              </div>
+            ))}
           </div>
         )}
         <p className="mt-2 text-xs text-gray-400">
