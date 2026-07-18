@@ -67,7 +67,10 @@ export function useAnalysisStream() {
     try {
       const response = await fetch('/api/v1/agent/analyze/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(import.meta.env.VITE_API_KEY ? { 'X-API-Key': import.meta.env.VITE_API_KEY } : {}),
+        },
         body: JSON.stringify({
           query: params.query,
           template: params.template || null,
