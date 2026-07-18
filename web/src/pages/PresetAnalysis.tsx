@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
 import { api } from '@/api/client';
-import { useAnalysisStore, type Template, type AnalysisResult } from '@/stores/analysis';
+import { useAnalysisStore, type Template } from '@/stores/analysis';
 import { useAnalysisStream } from '@/hooks/useAnalysisStream';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 
