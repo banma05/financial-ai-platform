@@ -511,41 +511,47 @@ class FinancialCalcTool:
     @staticmethod
     def _auto_fill_params(formula: str, params: dict) -> dict:
         """
-        V7.0: 智能参数补全 — 修复 ROE/ROA/Growth 常见参数名不匹配。
+        V8.3: 智能参数补全 — 三种策略覆盖所有公式缺参场景。
 
-        ROE 场景：只有 equity 无 avg_equity → avg_equity = equity
-        ROA 场景：只有 total_assets 无 avg_total_assets → avg_total_assets = total_assets
-        增长率场景：只有 营业收入_2024/营业收入_2023 → 提取 current_revenue/previous_revenue
+        策略1 (avg_* 回退): avg_equity←equity, avg_total_assets←total_assets 等
+        策略2 (增长公式): 从年份后缀键名提取 current/previous 对
+        策略3 (负债率/流动率): 从已有数据推算缺失参数
         """
-        params = dict(params)  # 不修改原始字典
+        params = dict(params)
 
-        # ── ROE: avg_equity ← equity ──
-        if formula == "roe":
-            if "avg_equity" not in params and "equity" in params:
-                params["avg_equity"] = params["equity"]
+        # ── 策略1: avg_* 回退（覆盖 ROE/ROA/周转率等 6 个公式）──
+        avg_fallbacks = {
+            "avg_equity": "equity",
+            "avg_total_assets": "total_assets",
+            "avg_inventory": "inventory",
+            "avg_receivables": "receivables",
+        }
+        for avg_key, fallback_key in avg_fallbacks.items():
+            if avg_key not in params and fallback_key in params:
+                params[avg_key] = params[fallback_key]
 
-        # ── ROA: avg_total_assets ← total_assets ──
-        if formula == "roa":
-            if "avg_total_assets" not in params and "total_assets" in params:
-                params["avg_total_assets"] = params["total_assets"]
-
-        # ── 营收增长率: current_revenue ← 营业收入_最大年 ──
-        if formula == "revenue_growth":
-            if "current_revenue" not in params or "previous_revenue" not in params:
-                yearly = FinancialCalcTool._extract_yearly(params, "营业收入")
+        # ── 策略2: 增长公式 — 从年份后缀键名提取当期/上期 ──
+        growth_formulas = {
+            "revenue_growth": ("营业收入", "current_revenue", "previous_revenue"),
+            "net_profit_growth": ("净利润", "current_profit", "previous_profit"),
+        }
+        if formula in growth_formulas:
+            metric, cur_key, prev_key = growth_formulas[formula]
+            if cur_key not in params or prev_key not in params:
+                yearly = FinancialCalcTool._extract_yearly(params, metric)
                 if len(yearly) >= 2:
                     sorted_yrs = sorted(yearly.keys(), reverse=True)
-                    params.setdefault("current_revenue", yearly[sorted_yrs[0]])
-                    params.setdefault("previous_revenue", yearly[sorted_yrs[1]])
+                    params.setdefault(cur_key, yearly[sorted_yrs[0]])
+                    params.setdefault(prev_key, yearly[sorted_yrs[1]])
 
-        # ── 净利润增长率: current_profit ← 净利润_最大年 ──
-        if formula == "net_profit_growth":
-            if "current_profit" not in params or "previous_profit" not in params:
-                yearly = FinancialCalcTool._extract_yearly(params, "净利润")
-                if len(yearly) >= 2:
-                    sorted_yrs = sorted(yearly.keys(), reverse=True)
-                    params.setdefault("current_profit", yearly[sorted_yrs[0]])
-                    params.setdefault("previous_profit", yearly[sorted_yrs[1]])
+        # ── 策略3: 负债 ← 总资产 - 净资产（数据查询常缺负债项）──
+        if formula == "debt_ratio":
+            if "total_liabilities" not in params:
+                if "total_assets" in params and "equity" in params:
+                    params["total_liabilities"] = round(params["total_assets"] - params["equity"], 2)
+
+        # ── 策略4: 流动比率 — current_assets/current_liabilities 缺一不可时不补（安全）──
+        # 不自动推算，避免错误
 
         return params
 

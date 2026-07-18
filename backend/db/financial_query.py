@@ -288,7 +288,7 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                 continue
 
             key_prefix = f"{short_name}_" if multi_company else ""
-            year_suffix = f"_{year}" if len(years) > 1 else ""
+            year_suffix = f"_{year}"  # V8.3: 始终带年份，确保增长公式能区分当期/上期
 
             if formula and len(keys) >= 2 and all(k in values for k in keys):
                 try:

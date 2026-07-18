@@ -298,17 +298,51 @@ class Planner:
         # 模式 1：显式指定模板
         if template_name and template_name in BUILTIN_TEMPLATES:
             logger.info(f"使用分析模板（显式）: {template_name}")
-            return self._load_template(template_name, user_input)
-
+            plan = self._load_template(template_name, user_input)
         # ── V6.0: 模式 2：关键词匹配模板（跳过 LLM，0.1s vs 36s）──
-        matched = self._match_template(user_input)
-        if matched:
+        elif self._match_template(user_input):
+            matched = self._match_template(user_input)
             logger.info(f"使用分析模板（匹配）: {matched}")
-            return self._load_template(matched, user_input)
+            plan = self._load_template(matched, user_input)
+        else:
+            # 模式 3：自由分析（LLM 拆解）
+            logger.info("LLM 自由拆解模式")
+            plan = self._parse_with_llm(user_input)
 
-        # 模式 3：自由分析（LLM 拆解）
-        logger.info("LLM 自由拆解模式")
-        return self._parse_with_llm(user_input)
+        # V8.3: 兜底——有数据但无图表的计划，强制注入图表
+        return self._ensure_chart(plan, user_input)
+
+    def _ensure_chart(self, plan: "AnalysisPlan", user_input: str) -> "AnalysisPlan":
+        """
+        V8.3: 任何有 data_query 但无 chart 的计划，自动注入图表。
+
+        图表只依赖数据查询（不依赖计算），确保计算部分失败时仍能出图。
+        """
+        tasks = plan.tasks
+        data_tasks = [t for t in tasks if t.task_type == "data_query"]
+        has_chart = any(t.task_type == "chart" for t in tasks)
+
+        if data_tasks and not has_chart:
+            # 依赖所有数据查询任务（计算失败不影响图表生成）
+            data_ids = [t.task_id for t in data_tasks]
+            chart_task = AnalysisTask(
+                task_id=str(len(tasks) + 1),
+                task_type="chart",
+                description="生成数据可视化图表",
+                params={"chart_type": "bar"},
+                depends_on=data_ids,
+            )
+            tasks.append(chart_task)
+            logger.info(f"[Planner] 自动注入图表任务: task_id={chart_task.task_id}, depends_on={data_ids}")
+
+        # 已有 chart 但依赖了 calc 任务 → 也加上 data 依赖
+        for t in tasks:
+            if t.task_type == "chart":
+                for dt in data_tasks:
+                    if dt.task_id not in t.depends_on:
+                        t.depends_on.append(dt.task_id)
+
+        return plan
 
     def _match_template(self, user_input: str) -> Optional[str]:
         """
@@ -416,7 +450,10 @@ class Planner:
 - chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
-# MCP外部工具（6种，用于获取实时/外部数据。简单查询优先用 data_query，需要实时行情/行业对比/财报日历时用 MCP）：
+# MCP外部工具（6种，用于获取实时/外部数据）：
+# ⚠️ mcp_financial_statements 返回原始财报科目名（如"少数股东权益"），会与 SQL 精确数据冲突导致计算错误。
+#    财务指标查询（营收/利润/资产/现金流）只用 data_query！mcp_financial_statements 不要用！
+#    MCP 仅用于：实时股价(mcp_stock_price)、行业对比(mcp_industry_comparison)、大盘指数(mcp_market_index)、财报日历(mcp_financial_calendar)
 - mcp_stock_price / mcp_financial_statements / mcp_calculate_ratio / mcp_industry_comparison / mcp_market_index / mcp_financial_calendar
 
 ## 可用财务公式（共 19 个）
