@@ -90,15 +90,15 @@
 | 18 | 雷达图→柱状图 | c23296a/17df688 | 雷达需 structured data, 参数注入只能传平铺值, 退而用 bar |
 | 19 | 模板匹配补齐 | 7fc8dd7 | '财务整体'/'表现'等常见词加入 keyword, 0.1s 命中模板 |
 
-### 已知遗留问题
+### 已知遗留问题（明早开工）
 
-| 问题 | 严重度 | 原因 |
-|------|:--:|------|
-| 图表简陋(纯 matplotlib) | 🟡 | 无样式设计, 柱状图数据标签单一 |
-| 前端 UI 粗糙 | 🟡 | Tailwind 最小化, 无交互细节 |
-| Reporter 用 flash→分析深度有限 | 🟡 | flash 模型能力天花板, pro 太贵 |
-| PE/PB 需 MCP 实时股价 | 🟢 | SQL 无股价数据, MCP 已通但 Planner 未强制用 |
-| 雷达图数据管道不支持 | 🟢 | 需传 {categories:[], series:{}} 结构化数据 |
+| # | 问题 | 表现 | 方向 | 涉及文件 |
+|:--:|------|------|------|------|
+| 1 | 图表丑陋 | 柱状图只有一个柱子+标签, 颜色/字体/布局全默认 | matplotlib 配色方案+字体+布局优化, 或换 ECharts 前端渲染 | chart.py / PresetAnalysis.tsx |
+| 2 | 前端 UI 粗糙 | 输入框/按钮/卡片/进度条都是原始 Tailwind, 无设计感 | 加圆角/阴影/过渡动画/图标, 参考 shadcn/ui 风格 | PresetAnalysis.tsx 为主 |
+| 3 | Reporter 分析深度不够 | 发现/建议太泛, 置信度标注机械, 缺少财务洞察 | flash→pro 看效果; 或优化 Reporter prompt 给更具体指令 | reporter.py |
+| 4 | PE/PB 算不了 | SQL 无股价, MCP stock_price 返回 price 键但 Planner 未编排 mcp_stock_price 任务 | Planner 在涉及市盈率/市净率时主动加 mcp_stock_price | planner.py |
+| 5 | 雷达图不能用 | chart_type=radar 需要 {categories,series} 结构化数据, 参数注入只传扁平的 key:value | 柱状图替代已做; 以后要支持雷达需改 chart 工具的 run() 数据格式 | chart.py |
 
 > 07-18 深夜评测快照: Agent 100% (含幻觉检测) | RAG Faith 94.8% / ARel 86.8% / CRec 94.1% / SEM-R@5 96.0% (pro judge) | SSE 真正流式 | 9/9 任务全部成功 | Docker 前后端构建成功 | 后端385+前端19全绿 | CI 301 全绿
 
