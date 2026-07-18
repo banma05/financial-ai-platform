@@ -248,21 +248,38 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
         keys = metric_def["keys"]
         formula = metric_def["formula"]
 
+        # V8.3: 同比对比时统一季度口径。先检查所有年份 Q4 是否都存在
+        all_have_q4 = True
         for year in years:
-            values = {}
             for key in keys:
-                record = db.query(FinancialData).filter(
+                q4 = db.query(FinancialData).filter(
                     FinancialData.symbol == symbol,
                     FinancialData.year == year,
                     FinancialData.quarter == "Q4",
                     FinancialData.metric_key == key,
                 ).first()
-                if not record:
-                    record = db.query(FinancialData).filter(
-                        FinancialData.symbol == symbol,
-                        FinancialData.year == year,
-                        FinancialData.metric_key == key,
-                    ).order_by(FinancialData.quarter.desc()).first()
+                if not q4:
+                    all_have_q4 = False
+                    break
+            if not all_have_q4:
+                break
+
+        # 统一取每个年份的最新可用季度（确保年份间可对比）
+        target_quarter = "Q4" if all_have_q4 else None
+
+        for year in years:
+            values = {}
+            for key in keys:
+                query_base = db.query(FinancialData).filter(
+                    FinancialData.symbol == symbol,
+                    FinancialData.year == year,
+                    FinancialData.metric_key == key,
+                )
+                if target_quarter:
+                    record = query_base.filter(FinancialData.quarter == target_quarter).first()
+                else:
+                    # 各年份都取各自最新季度，保持同季可比
+                    record = query_base.order_by(FinancialData.quarter.desc()).first()
                 if record:
                     values[key] = record.metric_value
                     found_any = True

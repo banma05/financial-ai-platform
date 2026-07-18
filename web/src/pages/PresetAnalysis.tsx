@@ -111,7 +111,7 @@ export default function PresetAnalysis() {
     if (!selectedCompany) return [];
     const company = selectedCompany;
     // V8.1 D18: 使用当前年份，不再硬编码 2024年
-    const year = `${new Date().getFullYear()}年`;
+    const year = `${new Date().getFullYear() - 1}年`;
 
     switch (selectedTemplate) {
       case 'profitability':
@@ -263,7 +263,7 @@ export default function PresetAnalysis() {
           value={customQuery}
           onChange={(e) => setCustomQuery(e.target.value)}
           aria-label="自定义分析问题"
-          placeholder={`例如：${selectedCompany ? selectedCompany : '贵州茅台'} ${new Date().getFullYear()}年营收同比增长了多少？`}
+          placeholder={`例如：${selectedCompany ? selectedCompany : '贵州茅台'} ${new Date().getFullYear() - 1}年营收同比增长了多少？`}
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
         />
       </section>
