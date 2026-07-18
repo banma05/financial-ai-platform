@@ -303,6 +303,110 @@ def score_report_structure(report: str) -> dict:
     return {"structure_score": passed / len(checks), "details": checks}
 
 
+def score_hallucination(report: str, data_values: dict) -> dict:
+    """
+    V8.3 新增：幻觉检测 — 检查报告中的方向性断言是否与 data_values 一致。
+
+    核心思路：从报告中提取"指标名 + 变化方向"的断言，
+    与 data_values 中相邻年份数据对比，判断方向是否真实。
+
+    例如报告说"毛利率同比下降"，检查 data_values 中 2024 vs 2023 的毛利率是否真的下降。
+    """
+    import re
+
+    if not data_values or not report:
+        return {"hallucination_score": 1.0, "checked": 0, "hallucinations": [],
+                "reason": "无数据可校验"}
+
+    # 提取含方向的断言：指标名 + 变化词 + 数字/方向
+    direction_patterns = [
+        (r'(毛利率|净利率|ROE|ROA|资产负债率|负债率|营收|收入|净利润|现金流|费用|成本)'
+         r'.{0,10}(下降|下滑|减少|降低|回落|下跌|缩水)',
+         "下降"),
+        (r'(毛利率|净利率|ROE|ROA|资产负债率|负债率|营收|收入|净利润|现金流|费用|成本)'
+         r'.{0,10}(上升|增长|提高|增加|提升|扩大|上涨)',
+         "上升"),
+        (r'(下降|下滑|减少|降低|回落|下跌)'
+         r'.{0,10}(毛利率|净利率|ROE|ROA|资产负债率|负债率|营收|收入|净利润|现金流|费用|成本)',
+         "下降"),
+        (r'(上升|增长|提高|增加|提升|扩大|上涨)'
+         r'.{0,10}(毛利率|净利率|ROE|ROA|资产负债率|负债率|营收|收入|净利润|现金流|费用|成本)',
+         "上升"),
+    ]
+
+    # 从 data_values 中推断变化方向（找相邻年份的同一指标）
+    # data_values 的 key 格式如 "2024_毛利率", "2023_毛利率"
+    indicator_years = {}
+    for key, val in data_values.items():
+        parts = key.rsplit("_", 1)
+        if len(parts) == 2:
+            indicator, year_str = parts[0], parts[1]
+        else:
+            continue
+        try:
+            year = int(year_str)
+            if 2000 <= year <= 2030:
+                if indicator not in indicator_years:
+                    indicator_years[indicator] = {}
+                indicator_years[indicator][year] = val
+        except ValueError:
+            continue
+
+    # 建立 "指标名 → 实际方向" 的映射
+    actual_directions = {}
+    for indicator, year_vals in indicator_years.items():
+        years = sorted(year_vals.keys())
+        if len(years) >= 2:
+            # 取最近两年
+            latest = years[-1]
+            prev = years[-2]
+            change = year_vals[latest] - year_vals[prev]
+            prev_val = year_vals[prev]
+            if prev_val != 0:
+                pct = change / abs(prev_val) * 100
+                if pct > 1:
+                    actual_directions[indicator] = ("上升", pct)
+                elif pct < -1:
+                    actual_directions[indicator] = ("下降", abs(pct))
+                # |pct| <= 1% 视为持平，不校验方向
+
+    checked = 0
+    hallucinations = []
+
+    for pattern, claimed_dir in direction_patterns:
+        matches = re.finditer(pattern, report)
+        for m in matches:
+            matched_text = m.group(0)
+            # 找出被断言的指标
+            indicator = None
+            for ind in actual_directions:
+                if ind in matched_text:
+                    indicator = ind
+                    break
+            if indicator is None:
+                continue
+
+            actual_dir, actual_pct = actual_directions[indicator]
+            checked += 1
+
+            if claimed_dir != actual_dir:
+                hallucinations.append({
+                    "text": matched_text[:40],
+                    "indicator": indicator,
+                    "claimed": claimed_dir,
+                    "actual": actual_dir,
+                    "actual_change_pct": round(actual_pct, 1),
+                })
+
+    score = 1.0 - len(hallucinations) / max(checked, 1)
+    return {
+        "hallucination_score": round(score, 4),
+        "checked": checked,
+        "hallucinations": hallucinations,
+        "indicator_count": len(actual_directions),
+    }
+
+
 # ============ 主评测流程 ============
 
 results = []
@@ -316,6 +420,8 @@ total_tokens_all = 0
 valid_plan_count = 0
 valid_number_count = 0          # V8.2: 有数值校验的题目数
 clarification_count = 0
+total_hallucination_score = 0.0   # V8.3: 幻觉检测累计
+total_halluc_checks = 0
 by_category = {}
 by_difficulty = {}
 failed = []
@@ -380,6 +486,8 @@ for i, q in enumerate(questions, 1):
     ref_result = score_number_accuracy(report, q.get("required_numbers", {}))
     ind_result = score_indicator_coverage(report, q.get("expected_indicators", []))
     struct_result = score_report_structure(report)
+    halluc_result = score_hallucination(report, data_values)
+
     if num_result["total"] > 0:
         total_number_accuracy += num_result["accuracy"]
         valid_number_count += 1
@@ -388,17 +496,28 @@ for i, q in enumerate(questions, 1):
     total_cost += question_cost
     total_tokens_all += question_tokens
 
-    logger.info(f"  执行: {exec_time:.1f}s | 真实数字准确率={num_result['accuracy']:.1%} | 参考准确率={ref_result['accuracy']:.1%} | 结构={struct_result['structure_score']:.1%}")
+    # ── V8.3 幻觉检测累计 ──
+    total_hallucination_score += halluc_result["hallucination_score"]
+    total_halluc_checks += 1
+
+    logger.info(f"  执行: {exec_time:.1f}s | 数字准确率={num_result['accuracy']:.1%} | 幻觉检测={halluc_result['hallucination_score']:.1%} ({halluc_result['checked']}项校验)")
     if num_result["mismatched"]:
         logger.info(f"  数字不符: {num_result['mismatched'][:5]}")
-    if ref_result["mismatched"]:
-        logger.info(f"  参考不符: {ref_result['mismatched'][:5]}")
+    if halluc_result["hallucinations"]:
+        for h in halluc_result["hallucinations"]:
+            logger.info(f"  ⚠️ 幻觉: {h['text']} (声称{h['claimed']}, 实际{h['actual']}{h['actual_change_pct']}%)")
+    if num_result["mismatched"]:
+        logger.info(f"  数字不符: {num_result['mismatched'][:5]}")
+    if halluc_result["hallucinations"]:
+        for h in halluc_result["hallucinations"]:
+            logger.info(f"  ⚠️ 幻觉: {h['text']} (声称{h['claimed']}, 实际{h['actual']}{h['actual_change_pct']}%)")
 
     # 按类别/难度分组
     for group, key in [(by_category, cat), (by_difficulty, diff)]:
         if key not in group:
             group[key] = {"count": 0, "valid_count": 0, "task_score": 0.0,
-                          "ind_coverage": 0.0, "num_accuracy": 0.0, "num_count": 0, "time": 0.0}
+                          "ind_coverage": 0.0, "num_accuracy": 0.0, "num_count": 0,
+                          "time": 0.0, "halluc": 0.0, "halluc_checks": 0}
         group[key]["count"] += 1
         if task_result["score"] is not None:
             group[key]["valid_count"] += 1
@@ -408,6 +527,8 @@ for i, q in enumerate(questions, 1):
         if num_result["total"] > 0:
             group[key]["num_accuracy"] += num_result["accuracy"]
             group[key]["num_count"] += 1
+        group[key]["halluc"] += halluc_result["hallucination_score"]
+        group[key]["halluc_checks"] += 1
 
     results.append({
         "id": qid,
@@ -427,6 +548,9 @@ for i, q in enumerate(questions, 1):
         "needs_clarification": task_result["status"] == "needs_clarification",
         "tokens": question_tokens,
         "cost": question_cost,
+        "hallucination_score": halluc_result["hallucination_score"],
+        "halluc_checked": halluc_result["checked"],
+        "hallucinations": halluc_result["hallucinations"],
     })
 
 elapsed = time.time() - start_all
@@ -434,7 +558,7 @@ n = len(questions)
 
 # ============ 报告 ============
 print("\n" + "=" * 70)
-print(">>> Agent 20 题全量评测报告 <<<")
+print(">>> Agent 全量评测报告（含幻觉检测）<<<")
 print("=" * 70)
 print(f"题目数: {n} | 总耗时: {elapsed:.1f}s | 追问: {clarification_count} | 失败: {len(failed)}")
 if LIGHT_MODE:
@@ -450,7 +574,9 @@ avg_num = total_number_accuracy / valid_number_count * 100 if valid_number_count
 avg_ind = total_indicator_coverage / n * 100
 avg_struct = total_structure_score / n * 100
 avg_time = total_time / n
+avg_halluc = total_hallucination_score / total_halluc_checks * 100 if total_halluc_checks > 0 else 0
 print(f"| 🔴 数字准确率 | {avg_num:.1f}% | ≥80% | {'✅' if avg_num >= 80 else '❌'} |")
+print(f"| 🔴 幻觉检测 | {avg_halluc:.1f}% | ≥90% | {'✅' if avg_halluc >= 90 else '❌'} |")
 print(f"| 子任务拆解准确率 | {avg_task:.1f}% | ≥85% | {'✅' if avg_task >= 85 else '❌'} |")
 print(f"| 报告结构完整性 | {avg_struct:.1f}% | ≥80% | {'✅' if avg_struct >= 80 else '❌'} |")
 print(f"| 端到端平均耗时 | {avg_time:.1f}s | ≤30s | {'✅' if avg_time <= 30 else '❌'} |")
@@ -504,6 +630,7 @@ report_data = {
     "failed_count": len(failed),
     "failed_questions": [f"{qid}: {reason}" for qid, reason in failed],
     "avg_number_accuracy": round(avg_num, 1),
+    "avg_hallucination_score": round(avg_halluc, 1),
     "avg_task_accuracy": round(avg_task, 1),
     "avg_structure_score": round(avg_struct, 1),
     "avg_time_s": round(avg_time, 1),
@@ -515,6 +642,7 @@ report_data = {
             "count": g["count"],
             "task_accuracy": round(g["task_score"] / max(g.get("valid_count", g["count"]), 1) * 100, 1),
             "num_accuracy": round(g.get("num_accuracy", 0) / max(g.get("num_count", 1), 1) * 100, 1),
+            "hallucination_score": round(g.get("halluc", 0) / max(g.get("halluc_checks", 1), 1) * 100, 1),
             "avg_time_s": round(g["time"] / max(g["count"], 1), 1),
         }
         for cat, g in by_category.items()
@@ -524,6 +652,7 @@ report_data = {
             "count": g["count"],
             "task_accuracy": round(g["task_score"] / max(g.get("valid_count", g["count"]), 1) * 100, 1),
             "num_accuracy": round(g.get("num_accuracy", 0) / max(g.get("num_count", 1), 1) * 100, 1),
+            "hallucination_score": round(g.get("halluc", 0) / max(g.get("halluc_checks", 1), 1) * 100, 1),
             "avg_time_s": round(g["time"] / max(g["count"], 1), 1),
         }
         for d, g in by_difficulty.items()

@@ -1,8 +1,9 @@
 {
   "meta": {
     "name": "RAG 语义理解评测集",
-    "version": "8.0",
+    "version": "8.3",
     "created": "2026-07-09",
+    "updated": "2026-07-18",
     "total_questions": 15,
     "note_boundary": "旧 R14/R15（员工满意度/乱码）已移至 rag_questions_boundary.json",
     "description": "测试 RAG 的文字理解和信息定位能力。V8.0 架构下，RAG 不再用于查数字（那走 SQL），而是用于理解非结构化文本（风险/原因/业务描述/管理层讨论）。",
@@ -18,7 +19,8 @@
       "比亚迪2024年年报.PDF（同上）",
       "白酒行业2024年报综述-券商研报.docx（行业分析文字内容）"
     ],
-    "note": "只测文字理解，不测数字提取。数字准确率由 sql_questions.json 负责。"
+    "note": "只测文字理解，不测数字提取。数字准确率由 sql_questions.json 负责。",
+    "answerable_note": "answerable 字段标记文档语料库中是否包含回答该问题所需的信息。false 表示文档缺失（如招股书未入库），此类题应测 LLM 是否坦诚说'未找到'而非测 Faithfulness。"
   },
   "questions": [
     {
@@ -29,6 +31,7 @@
       "expected_answer_type": "原因分析",
       "must_contain_sources": true,
       "min_sources": 2,
+      "answerable": true,
       "tests": "RAG核心能力：从MD&A章节检索并解读财务指标变动原因",
       "expected_keywords": ["毛利率", "下降", "成本", "营业成本", "同比", "变动原因", "茅台"]
     },
@@ -40,6 +43,7 @@
       "expected_answer_type": "原因分析",
       "must_contain_sources": true,
       "min_sources": 2,
+      "answerable": true,
       "tests": "理解公司对费用增长的官方解释",
       "expected_keywords": ["研发费用", "增长", "比亚迪", "研发投入", "技术", "创新", "解释"]
     },
@@ -51,6 +55,7 @@
       "expected_answer_type": "深度分析",
       "must_contain_sources": true,
       "min_sources": 3,
+      "answerable": true,
       "tests": "财务指标差异的深层原因解读（折旧/应收应付等非现金项目）",
       "expected_keywords": ["经营现金流", "净利润", "差异", "折旧", "应收应付", "非现金", "比亚迪"]
     },
@@ -62,6 +67,7 @@
       "expected_answer_type": "列表式风险描述",
       "must_contain_sources": true,
       "min_sources": 2,
+      "answerable": true,
       "tests": "从年报风险提示章节提取信息",
       "expected_keywords": ["经营风险", "茅台", "风险提示", "市场风险", "政策风险", "竞争"]
     },
@@ -73,6 +79,7 @@
       "expected_answer_type": "竞争格局分析",
       "must_contain_sources": true,
       "min_sources": 2,
+      "answerable": true,
       "tests": "行业趋势类语义理解",
       "expected_keywords": ["新能源汽车", "竞争格局", "比亚迪", "行业", "市场", "变化", "趋势"]
     },
@@ -84,6 +91,7 @@
       "expected_answer_type": "业务描述",
       "must_contain_sources": true,
       "min_sources": 1,
+      "answerable": true,
       "tests": "基础业务信息提取",
       "expected_keywords": ["业务板块", "比亚迪", "核心产品", "汽车", "电池", "电子", "轨道交通"]
     },
@@ -95,7 +103,9 @@
       "expected_answer_type": "经营计划描述",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "从年报经营计划章节提取信息",
+      "answerable": false,
+      "note_answerable": "年报'经营计划'章节内容可能不完整，具体目标和措施的详细程度取决于年报披露粒度",
+      "tests": "从年报经营计划章节提取信息，如文档不完整则 LLM 应坦诚说'未找到详细计划'",
       "expected_keywords": ["经营目标", "茅台", "措施", "计划", "战略", "2024", "发展"]
     },
     {
@@ -106,7 +116,9 @@
       "expected_answer_type": "行业分析 + 公司策略",
       "must_contain_sources": true,
       "min_sources": 3,
-      "tests": "跨文档（年报+研报）检索和综合",
+      "answerable": false,
+      "note_answerable": "跨文档战略对比所需的信息分散在年报和研报中，五粮液年报可能不在语料库中导致无法完整对比",
+      "tests": "跨文档（年报+研报）检索和综合，如五粮液年报缺失则 LLM 应说明覆盖局限",
       "expected_keywords": ["白酒行业", "趋势", "茅台", "五粮液", "战略", "2024", "券商研报", "竞争"]
     },
     {
@@ -117,6 +129,7 @@
       "expected_answer_type": "管理层总结",
       "must_contain_sources": true,
       "min_sources": 2,
+      "answerable": true,
       "tests": "MD&A章节的关键内容提取",
       "expected_keywords": ["管理层", "经营成果", "比亚迪", "2024", "展望", "2025", "总结", "讨论与分析"]
     },
@@ -128,6 +141,7 @@
       "expected_answer_type": "专项深度解读",
       "must_contain_sources": true,
       "min_sources": 3,
+      "answerable": true,
       "tests": "特定主题的精细检索和理解",
       "expected_keywords": ["i茅台", "数字营销", "直销", "收入", "茅台", "平台", "增长", "贡献"]
     },
@@ -139,6 +153,8 @@
       "expected_answer_type": "上下文缺失，需追问或返回通用定义",
       "must_contain_sources": false,
       "min_sources": 0,
+      "answerable": true,
+      "note_answerable": "文档中有毛利率数据，但 query 过于简略无法确定用户意图（要定义？要数据？要分析？）",
       "tests": "超短Query：无法确定公司和年份",
       "expected_keywords": ["毛利率", "定义", "计算", "公式"]
     },
@@ -150,6 +166,7 @@
       "expected_answer_type": "混合（数字走SQL + 原因走RAG）",
       "must_contain_sources": true,
       "min_sources": 1,
+      "answerable": true,
       "tests": "中英混杂Query + 数字+原因混合问题",
       "expected_keywords": ["BYD", "revenue", "growth", "收入", "增长", "2024", "原因"]
     },
@@ -161,6 +178,7 @@
       "expected_answer_type": "术语纠错 + 语义理解",
       "must_contain_sources": true,
       "min_sources": 1,
+      "answerable": true,
       "tests": "术语混淆：'资本负债率'→'资产负债率'的自动纠错",
       "expected_keywords": ["资产负债率", "茅台", "负债", "变化", "资本负债率", "比率"]
     },
@@ -172,7 +190,9 @@
       "expected_answer_type": "列表式资金用途描述",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "招股说明书类文档检索能力（替代旧R14）",
+      "answerable": false,
+      "note_answerable": "茅台招股说明书不在语料库中（仅含年报+研报），此为文档缺失类边界测试",
+      "tests": "招股说明书类文档检索能力 + LLM 应坦诚说'招股书未入库'",
       "expected_keywords": ["募集资金", "招股说明书", "茅台", "项目", "用途", "投资"]
     },
     {
@@ -183,7 +203,9 @@
       "expected_answer_type": "风险+应对措施",
       "must_contain_sources": true,
       "min_sources": 2,
-      "tests": "风险识别+应对措施的联合检索（替代旧R15）",
+      "answerable": false,
+      "note_answerable": "年报中供应链风险应对措施的详细程度不确定，检索最高得分0.57暗示内容覆盖不足",
+      "tests": "风险识别+应对措施的联合检索，如应对措施缺失则 LLM 应说明'年报未详细披露应对方案'",
       "expected_keywords": ["供应链", "风险", "比亚迪", "应对", "措施", "供应商", "原材料"]
     }
   ]

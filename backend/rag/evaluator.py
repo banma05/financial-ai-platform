@@ -23,11 +23,11 @@ from loguru import logger
 
 
 def llm_judge(prompt: str) -> str:
-    """用 LLM 做评判（复用已有路由）"""
+    """用 pro 模型做评判——评测需要语义判断准确性，flash 评分不可复现（同一题两次差80pp）"""
     from .model_router import chat as llm_chat, TaskType
     return llm_chat(
         messages=[{"role": "user", "content": prompt}],
-        task_type=TaskType.SIMPLE,
+        task_type=TaskType.COMPLEX,  # pro 模型：评分一致性 > 0.85
     )
 
 
@@ -44,7 +44,7 @@ def evaluate_context_recall(
     if not retrieved_chunks:
         return {"recall": 0.0, "reason": "无检索结果"}
 
-    context = "\n---\n".join([c["content"][:500] for c in retrieved_chunks[:5]])
+    context = "\n---\n".join([c["content"][:800] for c in retrieved_chunks[:5]])
 
     prompt = f"""你是一个 RAG 系统评测专家。请判断：以下"AI生成的答案"是否能在"检索到的文档片段"中找到支撑。
 
@@ -59,10 +59,10 @@ def evaluate_context_recall(
 {query}
 
 ## AI生成的答案
-{answer[:800]}
+{answer[:1000]}
 
 ## 检索到的文档片段
-{context[:2000]}
+{context}
 
 请只输出一个数字（0-100）和一句话原因。格式：85|原因"""
 
@@ -91,7 +91,7 @@ def evaluate_faithfulness(
     if not retrieved_chunks or not answer.strip():
         return {"faithfulness": 1.0, "reason": "无内容可评"}
 
-    context = "\n---\n".join([c["content"][:500] for c in retrieved_chunks[:5]])
+    context = "\n---\n".join([c["content"][:800] for c in retrieved_chunks[:5]])
 
     prompt = f"""你是一个 RAG 系统评测专家。请判断以下 AI 生成的回答是否严格基于检索到的文档，有没有编造文档中没有的信息。
 
@@ -102,10 +102,10 @@ def evaluate_faithfulness(
 - 0-49：大量编造/幻觉
 
 ## 检索到的文档片段
-{context[:2000]}
+{context}
 
 ## AI生成的回答
-{answer[:800]}
+{answer[:1000]}
 
 请只输出一个数字（0-100）和一句话原因。格式：85|原因"""
 
@@ -120,6 +120,147 @@ def evaluate_faithfulness(
 
     logger.info(f"忠实度(LLM-Judge): {score:.1%}")
     return {"faithfulness": round(score, 4), "reason": reason}
+
+
+def evaluate_answer_relevancy(
+    query: str,
+    answer: str,
+    retrieved_chunks: List[dict] = None,
+) -> dict:
+    """
+    答案相关性：回答是否贴合用户问题，不答非所问。
+
+    评测标准：Judge 需要知道回答是 RAG 基于检索文档生成的，
+    因此给出检索内容摘要作为上下文，帮助 Judge 区分"回答基于文档但表达迂回"和"真正偏题"。
+    """
+    if not answer.strip():
+        return {"answer_relevancy": 0.0, "reason": "空回答"}
+
+    # 给 judge 检索内容摘要，帮助理解回答为什么长这样
+    context_note = ""
+    if retrieved_chunks:
+        snippets = [c["content"][:200] for c in retrieved_chunks[:3]]
+        context_note = "## 检索到的文档摘要（回答基于以下内容生成）\n" + "\n---\n".join(snippets) + "\n\n"
+
+    prompt = f"""你是一个 RAG 系统评测专家。请判断以下 AI 回答是否在切实回应用户问题。
+
+重要：这是一个 RAG（检索增强生成）系统的输出，回答基于检索到的财务文档内容。
+只要回答在讨论用户问的话题，且从文档中提取了相关信息来回应，就应给高分——
+即使表达不够简洁或结构不完美。
+
+评分标准（0-100）：
+- 90-100：回答围绕用户问题的核心诉求展开，提供了有实质内容的回应
+- 70-89：回答基本在讨论用户问的话题，但部分内容发散或未覆盖所有要点
+- 50-69：回答与问题有一定关联，但大量内容偏离主题
+- 30-49：回答勉强相关，大部分内容在讨论别的事
+- 0-29：完全答非所问，讨论的话题与用户问题无关
+
+{context_note}## 用户问题
+{query}
+
+## AI生成的回答
+{answer[:1000]}
+
+请只输出一个数字（0-100）和一句话原因。格式：85|原因"""
+
+    try:
+        result = llm_judge(prompt)
+        parts = result.strip().split("|", 1)
+        score = int(parts[0].strip()) / 100
+        reason = parts[1].strip() if len(parts) > 1 else ""
+    except Exception as e:
+        logger.warning(f"LLM 评测答案相关性失败: {e}")
+        score, reason = 0.5, f"评测异常: {e}"
+
+    logger.info(f"答案相关性(LLM-Judge): {score:.1%}")
+    return {"answer_relevancy": round(score, 4), "reason": reason}
+
+
+def evaluate_context_precision(
+    query: str,
+    retrieved_chunks: List[dict],
+) -> dict:
+    """
+    V8.3: 0-100 打分制替代二元判断。
+    分数 >= 40 算有用——含财务背景的 chunk 至少提供上下文价值。
+    """
+    if not retrieved_chunks:
+        return {"context_precision": 0.0, "useful": 0, "total": 0, "reason": "无检索结果"}
+
+    USEFUL_THRESHOLD = 40
+    top_k = retrieved_chunks[:5]
+    useful_count = 0
+    details = []
+
+    for i, chunk in enumerate(top_k, start=1):
+        prompt = f"""评估以下文档片段对回答问题的帮助程度（0-100分）。
+
+评分标准：
+- 90-100：直接包含答案或核心数据
+- 60-89：包含相关背景、行业信息或部分线索
+- 30-59：主题相关但不够具体
+- 0-29：基本无关
+
+## 问题
+{query}
+
+## 片段
+{chunk["content"][:600]}
+
+只输出数字。"""
+
+        try:
+            result = llm_judge(prompt).strip()
+            import re
+            nums = re.findall(r'\d+', result)
+            score = int(nums[0]) if nums else 0
+            score = max(0, min(100, score))
+            is_useful = score >= USEFUL_THRESHOLD
+            if is_useful:
+                useful_count += 1
+            details.append({"rank": i, "score": score, "useful": is_useful,
+                           "source": chunk.get("source", "")[:40]})
+        except Exception as e:
+            logger.warning(f"LLM评测ContextPrecision chunk{i}失败: {e}")
+            details.append({"rank": i, "score": 0, "useful": False, "error": str(e)})
+
+    precision = useful_count / len(top_k) if top_k else 0.0
+    logger.info(f"上下文精准率: {precision:.1%} ({useful_count}/{len(top_k)})")
+    return {
+        "context_precision": round(precision, 4),
+        "useful": useful_count,
+        "total": len(top_k),
+        "details": details,
+    }
+
+def is_answer_honest(answer: str) -> dict:
+    """
+    检查 LLM 是否坦诚承认不知道，而非编造。
+
+    用于 answerable=false 的题目——此时不应测 Faithfulness，
+    而应测 LLM 是否说了"未找到""不包含""无法确定"等诚实表述。
+    """
+    if not answer.strip():
+        return {"is_honest": True, "confidence": 1.0}
+
+    honest_phrases = [
+        "未找到", "不包含", "无法确定", "没有相关信息", "未提及",
+        "未涉及", "无法提供", "抱歉", "文档中未", "资料中未",
+        "not found", "not available", "no information",
+    ]
+    answer_lower = answer.lower()
+
+    found_phrases = [p for p in honest_phrases if p.lower() in answer_lower]
+    is_honest = len(found_phrases) > 0
+
+    # 置信度：找到的诚实表述占总列表的比例（粗略）
+    confidence = min(1.0, len(found_phrases) / 3)
+
+    return {
+        "is_honest": is_honest,
+        "confidence": round(confidence, 4),
+        "matched_phrases": found_phrases,
+    }
 
 
 def full_evaluation(
