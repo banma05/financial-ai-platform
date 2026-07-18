@@ -341,7 +341,7 @@ def run_agent_stream(
 
         # ── Phase 1: Planner 走 graph ──
         plan_state = None
-        for event in graph.stream(initial_state, stream_mode="values", subgraphs=True):
+        for event in graph.stream(initial_state, stream_mode="values"):
             plan_state = {**initial_state, **event}
             if plan_state.get("clarification"):
                 yield AgentEvent("clarification",
@@ -431,8 +431,15 @@ def run_agent_stream(
 
         # ── Phase 3: Reporter 走 graph ──
         task_results = [result_map[t["task_id"]] for t in tasks if t["task_id"] in result_map]
-        final_state = {"task_results": task_results, "chart_count": chart_count}
-        for event in graph.stream(final_state, stream_mode="values", subgraphs=True):
+        final_state = {
+            "user_input": user_input,
+            "session_id": session_id,
+            "template_name": template_name,
+            "tasks": tasks,
+            "task_results": task_results,
+            "chart_count": chart_count,
+        }
+        for event in graph.stream(final_state, stream_mode="values"):
             if isinstance(event, dict) and event.get("final_report"):
                 report = event["final_report"]
                 processing_time = round(time.time() - start_time, 1)
@@ -475,13 +482,13 @@ def run_agent_stream(
             ).to_sse()
             save_analysis_log(
                 session_id, user_input, template_name,
-                task_count=len(results),
+                task_count=len(task_results),
                 task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
-                               "success": r.get("success", False)} for r in results],
+                               "success": r.get("success", False)} for r in task_results],
                 report=report, chart_count=chart_count,
                 processing_time=processing_time,
             )
-            logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
+            logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(task_results)}")
 
     except Exception as e:
         logger.error(f"[Agent] 分析异常: trace_id={tid}, error={e}")
