@@ -429,66 +429,34 @@ def run_agent_stream(
                 message=f"{'✅' if r.get('success') else '❌'} {r.get('summary') or r.get('error') or '任务完成'} ({(time.time()-start_time):.1f}s)",
             ).to_sse()
 
-        # ── Phase 3: Reporter 走 graph ──
-        task_results = [result_map[t["task_id"]] for t in tasks if t["task_id"] in result_map]
-        final_state = {
-            "user_input": user_input,
-            "session_id": session_id,
-            "template_name": template_name,
-            "tasks": tasks,
-            "task_results": task_results,
-            "chart_count": chart_count,
-        }
-        for event in graph.stream(final_state, stream_mode="values"):
-            if isinstance(event, dict) and event.get("final_report"):
-                report = event["final_report"]
-                processing_time = round(time.time() - start_time, 1)
-                charts = [r.get("chart_base64") for r in task_results if r.get("chart_base64")]
+        # ── Phase 3: Reporter 直接生成报告 ──
+        task_results_list = [result_map[t["task_id"]] for t in tasks if t["task_id"] in result_map]
+        task_objects = [AnalysisTask(**t) for t in tasks]
+        result_objects = [TaskResult(**r) for r in task_results_list]
 
-                yield AgentEvent("done",
-                    report=report,
-                    charts=charts,
-                    task_count=len(task_results),
-                    processing_time=processing_time,
-                    message=f"分析完成，耗时 {processing_time} 秒",
-                ).to_sse()
-                save_analysis_log(
-                    session_id, user_input, template_name,
-                    task_count=len(results),
-                    task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
-                                   "success": r.get("success", False)} for r in results],
-                    report=report, chart_count=chart_count,
-                    processing_time=processing_time,
-                )
-                logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(results)}")
-                return
+        with TraceTimer("reporter"):
+            report = _reporter.generate(user_input, task_objects, result_objects, chart_count)
 
-        # 如果流结束了但没有 final_report，再跑一次 reporter（兜底）
-        if not last_state.get("final_report") and not last_state.get("clarification"):
-            tasks_dict = last_state.get("tasks", [])
-            results_dict = last_state.get("task_results", [])
-            tasks = [AnalysisTask(**t) for t in tasks_dict]
-            results = [TaskResult(**r) for r in results_dict]
-            with TraceTimer("reporter_fallback"):
-                report = _reporter.generate(user_input, tasks, results, chart_count)
-            processing_time = round(time.time() - start_time, 1)
-            yield AgentEvent(
-                "done",
-                report=report,
-                charts=[r.get("chart_base64") for r in results_dict if r.get("chart_base64")],
-                task_count=len(results),
-                processing_time=processing_time,
-                message=f"分析完成，耗时 {processing_time} 秒",
-            ).to_sse()
-            save_analysis_log(
-                session_id, user_input, template_name,
-                task_count=len(task_results),
-                task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
-                               "success": r.get("success", False)} for r in task_results],
-                report=report, chart_count=chart_count,
-                processing_time=processing_time,
-            )
-            logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(task_results)}")
+        processing_time = round(time.time() - start_time, 1)
+        charts = [r.get("chart_base64") for r in task_results_list if r.get("chart_base64")]
+
+        yield AgentEvent("done",
+            report=report,
+            charts=charts,
+            task_count=len(task_results_list),
+            processing_time=processing_time,
+            message=f"分析完成，耗时 {processing_time} 秒",
+        ).to_sse()
+
+        save_analysis_log(
+            session_id, user_input, template_name,
+            task_count=len(task_results_list),
+            task_details=[{"task_id": r.get("task_id"), "type": r.get("task_type", ""),
+                           "success": r.get("success", False)} for r in task_results_list],
+            report=report, chart_count=chart_count,
+            processing_time=processing_time,
+        )
+        logger.info(f"[请求结束] trace_id={tid}, 总耗时={processing_time}s, tasks={len(task_results_list)}")
 
     except Exception as e:
         logger.error(f"[Agent] 分析异常: trace_id={tid}, error={e}")
