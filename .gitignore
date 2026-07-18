@@ -1,6 +1,7 @@
 .env
 data/chroma_db/
 data/documents/*
+*.tar
 !data/documents/.gitkeep
 data/charts/*
 !data/charts/.gitkeep

@@ -60,7 +60,7 @@ pytest-cov==7.0.0
 rank-bm25==0.2.0
 
 # 外部数据源
-akshare==1.18.0
+akshare==1.18.64
 
 # 分布式缓存/限流
 redis==8.0.1
