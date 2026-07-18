@@ -166,7 +166,7 @@ BUILTIN_TEMPLATES = {
              "depends_on": ["2"]},
             {"task_id": "7", "task_type": "chart",
              "description": "风险指标雷达图",
-             "params": {"chart_type": "radar", "title": "{company} 财务风险雷达图"},
+             "params": {"chart_type": "bar", "title": "{company} 财务风险指标"},
              "depends_on": ["3", "4", "5", "6"]},
             {"task_id": "8", "task_type": "analyze",
              "description": "综合评估财务风险等级并给出预警建议",
@@ -237,8 +237,8 @@ BUILTIN_TEMPLATES = {
              "params": {"formula": "revenue_growth,net_profit_growth"},
              "depends_on": ["1", "3"]},
             {"task_id": "8", "task_type": "chart",
-             "description": "四维度综合雷达图",
-             "params": {"chart_type": "radar", "title": "{company} 四维度财务健康雷达图"},
+             "description": "四维度指标对比柱状图",
+             "params": {"chart_type": "bar", "title": "{company} 四维度财务指标"},
              "depends_on": ["4", "5", "6", "7"]},
             {"task_id": "9", "task_type": "analyze",
              "description": "基于四维度结果综合评估财务健康状况",
@@ -448,7 +448,8 @@ class Planner:
 - data_query: 从知识库查询财务数字（参数：query=查询内容）→ 返回结构化数值
 - rag_context: 从知识库检索文字解读和原因分析（参数：query=查询内容）→ 返回原文引用段落
 - calculate: 财务指标计算（参数：formula=公式名, 注：公式名见下方）
-- chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
+- chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/dual_axis], title=图表标题）
+  ⚠️ 不要用radar雷达图，数据格式不支持
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
 # MCP外部工具（6种，用于获取实时/外部数据）：
@@ -522,7 +523,7 @@ class Planner:
 ## ⚠️ 参数精确性铁律（违反则任务执行失败）
 1. **formula 必须严格从上方"可用财务公式"列表中选取**，一字不差。需要多个公式时用逗号分隔："roe,net_profit_margin,gross_profit_margin"
 2. **MCP 工具参数键名必须精确**。mcp_industry_comparison 的 sector 参数只能是 "白酒"/"新能源"/"互联网" 三个值
-3. **chart_type 只能是** line/bar/pie/radar/dual_axis 五个值，不要自创
+3. **chart_type 只能是** line/bar/pie/dual_axis 四个值，不要自创，不要用radar
 4. **depends_on 使用 task_id 字符串列表**，不要用数字
 
 ## ❌ 常见错误（千万不要犯）
