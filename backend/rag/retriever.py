@@ -61,6 +61,49 @@ def build_prompt(query: str, sources: List[dict], history: Optional[List[dict]] 
 ## 回答"""
 
 
+def build_honesty_prompt(query: str, sources: List[dict]) -> str:
+    """
+    诚实优先的 RAG prompt —— 专用于评测中不可回答题（answerable=false）。
+
+    与 build_prompt 的核心区别：
+    - build_prompt: "基于文档生成答案，找不到就说不知道"（flash 模型会忽略后半句）
+    - build_honesty_prompt: 第一步强制判断文档是否包含答案，第二步再决定回答或诚实告知
+
+    两步结构对 flash 模型的指令遵循率显著高于单步"铁律列表"格式。
+    """
+    context_parts = []
+    for i, s in enumerate(sources, start=1):
+        score_pct = f"{s.get('score', 0) * 100:.0f}%" if s.get('score') else "N/A"
+        context_parts.append(
+            f"[{i}] **{s['source']}** (第{s['page']}页, 相关度{score_pct})\n{s['content']}"
+        )
+    context = "\n\n".join(context_parts)
+
+    return f"""你是一个严谨的财务分析助手。在执行任何回答之前，你必须先完成以下两步判断。
+
+## 第一步：判断文档是否包含答案
+
+请仔细阅读以下参考文档，判断它们是否包含回答用户问题所需的关键信息。
+
+{context}
+
+## 第二步：根据判断结果选择回答方式
+
+- **如果文档包含相关信息**：基于文档内容回答用户问题，并在末尾附上引用清单。
+- **如果文档不包含相关信息**：只输出以下这句话，不要添加任何额外内容：
+  "抱歉，检索到的文档中未找到与您问题直接相关的信息。"
+
+## ⚠️ 关键规则
+- 绝对禁止编造文档中没有的信息
+- 绝对禁止凭记忆或常识补充答案
+- 如果不确定，选择"文档不包含相关信息"
+
+## 用户问题
+{query}
+
+## 回答（先判断再回答）"""
+
+
 def rag_query(
     query: str,
     top_k: int = RETRIEVAL_TOP_K,
