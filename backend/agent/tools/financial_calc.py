@@ -607,6 +607,24 @@ class FinancialCalcTool:
         # ── 策略4: 流动比率 — current_assets/current_liabilities 缺一不可时不补（安全）──
         # 不自动推算，避免错误
 
+        # ── 策略5: bvps(每股净资产) — 从 equity + net_profit + eps 推算 ──
+        if formula == "pb_ratio" and "bvps" not in params:
+            equity = (params.get("equity") or params.get("equity_attr_parent")
+                      or params.get("净资产") or params.get("所有者权益"))
+            net_profit = (params.get("net_profit") or params.get("net_profit_attr_parent")
+                          or params.get("净利润"))
+            eps_key = params.get("eps") or params.get("每股收益")
+            # 如果 EPS 不在顶层，从年份键中提取（如 eps_2024 / 每股收益_2024）
+            if eps_key is None:
+                import re as _re2
+                for k, v in params.items():
+                    if _re2.match(r'(eps|每股收益)_\d{4}$', str(k)):
+                        eps_key = v
+                        break
+            if equity and net_profit and eps_key and eps_key != 0:
+                total_shares = net_profit / eps_key  # EPS = 净利润/总股本 → 总股本 = 净利润/EPS
+                params["bvps"] = round(equity / total_shares, 2)
+
         return params
 
     @staticmethod
@@ -627,6 +645,9 @@ class FinancialCalcTool:
 
         对每个公式调用 _single_calculate，汇总结果。
         注意：不同公式可能需要不同参数——每个公式独立尝试，缺参数则单独标记失败。
+
+        V8.4: 杜邦分析返回 dict，在此展开为独立标量条目，
+        确保下游（executor/reporter/chart）只看到标量结果。
         """
         results = []
         success_count = 0
@@ -635,10 +656,35 @@ class FinancialCalcTool:
             r["formula"] = name
             if r["success"]:
                 success_count += 1
-            results.append(r)
+                # 杜邦分析返回 dict → 展开为独立子指标
+                if isinstance(r.get("result"), dict):
+                    dupont_dict = r["result"]
+                    r["_expanded"] = True  # 标记：原始结果已被展开
+                    for sub_key, sub_val in dupont_dict.items():
+                        if isinstance(sub_val, (int, float)):
+                            # 为子指标创建独立的计算结果条目
+                            sub_entry = {
+                                "formula": f"dupont_{sub_key}",
+                                "success": True,
+                                "result": sub_val,
+                                "display_name": f"杜邦-{self._dupont_sub_name(sub_key)}",
+                                "category": "杜邦分析",
+                                "expression": f"杜邦分析子项: {sub_key} = {sub_val}",
+                                "unit": self._dupont_sub_unit(sub_key),
+                                "_from_dupont": True,
+                            }
+                            results.append(sub_entry)
+                            success_count += 1
+                    # 保留原始条目（含 breakdown 文本，供报告展示用）
+                    # 但把 result 设为 None，避免 dict 污染下游
+                    r["result"] = None
+                results.append(r)
+            else:
+                results.append(r)
 
         all_success = success_count == len(formula_names)
-        summary_parts = [f"{r['formula']}: {r['result']}{r.get('unit','')}" for r in results if r["success"]]
+        summary_parts = [f"{r['formula']}: {r['result']}{r.get('unit','')}"
+                        for r in results if r["success"] and r["result"] is not None]
         failed = [r["formula"] for r in results if not r["success"]]
 
         summary = f"批量计算 {success_count}/{len(formula_names)} 成功"
@@ -658,6 +704,24 @@ class FinancialCalcTool:
             "category": "批量计算",
             "error": None if all_success else f"部分公式失败: {', '.join(failed)}",
         }
+
+    @staticmethod
+    def _dupont_sub_name(key: str) -> str:
+        """杜邦分析子项中文名"""
+        mapping = {
+            "roe": "ROE", "net_profit_margin": "净利率",
+            "asset_turnover": "资产周转率", "equity_multiplier": "权益乘数",
+        }
+        return mapping.get(key, key)
+
+    @staticmethod
+    def _dupont_sub_unit(key: str) -> str:
+        """杜邦分析子项单位"""
+        mapping = {
+            "roe": "%", "net_profit_margin": "%",
+            "asset_turnover": "次", "equity_multiplier": "倍",
+        }
+        return mapping.get(key, "")
 
     def list_formulas(self) -> List[dict]:
         """列出所有可用公式及参数"""

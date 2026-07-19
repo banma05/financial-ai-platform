@@ -67,9 +67,9 @@ backend/
 ```bash
 cd D:\实战项目\financial-ai-platform
 
-# 后端 :8001
+# 后端 :8001（推荐用 -m 方式；python backend/main.py 也可以）
 source ../.venv/Scripts/activate
-python backend/main.py
+python -m backend.main
 
 # 前端 :5173（开发模式，自动代理 /api → :8001）
 cd web

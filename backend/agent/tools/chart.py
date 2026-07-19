@@ -169,10 +169,11 @@ class ChartTool:
             data: dict = None, x_label: str = "", y_label: str = "",
             **kwargs) -> Dict[str, Any]:
         """
-        生成 ECharts option 并返回。V8.4: chart 自主决策图表类型。
+        生成 ECharts option 并返回。V8.4: 自主决策图表类型 + 多图互补。
 
-        返回:
-            {"chart_option": <ECharts option dict>, "chart_description": "人类可读的图表解读"}
+        V8.4: 指标 >5 时自动调用 generate_multi 生成多张互补图表。
+        返回单图: {"chart_option": ..., "chart_description": ...}
+        返回多图: {"chart_options": [...], "chart_descriptions": [...], "chart_count": N}
         """
         if data is None:
             data = {}
@@ -184,22 +185,37 @@ class ChartTool:
             data["labels"] = list(numeric_extra.keys())
             data["values"] = list(numeric_extra.values())
 
-        # ── V8.4: chart 自主决策图表类型，Planner 的 chart_type 降级为建议 ──
+        # ── 标签中文化（剥离年份后缀 + 去重）──
+        self._ensure_chinese_labels(data)
+
+        # ── V8.4: 指标多 → 多图互补 ──
+        import re
+        dim_count = len(set(re.sub(r'_\d{4}$', '', str(l)) for l in data.get("labels", [])))
+        if dim_count > 5:
+            multi = self.generate_multi(data, title)
+            if len(multi) > 1:
+                return {
+                    "chart_options": [m.get("chart_option") for m in multi],
+                    "chart_descriptions": [m.get("chart_description", "") for m in multi],
+                    "chart_count": len(multi),
+                }
+
+        # ── 单片图流程 ──
         rec = self.recommend(data)
         if chart_type == "auto" or not chart_type or chart_type == "bar":
-            # Planner 没指定或用默认 → chart 完全自主决定
             if rec["confidence"] >= 0.5 or rec["chart_type"] != "bar":
                 chart_type = rec["chart_type"]
                 logger.info(f"[Chart] 自动选择: {chart_type} ({rec['reason']}, 置信度{rec['confidence']})")
         elif rec["confidence"] >= 0.9 and rec["chart_type"] != chart_type:
-            # Planner 建议不合理 → chart 覆盖
             logger.warning(f"[Chart] 覆盖 Planner 建议的 {chart_type} → {rec['chart_type']} ({rec['reason']})")
             chart_type = rec["chart_type"]
 
-        # ── V8.4: 标签中文化（剥离年份后缀 + 去重）──
-        self._ensure_chinese_labels(data)
+        # ── V8.4: 雷达图数据格式转换（flat labels/values → categories/series）──
+        if chart_type == "radar" and data.get("labels") and data.get("values") \
+                and not data.get("categories") and not data.get("series"):
+            data["categories"] = data["labels"]
+            data["series"] = {"综合评分" if not data.get("title") else data.get("title", "")[:8]: data["values"]}
 
-        # ── 正常流程 ──
         config = ChartConfig(
             chart_type=chart_type,
             title=title,
@@ -281,8 +297,10 @@ class ChartTool:
             return {"chart_type": "line", "reason": "单指标多年趋势", "confidence": 0.95}
         if has_years and dim_count >= 2:
             return {"chart_type": "dual_axis", "reason": "多指标多年趋势，双轴更清晰", "confidence": 0.85}
-        if dim_count >= 4 and not has_years:
-            return {"chart_type": "radar", "reason": f"{dim_count}维度综合评估", "confidence": 0.90}
+        if 4 <= dim_count <= 6 and not has_years:
+            return {"chart_type": "radar", "reason": f"{dim_count}维度综合评估，雷达图最优", "confidence": 0.90}
+        if dim_count > 6 and not has_years:
+            return {"chart_type": "bar", "reason": f"{dim_count}维度较多，柱状图更清晰", "confidence": 0.85}
         if dim_count >= 2:
             return {"chart_type": "bar", "reason": "多指标横向对比", "confidence": 0.80}
 
@@ -302,8 +320,15 @@ class ChartTool:
         clean_values = []
         for i, l in enumerate(labels):
             base = re.sub(r'_\d{4}$', '', str(l))
-            # 简单英→中映射兜底（来自 FORMULA_REGISTRY.display_name）
+            # 英→中映射兜底
             base = ChartTool._CN_LABEL_FALLBACK.get(base, base)
+            # 清理英文缩写：ROE（净资产收益率）→ 净资产收益率
+            for eng_prefix, replacement in ChartTool._LABEL_CLEANUP:
+                if base.startswith(eng_prefix):
+                    base = base[len(eng_prefix):]
+                    break
+            # 清理残留括号
+            base = base.lstrip("（(").rstrip("）)")
             if base not in seen:
                 seen.add(base)
                 clean_labels.append(base)
@@ -318,12 +343,21 @@ class ChartTool:
         "total_assets": "总资产", "equity": "净资产", "total_liabilities": "总负债",
         "current_assets": "流动资产", "current_liabilities": "流动负债",
         "gross_profit_margin": "毛利率", "net_profit_margin": "净利率",
-        "roe": "ROE", "roa": "ROA", "debt_ratio": "资产负债率",
+        "roe": "净资产收益率", "roa": "总资产收益率", "debt_ratio": "资产负债率",
         "current_ratio": "流动比率", "quick_ratio": "速动比率",
         "total_asset_turnover": "总资产周转率", "inventory_turnover": "存货周转率",
         "revenue_growth": "营收增长率", "net_profit_growth": "净利润增长率",
-        "operating_cf": "经营现金流",
+        "operating_cf": "经营现金流", "free_cash_flow": "自由现金流",
+        "pe_ratio": "市盈率", "pb_ratio": "市净率",
+        "cf_to_net_profit": "经营现金流/净利润比率",
+        "asset_turnover": "资产周转率", "equity_multiplier": "权益乘数",
     }
+
+    # ── 标签中的英文缩写清理 ──
+    _LABEL_CLEANUP = [
+        ("ROE（", ""), ("ROA（", ""), ("PE（", ""), ("PB（", ""),
+        ("EBITDA（", ""), ("FCF（", ""), ("EPS（", ""),
+    ]
 
     def generate_multi(self, data: dict, title: str = "财务分析") -> List[dict]:
         """
@@ -599,7 +633,7 @@ class ChartTool:
     # ============ 雷达图 ============
 
     def _radar_chart(self, config: ChartConfig) -> Dict:
-        """雷达图 — 多维财务指标评估"""
+        """雷达图 — 多维财务指标评估（V8.4 美化版，含行业基准对比）"""
         data = config.data
         categories = data.get("categories", [])  # 维度名
         series_data = data.get("series", {})       # {"公司A": [v1,v2,...]}
@@ -610,9 +644,35 @@ class ChartTool:
             all_values.extend(vals)
         max_val = max(all_values) if all_values else 100
 
+        # 动态字号：维度多时缩小
+        n_dims = len(categories)
+        label_font_size = 10 if n_dims <= 6 else (9 if n_dims <= 8 else 8)
+        radius = "65%" if n_dims <= 6 else "70%"
+
         indicator = [{'name': str(c), 'max': max_val * 1.2} for c in categories]
 
+        # ── V8.4: 行业健康基准线（灰色虚线，用于对比）──
+        benchmark = self._financial_benchmark(categories)
+
         series = []
+        # 基准线（灰色虚线，半透明区域）
+        if benchmark:
+            series.append({
+                'name': '行业健康基准',
+                'type': 'radar',
+                'data': [{
+                    'value': benchmark,
+                    'name': '行业健康基准',
+                    'areaStyle': {'color': 'rgba(100,140,200,0.08)'},
+                    'lineStyle': {'color': '#94a3b8', 'width': 1.5, 'type': 'dashed'},
+                    'itemStyle': {'color': '#94a3b8'},
+                }],
+                'symbol': 'diamond',
+                'symbolSize': 4,
+                'z': 0,
+            })
+
+        # 公司数据（实线，鲜艳色）
         for i, (name, vals) in enumerate(series_data.items()):
             color = SERIES_COLORS[i % len(SERIES_COLORS)]
             series.append({
@@ -621,12 +681,13 @@ class ChartTool:
                 'data': [{
                     'value': vals,
                     'name': str(name),
-                    'areaStyle': {'color': color + '33'},
-                    'lineStyle': {'color': color, 'width': 2},
+                    'areaStyle': {'color': color + '28', 'opacity': 0.6},
+                    'lineStyle': {'color': color, 'width': 2.5},
                     'itemStyle': {'color': color},
                 }],
                 'symbol': 'circle',
-                'symbolSize': 6,
+                'symbolSize': 5,
+                'z': 1,
             })
 
         return {
@@ -636,14 +697,50 @@ class ChartTool:
             'radar': {
                 'indicator': indicator,
                 'center': ['50%', '55%'],
-                'radius': '60%',
+                'radius': radius,
+                'splitNumber': 5,
                 'splitArea': {
-                    'areaStyle': {'color': ['#f8fafc', '#ffffff']},
+                    'areaStyle': {'color': ['#f0f4ff', '#fafbff', '#f0f4ff', '#fafbff']},
                 },
-                'axisName': {'color': '#64748b', 'fontSize': 11},
+                'splitLine': {
+                    'lineStyle': {'color': '#dce3f0', 'width': 1},
+                },
+                'axisLine': {
+                    'lineStyle': {'color': '#c8d0e0', 'width': 1.5},
+                },
+                'axisName': {
+                    'color': '#4a5568', 'fontSize': label_font_size,
+                    'fontWeight': '500', 'overflow': 'truncate',
+                    'width': 60,
+                },
+                'shape': 'circle',
             },
             'series': series,
         }
+
+    @staticmethod
+    def _financial_benchmark(categories: list) -> list:
+        """根据指标名返回行业健康基准值，无匹配返回 None（该项跳过）"""
+        BENCHMARKS = {
+            "毛利率": 30, "净利率": 10, "净资产收益率": 15,
+            "总资产收益率": 8, "资产负债率": 50, "流动比率": 2.0,
+            "速动比率": 1.0, "营收增长率": 15, "净利润增长率": 15,
+            "总资产周转率": 0.8, "存货周转率": 5, "经营现金流/净利润比率": 100,
+            "自由现金流": 50, "市盈率": 20, "市净率": 3,
+        }
+        result = []
+        for cat in categories:
+            val = BENCHMARKS.get(cat)
+            if val is None:
+                for k, v in BENCHMARKS.items():
+                    if k in cat or cat in k:
+                        val = v
+                        break
+            result.append(val)
+        # 全部为 None 则不显示基准线
+        if all(v is None for v in result):
+            return []
+        return result
 
     # ============ 双轴图 ============
 

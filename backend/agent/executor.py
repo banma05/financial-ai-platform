@@ -113,6 +113,18 @@ class ToolRegistry:
             # 格式化 TaskResult
             if task.task_type == "chart":
                 result_dict = result if isinstance(result, dict) else {}
+                charts = result_dict.get("chart_options")  # V8.4 多图模式
+                if charts:
+                    return TaskResult(
+                        task_id=task.task_id,
+                        task_type=task.task_type,
+                        success=True,
+                        summary=f"图表「{task.description}」已生成（{len(charts)}张）",
+                        chart_option=charts[0],  # 主图
+                        chart_options=charts,     # 全部图表
+                        chart_description=result_dict.get("chart_descriptions", [""])[0] if result_dict.get("chart_descriptions") else "",
+                        data=result,
+                    )
                 return TaskResult(
                     task_id=task.task_id,
                     task_type=task.task_type,

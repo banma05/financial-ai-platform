@@ -1,6 +1,14 @@
 """
 智能财务分析平台 - FastAPI 入口
 """
+import sys
+from pathlib import Path
+
+# 确保 backend/ 目录在 sys.path 中（兼容 python backend/main.py 和 python -m backend.main 两种启动方式）
+_backend_dir = Path(__file__).resolve().parent
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
+
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -81,7 +81,7 @@ export default function ReportView() {
           <div className="space-y-4">
             {result.chartOptions.map((option, i) => (
               <div key={`chart-${i}`} className="border rounded-lg p-4">
-                <ChartRenderer option={option} />
+                <ChartRenderer option={option.option} />
               </div>
             ))}
           </div>

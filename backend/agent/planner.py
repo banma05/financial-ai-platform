@@ -403,7 +403,9 @@ class Planner:
 - compare: 对比分析（需要先做多个 data_query）
 # MCP外部工具（6种，用于获取实时/外部数据）：
 # ⚠️ 财务指标（营收/利润/资产/现金流/负债/费用）用 data_query（SQL精确数据）。
-#    mcp_stock_price：获取实时股价→用于计算市盈率(PE)/市净率(PB)
+#    mcp_stock_price：获取股价→用于计算市盈率(PE)/市净率(PB)
+#      📌 参数: symbol=股票代码(如002594)；period="realtime"/"daily"/"monthly"
+#      🔥 历史年份分析：**必须传 target_date="{{年份}}-12-31"** 获取年末收盘价！
 #    mcp_financial_statements：仅用于获取 SQL 不覆盖的科目（如少数股东权益等细节）
 #    mcp_industry_comparison：行业横向对比
 #    mcp_market_index：大盘指数数据
@@ -468,12 +470,15 @@ class Planner:
 6. 如果用户没有指定具体公司或年份，requires_clarification 设为需要追问的问题
 7. 如果需求足够明确，requires_clarification 设为 null
 8. 任务数量控制在 2-6 个。**任何涉及数字对比或多指标的查询，都必须包含一个 chart 任务。** 包含"增长/变化/趋势/对比/同比/环比"等关键词时必须加 chart。简单查询（单公司单年单指标）至少 2 个任务（data_query + analyze），复杂查询最多 6 个
+9. 🔥 **多年份查询铁律**：用**一个** data_query 覆盖所有年份+所有指标（如"比亚迪 2023年 2024年 营业收入 净利润 总资产 净资产..."），不要拆成两个不同指标的查询！两个年份查到的指标集必须一致，否则增长率公式无法执行
+10. 🔥 **依赖解耦铁律**：pe_ratio/pb_ratio 等需要股价的计算，**不应当**阻塞其他计算任务（毛利率/净利率/ROE等不需要股价）。做法：把不需要股价的 calculate 合并在一个任务里（formula 用逗号分隔），把 pe_ratio/pb_ratio 放在单独任务里只依赖股价查询，analyze 和 chart 不依赖股价任务
 
 ## ⚠️ 参数精确性铁律（违反则任务执行失败）
 1. **formula 必须严格从上方"可用财务公式"列表中选取**，一字不差。需要多个公式时用逗号分隔："roe,net_profit_margin,gross_profit_margin"
 2. **MCP 工具参数键名必须精确**。mcp_industry_comparison 的 sector 参数只能是 "白酒"/"新能源"/"互联网" 三个值
 3. **chart_type 只能是** line/bar/pie/radar/dual_axis 五个值。多维度对比(≥3个不同量纲指标)用 radar，不要用 bar 硬塞
 4. **depends_on 使用 task_id 字符串列表**，不要用数字
+5. 🔥 **mcp_stock_price 的 symbol 参数必须是数字代码**（如 002594），不能传公司名
 
 ## ❌ 常见错误（千万不要犯）
 - ❌ `"formula": "毛利率"` → 应该用 `"formula": "gross_profit_margin"`
@@ -481,6 +486,11 @@ class Planner:
 - ❌ `"params": {{"sector": "科技"}}` → sector 只能是 白酒/新能源/互联网
 - ❌ `"params": {{"chart_type": "柱状图"}}` → 应该用 `"chart_type": "bar"`
 - ❌ `"formula": ["roe", "net_profit_margin"]` → 应该用 `"formula": "roe,net_profit_margin"`
+- ❌ `"params": {{"symbol": "比亚迪"}}` → 应该用 `"params": {{"symbol": "002594"}}`
+- ❌ `"params": {{"symbol": "002594"}}` mcp_stock_price 无 target_date → 分析历史年份时必须加 `"params": {{"symbol": "002594", "target_date": "{{年份}}-12-31"}}`
+- ❌ 两个 data_query 分别查 2023年2指标 和 2024年10指标 → 合并为**一个** query 覆盖两年全部指标
+- ❌ 所有 calculate 都依赖 mcp_stock_price → pe_ratio/pb_ratio 单独放，其他计算不依赖股价
+- ❌ analyze 依赖 mcp_stock_price → 股价只是估值指标之一，分析结论可以不含 PE/PB
 """
 
         # 🔧 复杂查询用 pro 保质量，简单查询用 flash 提速
