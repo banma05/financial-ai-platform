@@ -1,5 +1,6 @@
 import { useAnalysisStore } from '@/stores/analysis';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import ChartRenderer from '@/components/ChartRenderer';
 
 /**
  * 报告展示页面 — Markdown 渲染 + ECharts 图表 + 元信息
@@ -74,14 +75,13 @@ export default function ReportView() {
       </section>
 
       {/* 图表区域 */}
-      {result.charts && result.charts.length > 0 && (
+      {result.chartOptions && result.chartOptions.length > 0 && (
         <section className="bg-white rounded-xl p-6 shadow-sm border mb-6">
           <h2 className="text-lg font-semibold mb-4">📈 可视化图表</h2>
           <div className="space-y-4">
-            {result.charts.map((chartData, i) => (
+            {result.chartOptions.map((option, i) => (
               <div key={`chart-${i}`} className="border rounded-lg p-4">
-                {/* V8.1 D7: 后端始终生成 base64 图片，移除 ECharts 死代码 */}
-                <img src={chartData} alt={`图表 ${i + 1}`} className="max-w-full" />
+                <ChartRenderer option={option} />
               </div>
             ))}
           </div>

@@ -19,7 +19,7 @@ export const MOCK_TEMPLATES = [
 /** 模拟分析结果 */
 export const MOCK_ANALYSIS_RESULT = {
   report: '## 营收分析报告\n\n贵州茅台2024年营收保持稳健增长...',
-  charts: [],
+  chartOptions: [],
   processing_time: 2.5,
   task_count: 6,
   clarification: null,
@@ -92,7 +92,7 @@ export const handlers = [
       JSON.stringify({ type: 'task_complete', task_id: '2', success: true, summary: '毛利率92.01%，净利率50.56%，ROE36.99%' }),
       JSON.stringify({ type: 'task_start', task_id: '3', description: '综合分析生成结论', task_idx: 3, total: 3 }),
       JSON.stringify({ type: 'task_complete', task_id: '3', success: true, summary: '分析结论已生成' }),
-      JSON.stringify({ type: 'done', report: `## ${body.query}分析报告\n\n分析完成。`, charts: [], task_count: 3, processing_time: 2.5, message: '分析完成，耗时 2.5 秒' }),
+      JSON.stringify({ type: 'done', report: `## ${body.query}分析报告\n\n分析完成。`, charts: [], chart_options: [], task_count: 3, processing_time: 2.5, message: '分析完成，耗时 2.5 秒' }),
     ];
 
     const sseText = events.map((e) => `data: ${e}\n\n`).join('');

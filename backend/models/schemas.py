@@ -113,7 +113,8 @@ class AgentRequest(BaseModel):
 class AgentResponse(BaseModel):
     """Agent 分析响应"""
     report: str = Field(default="", description="Markdown 报告")
-    charts: List[str] = Field(default_factory=list, description="图表 base64 列表")
+    charts: List[str] = Field(default_factory=list, description="图表 base64 列表（V8.3 已弃用）")
+    chart_options: List[dict] = Field(default_factory=list, description="V8.3: ECharts option JSON 列表")
     processing_time: float = Field(default=0.0, description="总耗时（秒）")
     task_count: int = Field(default=0, description="执行子任务数")
     clarification: Optional[str] = Field(default=None, description="追问内容")

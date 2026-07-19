@@ -34,6 +34,7 @@ async def analyze(request: AgentRequest):
         return AgentResponse(
             report=result.get("report", ""),
             charts=result.get("charts", []),
+            chart_options=result.get("chart_options", []),
             processing_time=result.get("processing_time", 0),
             task_count=result.get("task_count", 0),
             clarification=result.get("clarification"),
@@ -52,7 +53,7 @@ async def analyze_stream(req: AgentRequest, request: Request):
     - plan_start:     {"type":"plan_start","task_count":5,"tasks":[...]}
     - task_start:     {"type":"task_start","task_id":"1","description":"..."}
     - task_complete:  {"type":"task_complete","task_id":"1","success":true,"summary":"..."}
-    - chart:          {"type":"chart","chart_base64":"...","chart_index":1}
+    - chart:          {"type":"chart","chart_option":{...},"chart_index":1}
     - report_start:   {"type":"report_start"}
     - done:           {"type":"done","report":"...","charts":[...],"processing_time":12.5}
     - error:          {"type":"error","message":"..."}

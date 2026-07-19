@@ -5,55 +5,17 @@ import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 import { useAnalysisStore } from '@/stores/analysis';
 
-describe('报告展示页面', () => {
+/**
+ * V8.3: 分析结果展示 + 导出功能测试
+ * 原独立的 /report 页面已合并到分析工作台，导出按钮直接放在结果区。
+ */
+
+describe('分析结果展示', () => {
   beforeEach(() => {
     useAnalysisStore.getState().reset();
   });
 
-  it('无分析结果时显示提示信息', async () => {
-    render(
-      <MemoryRouter initialEntries={['/report']}>
-        <App />
-      </MemoryRouter>,
-    );
-
-    // 提示用户先进行分析
-    await waitFor(() => {
-      expect(screen.getByText(/暂无分析结果/)).toBeInTheDocument();
-    });
-  });
-
-  it('有分析结果时渲染 Markdown 报告内容', async () => {
-    // 预先设置分析结果
-    useAnalysisStore.getState().setResult({
-      report: '## 盈利能力分析报告\n\n贵州茅台 **2024年** 营收同比增长 **15%**。\n\n### 关键指标\n\n- 毛利率: 91.96%\n- 净利率: 52.08%\n- ROE: 32.17%',
-      charts: [],
-      processing_time: 3.2,
-      task_count: 8,
-      clarification: null,
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/report']}>
-        <App />
-      </MemoryRouter>,
-    );
-
-    // Markdown 渲染为 HTML 标题
-    await waitFor(() => {
-      expect(screen.getByText('盈利能力分析报告')).toBeInTheDocument();
-      expect(screen.getByText('关键指标')).toBeInTheDocument();
-    });
-
-    // 粗体文本
-    expect(screen.getByText('15%')).toBeInTheDocument();
-
-    // 元信息
-    expect(screen.getByText(/3.2 秒/)).toBeInTheDocument();
-    expect(screen.getByText(/8 /)).toBeInTheDocument();
-  });
-
-  it('从预设分析页完成分析后，切换到报告页可看到结果', async () => {
+  it('分析完成后结果区包含导出按钮', async () => {
     const user = userEvent.setup();
 
     render(
@@ -62,23 +24,46 @@ describe('报告展示页面', () => {
       </MemoryRouter>,
     );
 
-    // 在预设分析页完成一次分析
+    // 执行分析
     await user.click(await screen.findByText('贵州茅台'));
     await user.click(screen.getByText('盈利能力评估'));
-    await user.click(screen.getByRole('button', { name: /开始分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+
+    // 等待分析完成
+    await waitFor(() => {
+      expect(screen.getByText(/分析报告/)).toBeInTheDocument();
+    }, { timeout: 10000 });
+
+    // 验证导出按钮存在
+    expect(screen.getByText(/导出PDF/)).toBeInTheDocument();
+    expect(screen.getByText(/导出MD/)).toBeInTheDocument();
+
+    // 验证返回按钮存在
+    expect(screen.getByText(/返回重新分析/)).toBeInTheDocument();
+  });
+
+  it('返回后结果消失，可重新分析', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    // 分析
+    await user.click(await screen.findByText('贵州茅台'));
+    await user.click(screen.getByText('盈利能力评估'));
+    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+
     await waitFor(() => {
       expect(screen.getByText(/分析报告/)).toBeInTheDocument();
     });
 
-    // 点击返回，再导航到报告页
-    await user.click(screen.getByText('← 返回重新分析'));
+    // 返回
+    await user.click(screen.getByText(/返回重新分析/));
 
-    // 通过侧边栏切换到报告页
-    await user.click(screen.getByRole('link', { name: /报告展示/ }));
-
-    // 报告页显示之前的分析结果（h1 为"分析报告"）
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: '分析报告' })).toBeInTheDocument();
-    });
+    // 按钮重新出现
+    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
   });
 });
