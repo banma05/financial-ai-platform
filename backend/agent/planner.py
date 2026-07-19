@@ -310,7 +310,10 @@ class Planner:
             plan = self._parse_with_llm(user_input)
 
         # V8.3: 兜底——有数据但无图表的计划，强制注入图表
-        return self._ensure_chart(plan, user_input)
+        plan = self._ensure_chart(plan, user_input)
+        # V8.3: 强制修正对比年份（代码级兜底，不依赖LLM）
+        plan = self._fix_comparison_year(plan, user_input)
+        return plan
 
     def _ensure_chart(self, plan: "AnalysisPlan", user_input: str) -> "AnalysisPlan":
         """
@@ -341,6 +344,42 @@ class Planner:
                 for dt in data_tasks:
                     if dt.task_id not in t.depends_on:
                         t.depends_on.append(dt.task_id)
+
+        return plan
+
+    @staticmethod
+    def _fix_comparison_year(plan: "AnalysisPlan", user_input: str) -> "AnalysisPlan":
+        """
+        V8.3: 代码级强制修正对比年份。
+
+        LLM 常常忽略 prompt 中的"对比N-1年"规则，直接用 N+1 年。
+        这个方法在 Planner 输出后扫描所有 data_query，硬替换错误年份。
+        """
+        import re
+        # 从用户输入提取目标年份
+        year_match = re.search(r'(\d{4})\s*年', user_input)
+        if not year_match:
+            return plan
+        target_year = int(year_match.group(1))
+
+        for task in plan.tasks:
+            if task.task_type != "data_query":
+                continue
+            query = task.params.get("query", "")
+            desc = task.description or ""
+
+            # 检测是否有 N+1 年的引用（如查2024年的数据却引用了2025）
+            for wrong_year in range(target_year + 1, target_year + 5):
+                if str(wrong_year) in query or str(wrong_year) in desc:
+                    correct_year = target_year - 1  # 对比年份修正为上一年
+                    logger.warning(
+                        f"[Planner] 年份修正: task {task.task_id} 中 {wrong_year}年 → {correct_year}年 "
+                        f"(用户分析{target_year}年，对比应为{correct_year}年)"
+                    )
+                    # 修正 query
+                    task.params["query"] = query.replace(str(wrong_year), str(correct_year))
+                    # 修正 description
+                    task.description = desc.replace(str(wrong_year), str(correct_year))
 
         return plan
 
