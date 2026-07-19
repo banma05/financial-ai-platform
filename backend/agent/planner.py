@@ -260,33 +260,12 @@ class Planner:
     4. 检测是否有歧义 → 需要追问时返回 clarification_question
     """
 
-    # 触发使用 pro 模型的复杂查询关键词
-    _COMPLEX_PATTERNS = [
-        "对比", "差异", "维度", "综合", "全面", "三家", "两家", "多公司",
-        "跨公司", "横向", "纵向", "深度", "详细", "系统性",
-    ]
-
     def __init__(self):
         pass  # 无状态，LLM调用直接走 chat()
 
-    def _is_complex(self, user_input: str) -> bool:
-        """检测是否为复杂查询（需要 pro 模型拆解）"""
-        companies = ["茅台", "比亚迪", "五粮液", "宁德", "美的", "恒瑞", "招行", "平安", "汾酒", "泸州老窖", "洋河", "伊利", "格力", "海康", "讯飞"]
-        company_count = sum(1 for c in companies if c in user_input)
-        if company_count >= 2:
-            return True
-        if any(kw in user_input for kw in self._COMPLEX_PATTERNS):
-            return True
-        if len(user_input) >= 60:
-            return True
-        return False
-
     def plan(self, user_input: str, template_name: Optional[str] = None) -> AnalysisPlan:
         """
-        入口方法：将用户输入转为执行计划。
-
-        V6.0 升级：模板匹配优先——关键词命中模板时直接走模板，
-        跳过 LLM 拆解（0.1s vs 36s），大幅降低 hard 题延迟。
+        V8.4: 简化入口 — 显式模板 或 LLM 自由拆解（移除关键词匹配）。
 
         参数:
             user_input: 用户分析需求
@@ -295,110 +274,60 @@ class Planner:
         返回:
             AnalysisPlan(tasks=[...], requires_clarification=None或追问内容)
         """
-        # 模式 1：显式指定模板
         if template_name and template_name in BUILTIN_TEMPLATES:
             logger.info(f"使用分析模板（显式）: {template_name}")
             plan = self._load_template(template_name, user_input)
-        # ── V6.0: 模式 2：关键词匹配模板（跳过 LLM，0.1s vs 36s）──
-        elif self._match_template(user_input):
-            matched = self._match_template(user_input)
-            logger.info(f"使用分析模板（匹配）: {matched}")
-            plan = self._load_template(matched, user_input)
         else:
-            # 模式 3：自由分析（LLM 拆解）
             logger.info("LLM 自由拆解模式")
             plan = self._parse_with_llm(user_input)
 
-        # V8.3: 兜底——有数据但无图表的计划，强制注入图表
         return self._ensure_chart(plan, user_input)
 
     def _ensure_chart(self, plan: "AnalysisPlan", user_input: str) -> "AnalysisPlan":
         """
-        V8.3: 任何有 data_query 但无 chart 的计划，自动注入图表。
-
-        图表只依赖数据查询（不依赖计算），确保计算部分失败时仍能出图。
+        V8.4: 智能图表注入。已有 chart → 不动；无 chart + 数据维度 ≥ 3 → 用 auto。
         """
         tasks = plan.tasks
-        data_tasks = [t for t in tasks if t.task_type == "data_query"]
         has_chart = any(t.task_type == "chart" for t in tasks)
+        if has_chart:
+            # 已有图表，补充 auto 类型（让 chart 工具自己决定）
+            for t in tasks:
+                if t.task_type == "chart" and t.params.get("chart_type") == "bar":
+                    t.params["chart_type"] = "auto"
+            return plan
 
-        if data_tasks and not has_chart:
-            # 依赖所有数据查询任务（计算失败不影响图表生成）
+        data_tasks = [t for t in tasks if t.task_type == "data_query"]
+        if not data_tasks:
+            return plan
+
+        # 估算数据维度
+        dims = self._estimate_dimensions(data_tasks)
+        if dims >= 3:
             data_ids = [t.task_id for t in data_tasks]
             chart_task = AnalysisTask(
                 task_id=str(len(tasks) + 1),
                 task_type="chart",
-                description="生成数据可视化图表",
-                params={"chart_type": "bar"},
+                description="自动生成数据可视化图表",
+                params={"chart_type": "auto"},
                 depends_on=data_ids,
             )
             tasks.append(chart_task)
-            logger.info(f"[Planner] 自动注入图表任务: task_id={chart_task.task_id}, depends_on={data_ids}")
-
-        # 已有 chart 但依赖了 calc 任务 → 也加上 data 依赖
-        for t in tasks:
-            if t.task_type == "chart":
-                for dt in data_tasks:
-                    if dt.task_id not in t.depends_on:
-                        t.depends_on.append(dt.task_id)
+            logger.info(f"[Planner] 智能注入图表 (维度={dims}), chart_type=auto")
 
         return plan
 
-    def _match_template(self, user_input: str) -> Optional[str]:
-        """
-        基于关键词匹配预设模板（V6.0 新增）。
-
-        匹配规则（按优先级，命中第一个即返回）：
-        1. 多公司对比关键词 → cross_company_profit
-        2. 多维度/全面/综合关键词 → multi_dimension
-        3. 杜邦/ROE分解 → dupont
-        4. 现金流/FCF → cash_flow
-        5. 风险/杠杆/偿债 → risk_scan
-        6. 成长/增长 → growth
-        7. 盈利/毛利率/净利率 → profitability
-
-        返回模板名或 None。
-        """
-        companies = ["茅台", "比亚迪", "五粮液", "宁德", "美的", "恒瑞", "招行", "平安", "汾酒", "泸州老窖", "洋河", "伊利", "格力", "海康", "讯飞"]
-        company_count = sum(1 for c in companies if c in user_input)
-
-        contrast_kw = ["对比", "比较", "差异", "哪个更", "哪家更", "较量"]
-        profit_kw = ["盈利", "利润", "毛利", "净利", "赚钱", "回报"]
-
-        # 多公司对比 → cross_company_profit
-        if company_count >= 2 and any(kw in user_input for kw in contrast_kw):
-            return "cross_company_profit"
-        if company_count >= 2 and any(kw in user_input for kw in profit_kw):
-            return "cross_company_profit"
-
-        # 多维度关键词 → multi_dimension
-        multi_kw = ["全面评估", "综合分析", "多维度", "多维分析", "全方位",
-                     "系统性评估", "财务健康", "整体财务", "财务整体", "综合财务",
-                     "全面分析", "财务整体表现", "整体表现", "财务表现"]
-        if any(kw in user_input for kw in multi_kw):
-            return "multi_dimension"
-
-        # 杜邦关键词 → dupont
-        if any(kw in user_input for kw in ["杜邦", "ROE分解", "三因子", "权益乘数"]):
-            return "dupont"
-
-        # 现金流关键词 → cash_flow
-        if any(kw in user_input for kw in ["现金流", "FCF", "自由现金流", "利润质量"]) and company_count >= 1:
-            return "cash_flow"
-
-        # 风险关键词 → risk_scan
-        if any(kw in user_input for kw in ["风险", "杠杆", "偿债", "预警", "风险扫描", "债务风险"]):
-            return "risk_scan"
-
-        # 成长关键词 → growth
-        if any(kw in user_input for kw in ["成长", "增长趋势", "增长率", "发展速度", "成长性"]):
-            return "growth"
-
-        # 盈利关键词（最宽泛，放最后）→ profitability
-        if any(kw in user_input for kw in profit_kw):
-            return "profitability"
-
-        return None
+    @staticmethod
+    def _estimate_dimensions(data_tasks) -> int:
+        """从 data_query 的 query 参数中估算数据维度数"""
+        from agent.tools.param_injection import FINANCIAL_TERM_TO_PARAM
+        combined = " ".join(t.params.get("query", "") for t in data_tasks)
+        found = set()
+        for term in FINANCIAL_TERM_TO_PARAM:
+            if term in combined:
+                found.add(term)
+                if len(found) >= 3:
+                    return 3
+        return len(found)
 
     def _load_template(self, template_name: str, user_input: str) -> AnalysisPlan:
         """从模板库加载预设任务，替换 {company}/{company_a}/{company_b} 占位符"""
@@ -438,8 +367,23 @@ class Planner:
         return AnalysisPlan(tasks=tasks)
 
     def _parse_with_llm(self, user_input: str) -> AnalysisPlan:
-        """LLM 拆解用户分析需求为子任务列表"""
-        prompt = f"""你是一个财务分析任务拆解专家。请将用户的分析需求拆解为可执行的子任务。
+        """LLM 拆解用户分析需求为子任务列表（V8.4: 动态上下文增强）"""
+        from datetime import datetime
+        current_year = datetime.now().year
+
+        # 动态获取可分析的公司列表
+        try:
+            from db.financial_query import COMPANY_ALIASES
+            company_names = sorted(set(COMPANY_ALIASES.keys()))
+        except Exception:
+            company_names = ["贵州茅台", "比亚迪", "宁德时代", "五粮液", "招商银行"]
+        company_list = "、".join(company_names)
+
+        prompt = f"""你是一个财务分析任务拆解专家。请根据用户需求，灵活拆解为可执行的子任务。
+
+## 当前环境（动态生成）
+当前年份: {current_year}
+可分析公司（{len(company_names)}家）: {company_list}
 
 ## 用户需求
 {user_input}
@@ -541,17 +485,14 @@ class Planner:
 
         # 🔧 复杂查询用 pro 保质量，简单查询用 flash 提速
         # 硬题 flash 频繁 JSON 空返回（浪费 20s+ 再切 pro），不值得
-        task_type = TaskType.COMPLEX if self._is_complex(user_input) else TaskType.SIMPLE
+        # V8.4: LLM 拆解需要完整推理能力，始终用 pro
+        task_type = TaskType.COMPLEX
         messages = [{"role": "user", "content": prompt}]
 
         plan_dict = self._try_llm_parse(messages, user_input, task_type)
-        if plan_dict is None and task_type == TaskType.SIMPLE:
-            # 仅 flash 解析失败时切 pro（JSON 格式错误，不是空返回）
-            logger.warning("Flash 拆解失败，重试 pro 模型...")
-            plan_dict = self._try_llm_parse(messages, user_input, TaskType.COMPLEX)
 
         if plan_dict is None:
-            logger.warning("LLM 拆解彻底失败，回退为单任务直接分析")
+            logger.warning("LLM 拆解失败，回退为单任务直接分析")
             fallback_tasks = [
                 AnalysisTask(task_id="1", task_type="data_query",
                              description=f"查询与「{user_input}」相关的财务数据",

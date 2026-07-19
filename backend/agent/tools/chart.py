@@ -165,11 +165,11 @@ class ChartTool:
         self.name = "chart"
         # output_dir 保留参数，ECharts 模式下不需要
 
-    def run(self, chart_type: str = "bar", title: str = "财务分析图表",
+    def run(self, chart_type: str = "auto", title: str = "财务分析图表",
             data: dict = None, x_label: str = "", y_label: str = "",
             **kwargs) -> Dict[str, Any]:
         """
-        生成 ECharts option 并返回。
+        生成 ECharts option 并返回。V8.4: chart 自主决策图表类型。
 
         返回:
             {"chart_option": <ECharts option dict>, "chart_description": "人类可读的图表解读"}
@@ -183,6 +183,21 @@ class ChartTool:
         if numeric_extra and not data.get("values") and not data.get("labels"):
             data["labels"] = list(numeric_extra.keys())
             data["values"] = list(numeric_extra.values())
+
+        # ── V8.4: chart 自主决策图表类型，Planner 的 chart_type 降级为建议 ──
+        rec = self.recommend(data)
+        if chart_type == "auto" or not chart_type or chart_type == "bar":
+            # Planner 没指定或用默认 → chart 完全自主决定
+            if rec["confidence"] >= 0.5 or rec["chart_type"] != "bar":
+                chart_type = rec["chart_type"]
+                logger.info(f"[Chart] 自动选择: {chart_type} ({rec['reason']}, 置信度{rec['confidence']})")
+        elif rec["confidence"] >= 0.9 and rec["chart_type"] != chart_type:
+            # Planner 建议不合理 → chart 覆盖
+            logger.warning(f"[Chart] 覆盖 Planner 建议的 {chart_type} → {rec['chart_type']} ({rec['reason']})")
+            chart_type = rec["chart_type"]
+
+        # ── V8.4: 标签中文化（剥离年份后缀 + 去重）──
+        self._ensure_chinese_labels(data)
 
         # ── 正常流程 ──
         config = ChartConfig(
@@ -215,6 +230,122 @@ class ChartTool:
         except Exception as e:
             logger.error(f"图表生成失败 [{config.chart_type}]: {e}")
             return {"chart_option": self._error_option(str(e)), "chart_description": ""}
+
+    # ============ V8.4: 图表类型推荐引擎 ============
+
+    def recommend(self, data: dict) -> dict:
+        """
+        根据数据实际特征自动推荐图表类型。纯规则，零 LLM。
+
+        返回: {"chart_type": str, "reason": str, "confidence": float}
+        """
+        import re
+        numeric_keys = [k for k, v in data.items() if isinstance(v, (int, float))]
+        labels = data.get("labels", [])
+        values = data.get("values", [])
+
+        if not numeric_keys and not labels:
+            return {"chart_type": "bar", "reason": "无特征数据，默认柱状图", "confidence": 0.3}
+
+        # 1. 检测年份后缀 → 时间序列 → 折线图
+        year_keys = [k for k in numeric_keys if re.search(r'_\d{4}$', str(k))]
+        has_years = len(year_keys) >= 2
+
+        # 2. 提取基础指标名（去年份后缀去重）
+        base_metrics = set()
+        for k in numeric_keys:
+            base = re.sub(r'_\d{4}$', '', str(k))
+            base_metrics.add(base)
+
+        # 也检查 labels
+        for l in labels:
+            base = re.sub(r'_\d{4}$', '', str(l))
+            base_metrics.add(base)
+
+        dim_count = len(base_metrics)
+
+        # 3. 检测值域差异（量纲不一致 → 雷达图更合适）
+        if values and len(values) >= 3:
+            abs_vals = [abs(v) for v in values if v != 0]
+            if abs_vals and max(abs_vals) / max(min(abs_vals), 0.01) > 10:
+                return {"chart_type": "radar", "reason": f"{dim_count}个不同量纲指标，雷达图最优", "confidence": 0.95}
+
+        # 4. 检测结构占比（values 全正 + sum ≈ 100 → 饼图）
+        if values and len(values) <= 6 and all(v > 0 for v in values):
+            total = sum(values)
+            if 80 < total < 120:
+                return {"chart_type": "pie", "reason": "数据呈结构分布特征", "confidence": 0.85}
+
+        # 5. 决策
+        if has_years and dim_count == 1:
+            return {"chart_type": "line", "reason": "单指标多年趋势", "confidence": 0.95}
+        if has_years and dim_count >= 2:
+            return {"chart_type": "dual_axis", "reason": "多指标多年趋势，双轴更清晰", "confidence": 0.85}
+        if dim_count >= 4 and not has_years:
+            return {"chart_type": "radar", "reason": f"{dim_count}维度综合评估", "confidence": 0.90}
+        if dim_count >= 2:
+            return {"chart_type": "bar", "reason": "多指标横向对比", "confidence": 0.80}
+
+        return {"chart_type": "bar", "reason": "默认柱状图", "confidence": 0.40}
+
+    @staticmethod
+    def _ensure_chinese_labels(data: dict):
+        """V8.4: 确保图表标签为中文（剥离年份后缀 + 去重）"""
+        import re
+        labels = data.get("labels", [])
+        if not labels:
+            return
+        # 剥离年份后缀 + 去重保持顺序
+        seen = set()
+        clean = []
+        for l in labels:
+            base = re.sub(r'_\d{4}$', '', str(l))
+            # 简单英→中映射兜底（来自 FORMULA_REGISTRY.display_name）
+            base = _CN_LABEL_FALLBACK.get(base, base)
+            if base not in seen:
+                seen.add(base)
+                clean.append(base)
+        data["labels"] = clean
+
+    # ── 中英文标签兜底映射 ──
+    _CN_LABEL_FALLBACK = {
+        "revenue": "营业收入", "cost": "营业成本", "net_profit": "净利润",
+        "total_assets": "总资产", "equity": "净资产", "total_liabilities": "总负债",
+        "current_assets": "流动资产", "current_liabilities": "流动负债",
+        "gross_profit_margin": "毛利率", "net_profit_margin": "净利率",
+        "roe": "ROE", "roa": "ROA", "debt_ratio": "资产负债率",
+        "current_ratio": "流动比率", "quick_ratio": "速动比率",
+        "total_asset_turnover": "总资产周转率", "inventory_turnover": "存货周转率",
+        "revenue_growth": "营收增长率", "net_profit_growth": "净利润增长率",
+        "operating_cf": "经营现金流",
+    }
+
+    def generate_multi(self, data: dict, title: str = "财务分析") -> List[dict]:
+        """
+        V8.4: 从同一数据集生成多张互补图表。
+
+        例如: 多维度数据 → 雷达(全景) + 柱状(细节)
+        """
+        import re
+        results = []
+
+        # 主图
+        main_result = self.run(chart_type="auto", title=title, data=data)
+        main_result["chart_description"] = f"主图 · {main_result.get('chart_description', '')}"
+        results.append(main_result)
+
+        # 补充图: 数据维度>5 → 加分组柱状图展示细节
+        numeric_keys = [k for k, v in data.items() if isinstance(v, (int, float))]
+        base_metrics = set()
+        for k in numeric_keys:
+            base_metrics.add(re.sub(r'_\d{4}$', '', str(k)))
+
+        if len(base_metrics) > 5:
+            detail = self.run(chart_type="bar", title=f"{title}（明细）", data=data)
+            detail["chart_description"] = "补充 · 各维度详细数值对比"
+            results.append(detail)
+
+        return results
 
     # ============ 折线图 ============
 
