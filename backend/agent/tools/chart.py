@@ -290,22 +290,27 @@ class ChartTool:
 
     @staticmethod
     def _ensure_chinese_labels(data: dict):
-        """V8.4: 确保图表标签为中文（剥离年份后缀 + 去重）"""
+        """V8.4: 确保图表标签为中文（剥离年份后缀 + 去重），同步去重 values"""
         import re
         labels = data.get("labels", [])
+        values = data.get("values", [])
         if not labels:
             return
-        # 剥离年份后缀 + 去重保持顺序
+        # 剥离年份后缀 + 去重保持顺序，同时同步 values
         seen = set()
-        clean = []
-        for l in labels:
+        clean_labels = []
+        clean_values = []
+        for i, l in enumerate(labels):
             base = re.sub(r'_\d{4}$', '', str(l))
             # 简单英→中映射兜底（来自 FORMULA_REGISTRY.display_name）
-            base = _CN_LABEL_FALLBACK.get(base, base)
+            base = ChartTool._CN_LABEL_FALLBACK.get(base, base)
             if base not in seen:
                 seen.add(base)
-                clean.append(base)
-        data["labels"] = clean
+                clean_labels.append(base)
+                if i < len(values):
+                    clean_values.append(values[i])
+        data["labels"] = clean_labels
+        data["values"] = clean_values
 
     # ── 中英文标签兜底映射 ──
     _CN_LABEL_FALLBACK = {
