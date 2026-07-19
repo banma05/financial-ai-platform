@@ -240,6 +240,15 @@ class ToolRegistry:
                 elif not isinstance(v, (dict, list)):
                     flat_data[k] = v
 
+            # ── V8.3: 展开批量计算结果 ──
+            # 批量计算的 results 是 [{formula, display_name, result, unit}, ...]
+            # 其中 display_name（中文名，如"毛利率"）才是图表和后续任务需要的键
+            if extracted.get("is_batch") and isinstance(extracted.get("results"), list):
+                for item in extracted["results"]:
+                    if item.get("success") and item.get("result") is not None:
+                        name = item.get("display_name") or item.get("formula", "")
+                        flat_data[name] = item["result"]
+
             # 合并展平数据 + 顶层标量数据
             all_extracted = {**flat_data, **{k: v for k, v in extracted.items()
                                               if not isinstance(v, (dict, list))}}
