@@ -11,7 +11,7 @@ export interface Template {
 /** 分析结果 */
 export interface AnalysisResult {
   report: string;
-  chartOptions: Record<string, unknown>[];
+  chartOptions: Array<{ option: Record<string, unknown>; description: string }>;
   processing_time: number;
   task_count: number;
   clarification: string | null;

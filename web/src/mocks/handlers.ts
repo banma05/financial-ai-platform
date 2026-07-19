@@ -19,7 +19,7 @@ export const MOCK_TEMPLATES = [
 /** 模拟分析结果 */
 export const MOCK_ANALYSIS_RESULT = {
   report: '## 营收分析报告\n\n贵州茅台2024年营收保持稳健增长...',
-  chartOptions: [],
+  chartOptions: [] as Array<{ option: Record<string, unknown>; description: string }>,
   processing_time: 2.5,
   task_count: 6,
   clarification: null,

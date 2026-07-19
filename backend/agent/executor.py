@@ -120,6 +120,7 @@ class ToolRegistry:
                     summary=f"图表「{task.description}」已生成",
                     chart_base64=result if isinstance(result, str) else result_dict.get("chart_base64"),
                     chart_option=result_dict.get("chart_option"),
+                    chart_description=result_dict.get("chart_description", ""),
                     data=result,
                 )
             elif task.task_type == "calculate":

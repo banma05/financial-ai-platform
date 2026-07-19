@@ -144,21 +144,39 @@ class Reporter:
         return f'{v:.2f}'
 
     def _build_indicator_analysis(self, calc_results: List[dict]) -> str:
-        """构建指标分析章节（简洁版，不暴露中间变量）"""
+        """构建指标分析章节（支持批量计算 + 单公式计算）"""
         lines = ["## 三、指标计算"]
+
         for cr in calc_results:
-            if cr.get("success"):
+            if not cr.get("success"):
+                lines.append(f"\n- ❌ **{cr.get('display_name', '未知指标')}**：{cr.get('error', '计算失败')}")
+                continue
+
+            # ── V8.3: 批量计算结果展开为表格 ──
+            if cr.get("is_batch") and cr.get("results"):
+                # 按类别分组
+                display_name = cr.get("display_name", "指标")
+                lines.append(f"\n### {display_name}")
+                lines.append("| 指标 | 计算结果 |")
+                lines.append("|------|----------|")
+                for item in cr["results"]:
+                    if item.get("success"):
+                        name = item.get("display_name", "")
+                        result = item.get("result", "")
+                        unit = item.get("unit", "")
+                        lines.append(f"| {name} | {result}{unit} |")
+                lines.append("")
+            else:
+                # 单公式计算结果
                 display = cr.get('display_name', '指标')
-                expression = cr.get('expression', '')
                 result = cr.get('result')
                 unit = cr.get('unit', '')
-                # 简洁展示：公式 = 结果
                 if result is not None:
                     lines.append(f"\n- **{display}**：{result}{unit}")
                 else:
+                    expression = cr.get('expression', '')
                     lines.append(f"\n- **{display}**：{expression}")
-            else:
-                lines.append(f"\n- ❌ **{cr.get('display_name', '未知指标')}**：{cr.get('error', '计算失败')}")
+
         return "\n".join(lines)
 
     def _build_rag_section(self, insights: List[str], quotations: List[dict]) -> str:
