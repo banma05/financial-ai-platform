@@ -225,13 +225,22 @@ class Reporter:
                 context_parts.append(f"| {k} | {self._fmt_num(v)} |")
             context_parts.append("")
 
-        # 计算结果
+        # 计算结果（含批量展开）
         if calc_results:
             context_parts.append("## 指标计算结果（⚠️ 以下数值已经过精确计算，禁止重新计算或估算）\n")
             context_parts.append("| 指标 | 计算结果 | 计算公式 |")
             context_parts.append("|------|----------|----------|")
             for cr in calc_results:
-                if cr.get("success") and cr.get("result") is not None:
+                # ── V8.3: 展开批量计算结果 ──
+                if cr.get("is_batch") and cr.get("results"):
+                    for item in cr["results"]:
+                        if item.get("success") and item.get("result") is not None:
+                            display = item.get("display_name", "指标")
+                            result = item.get("result", "")
+                            expr = item.get("expression", "")
+                            unit = item.get("unit", "")
+                            context_parts.append(f"| {display} | {result}{unit} | {expr} |")
+                elif cr.get("success") and cr.get("result") is not None:
                     display = cr.get("display_name", "指标")
                     result = cr.get("result", "")
                     expr = cr.get("expression", "")
