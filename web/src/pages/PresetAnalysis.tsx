@@ -160,9 +160,16 @@ export default function PresetAnalysis() {
               可视化图表
             </h2>
             <div className="space-y-5">
-              {result.chartOptions.map((option, i) => (
+              {result.chartOptions.map((item, i) => (
                 <div key={`chart-${i}`} className="border border-border-default rounded-xl p-4 bg-surface-muted/50">
-                  <ChartRenderer option={option} />
+                  {item.description && (
+                    <div className="mb-3 px-3 py-2 bg-brand-50 border border-brand-100 rounded-lg">
+                      <p className="text-xs text-brand-700 leading-relaxed">
+                        📊 <span className="font-medium">图表解读：</span>{item.description}
+                      </p>
+                    </div>
+                  )}
+                  <ChartRenderer option={item.option} />
                 </div>
               ))}
             </div>

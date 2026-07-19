@@ -33,6 +33,7 @@ class TaskResult(BaseModel):
     data: Any = None                           # 结构化数据（数值/字典等）
     chart_base64: Optional[str] = None         # 图表 base64 编码（图表任务专用，V8.3 已弃用，保留向后兼容）
     chart_option: Optional[dict] = None        # V8.3: ECharts option JSON（替代 chart_base64）
+    chart_description: Optional[str] = None    # V8.3: 图表人类可读解读
     error: Optional[str] = None                # 失败时的错误信息
     confidence: Optional[float] = None         # V6.0: 结论置信度 0.0-1.0
 
@@ -45,6 +46,7 @@ class AnalysisPlan(BaseModel):
 
 # ============ 图表配置模型 ============
 
+# V8.3: 新增 radar 雷达图（多维度评估），含智能量纲检测自动切换
 ChartType = Literal["line", "bar", "pie", "radar", "dual_axis"]
 
 

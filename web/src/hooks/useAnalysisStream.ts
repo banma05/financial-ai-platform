@@ -20,8 +20,8 @@ export interface AnalysisProgress {
   tasks: Array<{ id: string; desc: string; success: boolean; summary?: string }>;
   /** 最终报告 */
   report: string | null;
-  /** 图表 ECharts option 数组（V8.3: 替代旧的 charts base64） */
-  chartOptions: Record<string, unknown>[];
+  /** 图表 ECharts option + 解读说明（V8.3: 替代旧的 charts base64） */
+  chartOptions: Array<{ option: Record<string, unknown>; description: string }>;
   /** 总耗时 */
   processingTime: number | null;
   /** 错误信息 */
@@ -178,7 +178,10 @@ export function useAnalysisStream() {
       case 'chart':
         setProgress((p) => ({
           ...p,
-          chartOptions: [...p.chartOptions, (event['chart_option'] as Record<string, unknown>) || {}],
+          chartOptions: [...p.chartOptions, {
+            option: (event['chart_option'] as Record<string, unknown>) || {},
+            description: (event['chart_description'] as string) || '',
+          }],
         }));
         break;
 
@@ -187,11 +190,16 @@ export function useAnalysisStream() {
         break;
 
       case 'done':
+        // done 事件中的 chart_options 作为兜底，优先保留逐 chart 事件中已含 description 的数据
         setProgress((p) => ({
           ...p,
           phase: 'done',
           report: (event['report'] as string) || '',
-          chartOptions: (event['chart_options'] as Record<string, unknown>[]) || p.chartOptions,
+          chartOptions: p.chartOptions.length > 0 ? p.chartOptions
+            : ((event['chart_options'] as Record<string, unknown>[]) || []).map((opt: Record<string, unknown>) => ({
+                option: opt,
+                description: '',
+              })),
           processingTime: (event['processing_time'] as number) || 0,
         }));
         break;

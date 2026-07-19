@@ -448,8 +448,13 @@ class Planner:
 - data_query: 从知识库查询财务数字（参数：query=查询内容）→ 返回结构化数值
 - rag_context: 从知识库检索文字解读和原因分析（参数：query=查询内容）→ 返回原文引用段落
 - calculate: 财务指标计算（参数：formula=公式名, 注：公式名见下方）
-- chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/dual_axis], title=图表标题）
-  ⚠️ 不要用radar雷达图，数据格式不支持
+- chart: 生成可视化图表（参数：chart_type=图表类型[line/bar/pie/radar/dual_axis], title=图表标题）
+  📊 选型指南：
+  · line=趋势分析（多年数据对比、利率走势等）
+  · bar=指标对比（同类指标横向比较，如各产品毛利率）
+  · pie=结构分布（不超过6项，如业务板块收入占比）
+  · radar=多维度综合评估（3个以上不同量纲指标，如四维度财务健康度）
+  · dual_axis=双量纲组合（营收+增速、利润+利润率等需双Y轴的场景）
 - analyze: 综合分析并生成结论
 - compare: 对比分析（需要先做多个 data_query）
 # MCP外部工具（6种，用于获取实时/外部数据）：
@@ -523,7 +528,7 @@ class Planner:
 ## ⚠️ 参数精确性铁律（违反则任务执行失败）
 1. **formula 必须严格从上方"可用财务公式"列表中选取**，一字不差。需要多个公式时用逗号分隔："roe,net_profit_margin,gross_profit_margin"
 2. **MCP 工具参数键名必须精确**。mcp_industry_comparison 的 sector 参数只能是 "白酒"/"新能源"/"互联网" 三个值
-3. **chart_type 只能是** line/bar/pie/dual_axis 四个值，不要自创，不要用radar
+3. **chart_type 只能是** line/bar/pie/radar/dual_axis 五个值。多维度对比(≥3个不同量纲指标)用 radar，不要用 bar 硬塞
 4. **depends_on 使用 task_id 字符串列表**，不要用数字
 
 ## ❌ 常见错误（千万不要犯）
