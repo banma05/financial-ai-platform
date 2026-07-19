@@ -71,37 +71,203 @@ class Reporter:
                     if r.data.get("quotations"):
                         rag_quotations.extend(r.data["quotations"])
 
-        # 构建报告各章节
+        # ── V8.4: 6章专业研报结构 ──
         sections = []
 
-        # 一、分析摘要
+        # 一、摘要（纯规则）
         sections.append(self._build_summary(user_input, tasks, results))
 
-        # 二、数据概览
-        if data_summaries and data_values:
-            overview = self._build_data_overview(data_summaries, data_values)
+        # 二、数据概览（纯规则，增强版分组表格）
+        if data_values:
+            overview = self._build_data_overview_v2(data_values)
             if overview:
                 sections.append(overview)
 
-        # 三、指标分析
+        # 三、分维度分析（含指标表格 + LLM 解读）
         if calc_results:
-            sections.append(self._build_indicator_analysis(calc_results))
+            sections.append(self._build_dimension_analysis(data_values, calc_results, user_input))
 
-        # 三、RAG 原文解读（V8.0 新增）
+        # RAG 原文解读（如有）
         if rag_insights or rag_quotations:
             sections.append(self._build_rag_section(rag_insights, rag_quotations))
 
-        # 四、图表展示（占位符，前端替换为实际图片）
+        # 四、图表解读（纯规则）
         if chart_count > 0:
-            sections.append(self._build_chart_section(chart_count))
+            sections.append(self._build_chart_interpretation(data_values, calc_results, chart_count))
 
-        # 五、结论与建议（LLM 生成，含 RAG 上下文）
-        # V8.2: 传入 data_values（结构化精确值）替代 data_summaries（文本），根除 LLM 数字幻觉
+        # 五、风险评估（纯规则，阈值判断）
+        if self._has_risk_data(calc_results):
+            sections.append(self._build_risk_assessment(calc_results))
+
+        # 六、结论与建议（LLM，带数值校验）
         insights = self._generate_insights(user_input, data_values, calc_results, rag_insights)
         if insights:
             sections.append(insights)
 
         return "\n\n".join(sections)
+
+    # ============ V8.4: 新增专业报告方法 ============
+
+    @staticmethod
+    def _has_risk_data(calc_results: List[dict]) -> bool:
+        """检测是否有风险评估所需的数据"""
+        risk_indicators = ["资产负债率", "流动比率", "速动比率", "利息保障倍数", "debt_ratio", "current_ratio"]
+        for cr in calc_results:
+            if cr.get("is_batch") and cr.get("results"):
+                for item in cr["results"]:
+                    name = item.get("display_name", "")
+                    if any(ri in name for ri in risk_indicators):
+                        return True
+        return False
+
+    def _build_data_overview_v2(self, data_values: dict) -> str:
+        """V8.4: 增强版数据概览 — 按年份分组表格"""
+        import re
+        lines = ["## 二、数据概览", ""]
+
+        # 按基础指标名分组，提取多年数据
+        groups: dict = {}
+        for k, v in data_values.items():
+            base = re.sub(r'_\d{4}$', '', str(k))
+            year_match = re.search(r'_(\d{4})$', str(k))
+            year = year_match.group(1) if year_match else "-"
+            if base not in groups:
+                groups[base] = {}
+            groups[base][year] = v
+
+        if not groups:
+            return ""
+
+        # 收集所有年份
+        all_years = sorted(set(y for g in groups.values() for y in g))
+
+        # 表格头
+        lines.append("| 指标 | " + " | ".join(all_years) + " |")
+        lines.append("|------|" + "|".join(["------"] * len(all_years)) + "|")
+
+        for base, year_vals in groups.items():
+            vals = [self._fmt_num(year_vals.get(y, 0)) if year_vals.get(y) is not None else "-" for y in all_years]
+            lines.append(f"| {base} | " + " | ".join(vals) + " |")
+
+        return "\n".join(lines)
+
+    def _build_dimension_analysis(self, data_values: dict,
+                                   calc_results: List[dict], user_input: str) -> str:
+        """V8.4: 分维度分析 — 指标表格 + LLM 解读"""
+        # 指标表格（复用已有逻辑）
+        indicator_section = self._build_indicator_analysis(calc_results)
+
+        # LLM 维度解读
+        context_parts = ["## 三、分维度分析", ""]
+        context_parts.append(indicator_section.replace("## 三、指标计算", "### 指标明细"))
+        context_parts.append("")
+
+        # 简化 LLM 解读（只要求按维度解读事实，不要建议）
+        if data_values or calc_results:
+            prompt_parts = [f"基于以下财务数据，按维度（盈利能力/偿债能力/成长能力/营运效率）进行简要解读。"]
+            prompt_parts.append("每个维度 1-2 句话，只描述事实和趋势，不做投资建议。")
+            prompt_parts.append(f"\n{indicator_section}")
+            try:
+                from rag.model_router import chat, TaskType
+                interpretation = chat(
+                    [{"role": "user", "content": "\n".join(prompt_parts)}],
+                    query=user_input, task_type=TaskType.SIMPLE,
+                )
+                context_parts.append(f"### 分维度解读\n\n{interpretation}")
+            except Exception:
+                pass
+
+        return "\n".join(context_parts)
+
+    def _build_chart_interpretation(self, data_values: dict,
+                                     calc_results: List[dict], chart_count: int) -> str:
+        """V8.4: 图表解读 — 纯规则，零 LLM"""
+        lines = ["## 四、图表解读", ""]
+
+        if not calc_results:
+            lines.append(f"> 本次分析共生成 {chart_count} 张图表，请在下方查看。")
+            return "\n".join(lines)
+
+        for i, cr in enumerate(calc_results, 1):
+            if cr.get("is_batch") and cr.get("results"):
+                name = cr.get("display_name", f"维度{i}")
+                items = [r for r in cr["results"] if r.get("success")]
+                if items:
+                    # 找最大值和最小值
+                    values = [(r.get("display_name", ""), r.get("result", 0)) for r in items]
+                    if len(values) >= 2:
+                        best = max(values, key=lambda x: x[1])
+                        worst = min(values, key=lambda x: x[1])
+                        lines.append(f"- **{name}**：共 {len(items)} 项指标，" +
+                                     f"最高为 {best[0]}({best[1]})，" +
+                                     f"最低为 {worst[0]}({worst[1]})")
+
+        lines.append(f"\n> 📊 共 {chart_count} 张图表，请在报告下方查看交互式可视化。")
+        return "\n".join(lines)
+
+    def _build_risk_assessment(self, calc_results: List[dict]) -> str:
+        """V8.4: 风险评估 — 纯规则阈值判断，零 LLM"""
+        lines = ["## 五、风险评估", ""]
+        risks = []
+        all_items = []
+
+        # 收集所有指标值
+        for cr in calc_results:
+            if cr.get("is_batch") and cr.get("results"):
+                all_items.extend(cr["results"])
+
+        for item in all_items:
+            name = item.get("display_name", "")
+            val = item.get("result")
+            if val is None:
+                continue
+
+            if "资产负债率" in name:
+                if val > 70:
+                    risks.append(f"🔴 **{name} {val}%** — 高杠杆 (>70%)，需关注偿债压力")
+                elif val > 60:
+                    risks.append(f"🟡 **{name} {val}%** — 中等杠杆 (60-70%)")
+                else:
+                    risks.append(f"🟢 **{name} {val}%** — 低杠杆 (<60%)，财务保守")
+
+            elif "流动比率" in name:
+                if val < 1.0:
+                    risks.append(f"🔴 **{name} {val}倍** — 短期偿债压力大 (<1.0)")
+                elif val < 2.0:
+                    risks.append(f"🟡 **{name} {val}倍** — 正常范围 (1.0-2.0)")
+                else:
+                    risks.append(f"🟢 **{name} {val}倍** — 流动性充裕 (>2.0)")
+
+            elif "速动比率" in name:
+                if val < 0.5:
+                    risks.append(f"🔴 **{name} {val}倍** — 严重流动性风险 (<0.5)")
+                elif val < 1.0:
+                    risks.append(f"🟡 **{name} {val}倍** — 流动性偏紧 (0.5-1.0)")
+
+            elif "现金流" in name and "净利润" in name:
+                if val < 50:
+                    risks.append(f"🔴 **{name} {val}%** — 利润质量偏低 (<50%)")
+                elif val < 100:
+                    risks.append(f"🟡 **{name} {val}%** — 利润质量一般 (50-100%)")
+                else:
+                    risks.append(f"🟢 **{name} {val}%** — 利润质量优秀 (>100%)")
+
+        if not risks:
+            lines.append("> 基于当前数据，未发现明显财务风险。")
+        else:
+            for r in risks:
+                lines.append(f"- {r}")
+
+            # 判断综合风险等级
+            red_count = sum(1 for r in risks if "🔴" in r)
+            if red_count >= 2:
+                lines.append(f"\n**综合风险等级：🔴 高风险** — 存在 {red_count} 项高危指标，建议重点关注。")
+            elif red_count >= 1:
+                lines.append(f"\n**综合风险等级：🟡 中等风险** — 存在 {red_count} 项需关注的指标。")
+            else:
+                lines.append(f"\n**综合风险等级：🟢 低风险** — 主要指标均在安全范围内。")
+
+        return "\n".join(lines)
 
     def _build_summary(
         self, user_input: str, tasks: List[AnalysisTask], results: List[TaskResult]

@@ -202,6 +202,19 @@ class ParamInjector:
         self._stats["miss"] += 1
         return None, "miss"
 
+    @staticmethod
+    def _strip_year_suffix(key: str) -> Tuple[str, Optional[str]]:
+        """
+        V8.4: 剥离年份后缀，供注入时使用。
+
+        "营业收入_2024" → ("营业收入", "_2024")
+        "营业收入" → ("营业收入", None)
+        """
+        m = re.search(r'_(\d{4})$', key)
+        if m:
+            return key[:m.start()], m.group(0)
+        return key, None
+
     def inject(
         self,
         extracted_data: Dict[str, Any],
@@ -235,21 +248,26 @@ class ParamInjector:
             if parsed is None:
                 continue
 
-            # Level1: 精确映射
-            mapped = FINANCIAL_TERM_TO_PARAM.get(key)
+            # ── V8.4: 年份后缀剥离 ──
+            base_key, year_suffix = ParamInjector._strip_year_suffix(key)
+
+            # Level1: 精确映射（用 base_key 匹配，然后拼接回年份后缀）
+            mapped = FINANCIAL_TERM_TO_PARAM.get(base_key)
             if mapped:
                 self._stats["level1"] += 1
-                self._do_inject(mapped, key, parsed, existing_params)
+                result_key = mapped + year_suffix if year_suffix else mapped
+                self._do_inject(result_key, key, parsed, existing_params)
                 continue
 
             # Level2: 编辑距离模糊匹配
-            mapped = self._fuzzy_match(key)
+            mapped = self._fuzzy_match(base_key)
             if mapped:
                 self._stats["level2"] += 1
-                self._do_inject(mapped, key, parsed, existing_params)
+                result_key = mapped + year_suffix if year_suffix else mapped
+                self._do_inject(result_key, key, parsed, existing_params)
                 continue
 
-            # Level3: 检查 LLM 缓存
+            # Level3: 检查 LLM 缓存（用原始 key，LLM 自己处理年份）
             if key in self._llm_cache:
                 cached = self._llm_cache[key]
                 if cached:
