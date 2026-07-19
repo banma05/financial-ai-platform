@@ -411,15 +411,18 @@ def run_agent_stream(
             r = result_map[task.task_id]
 
             # 图表事件（V8.3: 发送 ECharts option JSON + 解读说明）
-            if r.get("chart_option"):
-                chart_count += 1
-                yield AgentEvent("chart",
-                    task_id=task.task_id,
-                    chart_option=r["chart_option"],
-                    chart_description=r.get("chart_description", ""),
-                    chart_index=chart_count,
-                    message="图表已生成",
-                ).to_sse()
+            # V8.4: 支持多图互补 — 多张图表逐个推送 SSE 事件
+            chart_opts = r.get("chart_options") or ([r["chart_option"]] if r.get("chart_option") else [])
+            for ci, opt in enumerate(chart_opts):
+                if opt:
+                    chart_count += 1
+                    yield AgentEvent("chart",
+                        task_id=task.task_id,
+                        chart_option=opt,
+                        chart_description=r.get("chart_description", ""),
+                        chart_index=chart_count,
+                        message=f"图表 {chart_count} 已生成",
+                    ).to_sse()
 
             # 推 task_complete
             yield AgentEvent("task_complete",

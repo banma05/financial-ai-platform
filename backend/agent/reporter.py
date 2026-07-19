@@ -211,15 +211,21 @@ class Reporter:
         risks = []
         all_items = []
 
-        # 收集所有指标值
+        # 收集所有指标值（V8.4: 杜邦分析已在 financial_calc 展开为标量，此处正常收集即可）
         for cr in calc_results:
             if cr.get("is_batch") and cr.get("results"):
-                all_items.extend(cr["results"])
+                for item in cr["results"]:
+                    result = item.get("result")
+                    if result is not None and isinstance(result, (int, float)):
+                        all_items.append(item)
 
         for item in all_items:
             name = item.get("display_name", "")
             val = item.get("result")
             if val is None:
+                continue
+            # 跳过非数值结果（如杜邦分析返回的 dict）
+            if not isinstance(val, (int, float)):
                 continue
 
             if "资产负债率" in name:
@@ -314,24 +320,33 @@ class Reporter:
         lines = ["## 三、指标计算"]
 
         for cr in calc_results:
-            if not cr.get("success"):
-                lines.append(f"\n- ❌ **{cr.get('display_name', '未知指标')}**：{cr.get('error', '计算失败')}")
-                continue
-
-            # ── V8.3: 批量计算结果展开为表格 ──
+            # ── V8.3: 批量计算结果展开为表格（即使部分失败也展示成功的）──
             if cr.get("is_batch") and cr.get("results"):
-                # 按类别分组
                 display_name = cr.get("display_name", "指标")
                 lines.append(f"\n### {display_name}")
-                lines.append("| 指标 | 计算结果 |")
-                lines.append("|------|----------|")
-                for item in cr["results"]:
-                    if item.get("success"):
+
+                # 先展示成功的指标
+                succeeded = [item for item in cr["results"] if item.get("success")]
+                if succeeded:
+                    lines.append("| 指标 | 计算结果 |")
+                    lines.append("|------|----------|")
+                    for item in succeeded:
                         name = item.get("display_name", "")
                         result = item.get("result", "")
                         unit = item.get("unit", "")
                         lines.append(f"| {name} | {result}{unit} |")
+                    lines.append("")
+
+                # 再展示失败的公式
+                failed = [item for item in cr["results"] if not item.get("success")]
+                if failed:
+                    failed_names = [f.get("display_name") or f.get("formula", "?") for f in failed]
+                    lines.append(f"\n❌ 以下公式计算失败：{', '.join(failed_names)}")
+                    for item in failed:
+                        lines.append(f"  - **{item.get('display_name', item.get('formula', '?'))}**：{item.get('error', '计算失败')}")
                 lines.append("")
+            elif not cr.get("success"):
+                lines.append(f"\n- ❌ **{cr.get('display_name', '未知指标')}**：{cr.get('error', '计算失败')}")
             else:
                 # 单公式计算结果
                 display = cr.get('display_name', '指标')

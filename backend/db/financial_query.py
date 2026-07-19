@@ -130,11 +130,17 @@ METRIC_ALIASES: Dict[str, dict] = {
     "净利": {"keys": ["net_profit_attr_parent"], "formula": None},
     "经营活动现金流净额": {"keys": ["operating_cf"], "formula": None},
     "经营活动产生的现金流量净额": {"keys": ["operating_cf"], "formula": None},
+    "经营活动现金流": {"keys": ["operating_cf"], "formula": None},
     "经营现金流": {"keys": ["operating_cf"], "formula": None},
     "经营性现金流": {"keys": ["operating_cf"], "formula": None},
     "归属母公司净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
     "投资现金流": {"keys": ["investing_cf"], "formula": None},
     "筹资现金流": {"keys": ["financing_cf"], "formula": None},
+    # 权益/资产补充别名（LLM 常用术语）
+    "所有者权益": {"keys": ["equity_attr_parent"], "formula": None},
+    "股东权益": {"keys": ["equity_attr_parent"], "formula": None},
+    "资本支出": {"keys": ["fixed_assets"], "formula": None},  # V8.4: 自由现金流用，以固定资产近似
+    "capex": {"keys": ["fixed_assets"], "formula": None},
     # ── 复合指标（需要查多个 key 再计算）──
     "毛利率": {
         "keys": ["revenue", "cost_of_revenue"],

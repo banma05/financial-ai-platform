@@ -73,33 +73,106 @@ def _normalize(symbol: str) -> str:
     return symbol.replace(".SH", "").replace(".SZ", "").replace(".HK", "")
 
 
+def _resolve_symbol(symbol: str) -> str:
+    """
+    将公司名或股票代码统一转为纯数字代码（如 002594）。
+
+    支持输入：
+    - 纯数字代码: "002594" → "002594"
+    - 带后缀代码: "002594.SZ" → "002594"
+    - 公司全称: "比亚迪" → "002594"
+    - 公司简称: "茅台" → "600519"
+    """
+    norm = _normalize(symbol)
+    # 如果已经是纯数字代码且在 SYMBOLS 中，直接返回
+    if norm in SYMBOLS:
+        return norm
+    # 反向查找：公司名 → 代码（优先精确匹配，再子串匹配）
+    for code, name in SYMBOLS.items():
+        if "." in code:  # 跳过带后缀的键（600519.SH 等）
+            continue
+        if symbol == name or name == symbol:
+            return code
+    for code, name in SYMBOLS.items():
+        if "." in code:
+            continue
+        if symbol in name or name in symbol:
+            return code
+    return norm  # 实在找不到，返回原始输入（后续会触发 "未找到标的" 错误）
+
+
 # ==================== 1. 股票行情 ====================
 
-def get_stock_price(symbol: str, period: str = "realtime") -> Dict[str, Any]:
-    norm = _normalize(symbol)
+def get_stock_price(symbol: str, period: str = "realtime",
+                    target_date: str = "") -> Dict[str, Any]:
+    """
+    查询股票行情。
+
+    参数:
+        symbol: 股票代码或公司名
+        period: realtime / daily / weekly / monthly
+        target_date: 目标日期 YYYY-MM-DD（如 "2024-12-31"），查该日期收盘价
+                     为空时取最新实时价
+    """
+    norm = _resolve_symbol(symbol)
     name = SYMBOLS.get(norm)
 
     if _USE_AKSHARE and norm in ("600519", "002594"):
         with _akshare_guard() as ok:
             if ok:
                 try:
-                    return _akshare_stock_price(norm, name, period)
+                    return _akshare_stock_price(norm, name, period, target_date)
                 except Exception:
                     logger.info(f"[AKShare] 行情获取失败({symbol})，降级Mock")
 
-    return _mock_stock_price(norm, period)
+    return _mock_stock_price(norm, period, target_date)
 
 
-def _akshare_stock_price(norm: str, name: str, period: str) -> Dict[str, Any]:
+def _akshare_stock_price(norm: str, name: str, period: str,
+                        target_date: str = "") -> Dict[str, Any]:
     import akshare as ak
-    from datetime import datetime
+    from datetime import datetime, timedelta as _td
 
     prefix = "sh" if norm.startswith("6") else "sz"
     full_symbol = f"{prefix}{norm}"
 
-    # 日K线数据
+    # ── 指定日期模式：拉取目标日期前后 10 天的数据，取最近交易日收盘价 ──
+    if target_date:
+        try:
+            target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+        except ValueError:
+            target_dt = datetime.now()
+        start = (target_dt - _td(days=30)).strftime("%Y%m%d")
+        end = (target_dt + _td(days=10)).strftime("%Y%m%d")
+        df = ak.stock_zh_a_daily(symbol=full_symbol, start_date=start, end_date=end, adjust="qfq")
+        if df.empty:
+            raise ValueError(f"目标日期 {target_date} 附近无交易数据")
+        # 找最接近目标日期的交易日（≤ 目标日期）
+        df["date_str"] = df["date"].astype(str)
+        before = df[df["date_str"] <= target_date]
+        if before.empty:
+            # 目标日期太早，取最早交易日
+            row = df.iloc[0]
+        else:
+            row = before.iloc[-1]  # 目标日期或之前最近的一个交易日
+        close_price = round(row["close"], 2)
+        # 取前一个交易日计算涨跌
+        idx = df.index.get_loc(row.name)
+        prev_row = df.iloc[idx - 1] if idx > 0 else row
+        change = round(close_price - prev_row["close"], 2)
+        change_pct = round(change / prev_row["close"] * 100, 2) if prev_row["close"] != 0 else 0
+        logger.info(f"[AKShare] 历史股价 {name}({norm}) {target_date} → {row['date_str']} 收盘 {close_price}")
+        return {
+            "symbol": f"{norm}.{'SH' if norm.startswith('6') else 'SZ'}", "name": name,
+            "price": close_price, "change": change, "change_pct": change_pct,
+            "volume": int(row.get("volume", 0)), "market_cap": 0,
+            "pe_ttm": 0, "pb": 0, "high_52w": close_price, "low_52w": close_price,
+            "target_date": target_date, "actual_date": row["date_str"],
+        }
+
+    # ── 实时模式（原有逻辑）──
     end = datetime.now().strftime("%Y%m%d")
-    start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+    start = (datetime.now() - _td(days=365)).strftime("%Y%m%d")
     df = ak.stock_zh_a_daily(symbol=full_symbol, start_date=start, end_date=end, adjust="qfq")
 
     if df.empty:
@@ -161,7 +234,7 @@ def _akshare_stock_info(norm: str) -> Dict[str, Any]:
 def get_financial_statements(
     symbol: str, statement_type: str = "all", period: str = "annual",
 ) -> Dict[str, Any]:
-    norm = _normalize(symbol)
+    norm = _resolve_symbol(symbol)
     name = SYMBOLS.get(norm)
 
     if _USE_AKSHARE and norm in ("600519", "002594"):
@@ -235,7 +308,7 @@ def get_industry_comparison(
 
     Mock 里的 PE/PB/ROE/营收增速基于最新年报真实数据，不比东财差。
     """
-    norm = _normalize(symbol)
+    norm = _resolve_symbol(symbol)
     sector = SECTORS.get(norm)
     if not sector:
         return {"error": f"未找到标的: {symbol}"}
@@ -324,7 +397,7 @@ def _akshare_index(code: str) -> Dict[str, Any]:
 
 def get_financial_calendar(symbol: str, year: int = 2026) -> Dict[str, Any]:
     """财报日历 — 分红数据来自巨潮（真实），其余保留 Mock"""
-    norm = _normalize(symbol)
+    norm = _resolve_symbol(symbol)
     name = SYMBOLS.get(norm, symbol)
 
     # 从 Mock 获取基础事件
@@ -370,13 +443,32 @@ def _akshare_dividends(norm: str, year: int) -> List[Dict]:
 
 # ==================== Mock 数据（兜底） ====================
 
-def _mock_stock_price(norm: str, period: str) -> Dict[str, Any]:
+def _mock_stock_price(norm: str, period: str, target_date: str = "") -> Dict[str, Any]:
     data = _PRICE_DATA.get(norm)
     if not data:
         return {"error": f"未找到标的: {norm}", "available": list(SYMBOLS.keys())}
     result = {k: v for k, v in data.items()}
+    # ── 指定日期：返回历史估算价格（约等于当前 Mock 价格的 90%-110%）──
+    if target_date:
+        import hashlib
+        target_year = int(target_date[:4]) if len(target_date) >= 4 else 2026
+        current_year = 2026
+        year_diff = current_year - target_year
+        # 简单估算：每年折价/溢价约 10%
+        factor = 1.0 - year_diff * 0.10
+        mock_price = round(data["price"] * max(factor, 0.5), 2)
+        # 用 target_date 的哈希做小幅随机偏移（确定性，不引入真实随机）
+        seed = int(hashlib.md5(target_date.encode()).hexdigest()[:4], 16)
+        offset_pct = (seed % 1000) / 10000 - 0.05  # -5% ~ +5%
+        mock_price = round(mock_price * (1 + offset_pct), 2)
+        result["price"] = mock_price
+        result["change"] = round(mock_price - data["price"], 2)
+        result["change_pct"] = round(result["change"] / data["price"] * 100, 2)
+        result["target_date"] = target_date
+        result["actual_date"] = target_date
+        logger.info(f"[Mock] 历史股价 {data['name']}({norm}) {target_date} → 估算 {mock_price}")
     if period != "realtime":
-        result["history"] = _generate_history(data["price"], period)
+        result["history"] = _generate_history(result["price"], period)
     return result
 
 
