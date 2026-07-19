@@ -57,7 +57,7 @@ describe('预设分析页面', () => {
     await user.click(screen.getByText('盈利能力评估'));
 
     // 3. 点击分析按钮
-    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始/ }));
 
     // 4. 等待结果展示
     await waitFor(() => {
@@ -105,7 +105,7 @@ describe('预设分析页面', () => {
     await screen.findByText('盈利能力评估');
 
     // 分析按钮应该被禁用（没选公司）
-    const btn = screen.getByRole('button', { name: /请先选择公司/ });
+    const btn = screen.getByRole('button', { name: /请先选择/ });
     expect(btn).toBeDisabled();
   });
 });

@@ -27,7 +27,7 @@ describe('分析结果展示', () => {
     // 执行分析
     await user.click(await screen.findByText('贵州茅台'));
     await user.click(screen.getByText('盈利能力评估'));
-    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始/ }));
 
     // 等待分析完成
     await waitFor(() => {
@@ -54,7 +54,7 @@ describe('分析结果展示', () => {
     // 分析
     await user.click(await screen.findByText('贵州茅台'));
     await user.click(screen.getByText('盈利能力评估'));
-    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始/ }));
 
     await waitFor(() => {
       expect(screen.getByText(/分析报告/)).toBeInTheDocument();
@@ -64,6 +64,6 @@ describe('分析结果展示', () => {
     await user.click(screen.getByText(/返回重新分析/));
 
     // 按钮重新出现
-    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /开始/ })).toBeInTheDocument();
   });
 });

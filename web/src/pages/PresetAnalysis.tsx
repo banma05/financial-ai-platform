@@ -93,18 +93,20 @@ export default function PresetAnalysis() {
 
   const handleCancel = useCallback(() => { abort(); setAnalyzing(false); }, [abort, setAnalyzing]);
 
-  // 推荐问题
+  // 推荐问题 — 根据模板类型动态生成，无模板时给出通用建议
   const recommendedQuestions = (() => {
     if (!selectedCompany) return [];
     const company = selectedCompany;
     const year = `${new Date().getFullYear() - 1}年`;
     switch (selectedTemplate) {
       case 'profitability':
-        return [`${company} ${year}毛利率、净利率分别是多少？`, `${company} ROE和ROA变化趋势如何？`, `${company} 盈利能力在同行业中处于什么水平？`, `${company} ${year}营业收入和净利润增长率对比？`];
+        return [`${company} ${year}毛利率、净利率、ROE分别是多少？`, `${company} ROE和ROA近三年变化趋势如何？`, `${company} 盈利能力在同行业中处于什么水平？`, `${company} ${year}营业收入和净利润的增速对比？`];
       case 'dupont':
-        return [`${company} 杜邦三因子分解结果？`, `${company} ROE的主要驱动因素是什么？`, `${company} 如何提升资产周转率？`, `${company} 权益乘数变化对ROE的影响有多大？`];
+        return [`${company} 杜邦三因子分解（净利率×周转率×杠杆）结果？`, `${company} ROE变化的主要驱动因素是哪个因子？`, `${company} 如何提升总资产周转率？`, `${company} 权益乘数变化对ROE的影响有多大？`];
       case 'growth':
-        return [`${company} 近三年营收CAGR是多少？`, `${company} 净利润增长率趋势如何？`, `${company} 营收增长是内生的还是并购驱动？`, `${company} 未来三年营收增长预期？`];
+        return [`${company} 近三年营收CAGR是多少？与行业均值对比？`, `${company} 净利润增长率趋势如何？是否存在波动？`, `${company} 营收增长是内生增长还是并购驱动？`, `${company} 未来三年营收增长预期如何？`];
+      case null:  // 自由分析 — 通用问题
+        return [`${company} ${year}年财务整体表现如何？`, `${company} ${year}年营收和利润增长了多少？`, `${company} 有哪些财务风险需要重点关注？`, `${company} 盈利能力和现金流质量如何？`];
       default:
         return [`${company} ${year}财务整体表现如何？`, `${company} ${year}营收同比增长了多少？`, `${company} 有哪些财务风险需要关注？`];
     }
@@ -191,7 +193,7 @@ export default function PresetAnalysis() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">预设分析</h1>
         <p className="mt-1.5 text-sm text-gray-500">
-          选择公司和分析模板，AI Agent 将自动拆解任务并生成可视化报告
+          选择公司，输入你想了解的问题（或选模板快速填充），AI 自动分析并生成报告
         </p>
       </div>
 
@@ -220,24 +222,44 @@ export default function PresetAnalysis() {
         </div>
       </section>
 
-      {/* 步骤 2: 选择模板 */}
+      {/* 步骤 2: 分析模板（可选） */}
       <section className="mb-7">
         <div className="flex items-center gap-2 mb-3">
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-brand-600 text-white text-xs font-bold">2</span>
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border-2 border-dashed border-gray-300 text-gray-400 text-xs font-bold">2</span>
           <h2 className="text-sm font-semibold text-gray-700">分析模板</h2>
+          <span className="text-xs text-gray-400 font-normal">（可选，点击选择分析框架）</span>
         </div>
         {templates.length === 0 ? (
-          <div className="grid grid-cols-3 gap-3">
-            {[1,2,3].map(i => <div key={i} className="skeleton h-20 rounded-xl" />)}
+          <div className="grid grid-cols-4 gap-3">
+            {[1,2,3,4].map(i => <div key={i} className="skeleton h-20 rounded-xl" />)}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            {/* 自由分析 — 默认不选模板 */}
+            <button
+              onClick={() => setTemplate(null)}
+              className={`text-left p-4 rounded-xl border transition-all duration-200 ${
+                !selectedTemplate
+                  ? 'border-dashed border-brand-400 bg-brand-50/50 ring-1 ring-brand-200'
+                  : 'border-dashed border-gray-200 bg-white hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <h3 className={`font-semibold text-sm ${!selectedTemplate ? 'text-brand-700' : 'text-gray-800'}`}>
+                  自由分析
+                </h3>
+                <span className="text-lg">🎯</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                不限框架，AI 根据你的问题自动选择分析维度
+              </p>
+            </button>
             {templates.map((template) => {
               const isActive = selectedTemplate === template.name;
               return (
                 <button
                   key={template.name}
-                  onClick={() => setTemplate(template.name)}
+                  onClick={() => setTemplate(isActive ? null : template.name)}
                   className={`text-left p-4 rounded-xl border transition-all duration-200 group ${
                     isActive
                       ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-200 shadow-sm'
@@ -364,17 +386,32 @@ export default function PresetAnalysis() {
       )}
 
       {/* 分析按钮 */}
-      <button
-        onClick={handleAnalyze}
-        disabled={!canAnalyze}
-        className={`w-full py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
-          canAnalyze
-            ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-200 hover:shadow-xl hover:shadow-brand-300 hover:-translate-y-0.5 active:translate-y-0'
-            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-        } ${isAnalyzing ? 'hidden' : ''}`}
-      >
-        {canAnalyze ? '🚀 开始智能分析' : '请先选择公司'}
-      </button>
+      <div className={isAnalyzing ? 'hidden' : ''}>
+        <button
+          onClick={handleAnalyze}
+          disabled={!canAnalyze}
+          className={`w-full py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
+            canAnalyze
+              ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-200 hover:shadow-xl hover:shadow-brand-300 hover:-translate-y-0.5 active:translate-y-0'
+              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          {canAnalyze
+            ? (selectedTemplate
+                ? `🚀 开始「${templates.find(t => t.name === selectedTemplate)?.display_name || ''}」分析`
+                : '🚀 开始自由分析')
+            : (selectedCompany ? '请输入问题或选择模板' : '请先选择一家公司')
+          }
+        </button>
+        {canAnalyze && (
+          <p className="text-center text-xs text-gray-400 mt-2">
+            {selectedTemplate
+              ? `将使用「${templates.find(t => t.name === selectedTemplate)?.display_name}」框架分析`
+              : '自由分析模式：AI 根据你的问题自动选择分析维度'}
+            {customQuery.trim() && ` · 已输入 ${customQuery.trim().length} 字自定义问题`}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
