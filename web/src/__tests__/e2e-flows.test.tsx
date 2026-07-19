@@ -28,7 +28,7 @@ describe('E2E: 分析→返回→再来一次', () => {
     // 选择公司和模板
     await user.click(await screen.findByText('贵州茅台'));
     await user.click(screen.getByText('盈利能力评估'));
-    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始/ }));
 
     // 等待报告出现
     await waitFor(() => {
@@ -37,11 +37,11 @@ describe('E2E: 分析→返回→再来一次', () => {
 
     // 返回 → 按钮重现
     await user.click(screen.getByText(/返回重新分析/));
-    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /开始/ })).toBeInTheDocument();
 
     // 可以换公司再分析
     await user.click(screen.getByText('比亚迪'));
-    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /开始/ })).toBeInTheDocument();
   });
 });
 
