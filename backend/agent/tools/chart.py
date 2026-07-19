@@ -12,7 +12,7 @@ V8.3: 从 matplotlib 静态 PNG 迁移到 ECharts 前端渲染。
 不再依赖 matplotlib，直接输出 ECharts option JSON 字典。
 """
 
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from loguru import logger
 
 from agent.schemas import ChartConfig
@@ -36,75 +36,9 @@ SERIES_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
                  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1']
 
 
-# ==================== 智能指标分类 ====================
-
-# 中文财务指标 → (类别名, 单位, 典型最大值)
-_METRIC_PATTERNS: List[Tuple[str, str, float]] = [
-    # (关键词, 类别标签, 雷达图轴最大值) — 中英文双覆盖
-    ('毛利率', '盈利能力%', 100), ('gross_profit_margin', '盈利能力%', 100),
-    ('净利率', '盈利能力%', 100), ('net_profit_margin', '盈利能力%', 100),
-    ('营业利润率', '盈利能力%', 100),
-    ('ROE', '盈利能力%', 100), ('roe', '盈利能力%', 100),
-    ('ROA', '盈利能力%', 100), ('roa', '盈利能力%', 100),
-    ('净资产收益率', '盈利能力%', 100),
-    ('总资产收益率', '盈利能力%', 100),
-    ('资产负债率', '偿债能力%', 100), ('debt_ratio', '偿债能力%', 100),
-    ('权益乘数', '偿债能力', 5),
-    ('流动比率', '流动性', 3), ('current_ratio', '流动性', 3),
-    ('速动比率', '流动性', 3), ('quick_ratio', '流动性', 3),
-    ('总资产周转率', '运营效率', 2), ('total_asset_turnover', '运营效率', 2),
-    ('存货周转率', '运营效率', 10), ('inventory_turnover', '运营效率', 10),
-    ('应收账款周转率', '运营效率', 10), ('receivable_turnover', '运营效率', 10),
-    ('营收增长率', '成长能力%', 50), ('revenue_growth', '成长能力%', 50),
-    ('净利润增长率', '成长能力%', 50), ('net_profit_growth', '成长能力%', 50),
-    ('毛利增长率', '成长能力%', 50),
-]
-
-
-def _classify_metric(label: str) -> Tuple[str, str, float]:
-    """根据中文指标名称推断类别、单位和雷达图最大刻度"""
-    for keyword, category, typical_max in _METRIC_PATTERNS:
-        if keyword in str(label):
-            return category, '%' if '%' in category else '数值', typical_max
-    # 默认兜底
-    return '其他指标', '数值', 100
-
-
-def _smart_group_metrics(labels: List, values: List) -> Dict[str, Dict]:
-    """
-    智能分组：将量纲不一致的指标按类别分组。
-
-    返回: {类别名: {"labels": [...], "values": [...], "unit": str, "radar_max": float}}
-    """
-    groups: Dict[str, Dict] = {}
-    for label, value in zip(labels, values):
-        category, unit, radar_max = _classify_metric(str(label))
-        if category not in groups:
-            groups[category] = {"labels": [], "values": [], "unit": unit, "radar_max": radar_max}
-        groups[category]["labels"].append(str(label))
-        groups[category]["values"].append(float(value))
-    return groups
-
-
-def _detect_scale_incompatibility(values: List) -> bool:
-    """检测数值是否存在严重的量纲不一致（最大/最小 > 5倍）"""
-    if len(values) < 2:
-        return False
-    abs_vals = [abs(v) for v in values if v != 0]
-    if len(abs_vals) < 2:
-        return False
-    return max(abs_vals) / max(min(abs_vals), 0.01) > 5
-
-
-def _build_chart_description(chart_type: str, groups: Dict, labels: List, values: List) -> str:
-    """生成人类可读的图表解读说明"""
-    if groups and len(groups) > 1:
-        parts = []
-        for cat, g in groups.items():
-            metrics = '、'.join([f'{l}({v}{g["unit"]})' for l, v in zip(g['labels'], g['values'])])
-            parts.append(f'【{cat}】{metrics}')
-        return ' | '.join(parts)
-    elif labels and values:
+def _build_chart_description(labels: List, values: List) -> str:
+    """生成人类可读的图表数据摘要"""
+    if labels and values:
         return '、'.join([f'{l}: {v}' for l, v in zip(labels, values)])
     return ''
 
@@ -250,23 +184,6 @@ class ChartTool:
             data["labels"] = list(numeric_extra.keys())
             data["values"] = list(numeric_extra.values())
 
-        # ── V8.3 智能图表：检测量纲不一致，自动分组/切换图表类型 ──
-        labels = data.get("labels", [])
-        values = data.get("values", [])
-        series_data = data.get("series", {})
-
-        # 智能检测条件：柱状图 + 无预设 series + 量纲跨度>5倍
-        if (chart_type == "bar" and not series_data and labels and values
-                and _detect_scale_incompatibility(values)):
-            groups = _smart_group_metrics(labels, values)
-
-            if len(groups) >= 2:
-                # 多类别 → 自动切换为雷达图（每个维度独立坐标轴）
-                logger.info(f"智能切换: bar → radar（检测到 {len(groups)} 个不同量纲组: {list(groups.keys())}）")
-                option = self._radar_from_flat(title, groups, list(groups.keys()))
-                description = _build_chart_description('radar', groups, labels, values)
-                return {"chart_option": option, "chart_description": description}
-
         # ── 正常流程 ──
         config = ChartConfig(
             chart_type=chart_type,
@@ -291,7 +208,9 @@ class ChartTool:
 
         try:
             option = method(config)
-            description = _build_chart_description(config.chart_type, {}, labels, values)
+            labels = data.get("labels", [])
+            values = data.get("values", [])
+            description = _build_chart_description(labels, values)
             return {"chart_option": option, "chart_description": description}
         except Exception as e:
             logger.error(f"图表生成失败 [{config.chart_type}]: {e}")
@@ -690,84 +609,6 @@ class ChartTool:
                     },
                 },
             ],
-        }
-
-    # ============ 智能雷达图（从扁平 labels+values 自动构建）============
-
-    def _radar_from_flat(self, title: str, groups: Dict[str, Dict],
-                         category_order: List[str]) -> Dict:
-        """
-        将智能分组后的多维度指标渲染为雷达图。
-
-        每个类别作为雷达图的一个数据系列，同一类别的指标作为维度。
-        不同量纲的指标各自归一化到合理范围，解决柱状图量纲冲突问题。
-        """
-        # 构建指示器（维度名 + 各自的最大刻度）
-        indicator = []
-        for cat in category_order:
-            g = groups[cat]
-            for label, value in zip(g['labels'], g['values']):
-                typical_max = g.get('radar_max', 100)
-                # 用指标自身值+20%和标准最大值中的较大者，确保柱子可见
-                axis_max = max(abs(value) * 1.3, typical_max * 0.5, 10)
-                indicator.append({
-                    'name': f'{label}({g["unit"]})',
-                    'max': round(axis_max, 1),
-                })
-
-        # 所有指标值汇总为一个系列
-        all_values = []
-        for cat in category_order:
-            g = groups[cat]
-            all_values.extend(g['values'])
-
-        # 用各组的颜色
-        cat_colors = dict(zip(category_order, SERIES_COLORS[:len(category_order)]))
-
-        # 为每个类别创建系列
-        series = []
-        # 方案：一个主系列包含所有维度，每个维度的颜色按类别区分
-        # ECharts 雷达图一个系列的所有点同色——所以这里用单系列 + 统一颜色
-        main_color = CHART_COLORS[0]
-        series.append({
-            'name': title,
-            'type': 'radar',
-            'data': [{
-                'value': all_values,
-                'name': title,
-                'areaStyle': {'color': main_color + '26'},
-                'lineStyle': {'color': main_color, 'width': 2},
-                'itemStyle': {'color': main_color},
-            }],
-            'symbol': 'circle',
-            'symbolSize': 6,
-        })
-
-        # 为每个类别添加视觉分隔标记（在 indicator 名称中体现）
-        # 组装图例说明
-        legend_data = [f'{cat}({groups[cat]["unit"]})' for cat in category_order]
-
-        return {
-            'title': _base_title(title),
-            'tooltip': _base_tooltip('item'),
-            'legend': {
-                'data': legend_data,
-                'bottom': 0,
-                'textStyle': {'color': '#64748b', 'fontSize': 10},
-            },
-            'radar': {
-                'indicator': indicator,
-                'center': ['50%', '50%'],
-                'radius': '65%',
-                'splitArea': {
-                    'areaStyle': {'color': ['#f8fafc', '#ffffff']},
-                },
-                'axisName': {
-                    'color': '#64748b', 'fontSize': 10,
-                    'formatter': '{value}',
-                },
-            },
-            'series': series,
         }
 
     # ============ 错误降级 ============
