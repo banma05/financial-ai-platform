@@ -126,15 +126,22 @@ class ToolRegistry:
             elif task.task_type == "calculate":
                 # ── V6.0: 支持批量计算 ──
                 if result.get("is_batch"):
-                    # 批量结果：合并所有公式的表达式
-                    expressions = [r.get("expression", "") for r in result.get("results", []) if r.get("success")]
+                    # 批量结果：部分成功也算成功（至少一个公式算出来就行）
+                    succeeded = [r for r in result.get("results", []) if r.get("success")]
+                    failed = [r for r in result.get("results", []) if not r.get("success")]
+                    expressions = [r.get("expression", "") for r in succeeded]
+                    summary_parts = [f"批量计算 {len(succeeded)}/{len(result.get('results',[]))} 成功"]
+                    if succeeded:
+                        summary_parts.append(": " + ", ".join([r.get("display_name", r.get("formula", "?")) for r in succeeded]))
+                    if failed:
+                        summary_parts.append(f"; {len(failed)} 失败: " + ", ".join([r.get("error", r.get("formula", "?"))[:20] for r in failed]))
                     return TaskResult(
                         task_id=task.task_id,
                         task_type=task.task_type,
-                        success=result.get("success", False),
-                        summary=result.get("summary", "\n".join(expressions)),
+                        success=len(succeeded) > 0,  # V8.3: 部分成功也算成功，不再全有或全无
+                        summary="".join(summary_parts),
                         data=result,
-                        error=result.get("error"),
+                        error=None if succeeded else result.get("error"),
                     )
                 else:
                     return TaskResult(
