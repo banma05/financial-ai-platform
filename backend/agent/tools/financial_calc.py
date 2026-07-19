@@ -555,6 +555,24 @@ class FinancialCalcTool:
         """
         params = dict(params)
 
+        # ── 策略0: 年份后缀通用回退（revenue_2024 → revenue）──
+        # ParamInjector 注入的是英文名_年份（如 revenue_2024）
+        # 公式参数名不帶年份（如 revenue），此处从 _YYYY 键自动回退
+        # 必须放在最前面，让策略1-4 都能利用回退后的无后缀参数
+        import re as _re
+        _yearly: dict[str, dict[int, float]] = {}
+        for _k, _v in params.items():
+            if not isinstance(_v, (int, float)):
+                continue
+            _m = _re.match(r'^(.+?)_(\d{4})$', str(_k))
+            if _m:
+                _base_name, _yr = _m.group(1), int(_m.group(2))
+                _yearly.setdefault(_base_name, {})[_yr] = _v
+        for _base_name, _years in _yearly.items():
+            if _base_name not in params:
+                _latest_yr = max(_years.keys())
+                params.setdefault(_base_name, _years[_latest_yr])
+
         # ── 策略1: avg_* 回退（覆盖 ROE/ROA/周转率等 6 个公式）──
         avg_fallbacks = {
             "avg_equity": "equity",
