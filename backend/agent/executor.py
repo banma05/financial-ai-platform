@@ -112,12 +112,14 @@ class ToolRegistry:
 
             # 格式化 TaskResult
             if task.task_type == "chart":
+                result_dict = result if isinstance(result, dict) else {}
                 return TaskResult(
                     task_id=task.task_id,
                     task_type=task.task_type,
                     success=True,
                     summary=f"图表「{task.description}」已生成",
-                    chart_base64=result if isinstance(result, str) else result.get("chart_base64"),
+                    chart_base64=result if isinstance(result, str) else result_dict.get("chart_base64"),
+                    chart_option=result_dict.get("chart_option"),
                     data=result,
                 )
             elif task.task_type == "calculate":

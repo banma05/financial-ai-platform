@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 
 describe('页面路由', () => {
-  it('默认路由 / 显示预设分析页面', () => {
+  it('默认路由 / 显示分析工作台页面', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <App />
@@ -16,7 +16,7 @@ describe('页面路由', () => {
     expect(screen.getByRole('heading', { name: '预设分析' })).toBeInTheDocument();
   });
 
-  it('点击"文档上传"导航切换到上传页面', async () => {
+  it('点击"文档问答"导航切换到文档页面', async () => {
     const user = userEvent.setup();
 
     render(
@@ -25,15 +25,15 @@ describe('页面路由', () => {
       </MemoryRouter>,
     );
 
-    // 点击侧边栏"文档上传"链接（用 getAllByRole 取第一个，因为页面里可能还有别的同名链接）
-    const links = screen.getAllByRole('link', { name: /文档上传/ });
+    // 点击侧边栏"文档问答"链接
+    const links = screen.getAllByRole('link', { name: /文档问答/ });
     await user.click(links[0]);
 
-    // 页面主标题变为"文档上传"
-    expect(screen.getByRole('heading', { name: '文档上传' })).toBeInTheDocument();
+    // 页面主标题变为"文档问答"
+    expect(screen.getByRole('heading', { name: '文档问答' })).toBeInTheDocument();
   });
 
-  it('点击"报告展示"导航切换到报告页面', async () => {
+  it('两个页面间往返导航', async () => {
     const user = userEvent.setup();
 
     render(
@@ -42,10 +42,12 @@ describe('页面路由', () => {
       </MemoryRouter>,
     );
 
-    // 点击侧边栏"报告展示"链接
-    await user.click(screen.getByRole('link', { name: /报告展示/ }));
+    // 首页 → 文档页
+    await user.click(screen.getByRole('link', { name: /文档问答/ }));
+    expect(screen.getByRole('heading', { name: '文档问答' })).toBeInTheDocument();
 
-    // 无分析结果时显示空状态提示
-    expect(screen.getByRole('heading', { name: '暂无分析结果' })).toBeInTheDocument();
+    // 文档页 → 首页
+    await user.click(screen.getByRole('link', { name: /分析工作台/ }));
+    expect(screen.getByRole('heading', { name: '预设分析' })).toBeInTheDocument();
   });
 });

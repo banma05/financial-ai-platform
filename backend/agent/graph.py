@@ -187,7 +187,7 @@ def executor_node(state: AgentState) -> dict:
                     ).model_dump()
 
     new_results = [result_map[t["task_id"]] for t in tasks_dict if t["task_id"] in result_map]
-    chart_count = sum(1 for r in new_results if r.get("chart_base64"))
+    chart_count = sum(1 for r in new_results if r.get("chart_option") or r.get("chart_base64"))
 
     return {"task_results": new_results, "chart_count": chart_count}
 
@@ -410,12 +410,12 @@ def run_agent_stream(
             result_map[task.task_id] = result if isinstance(result, dict) else result.model_dump()
             r = result_map[task.task_id]
 
-            # 图表事件
-            if r.get("chart_base64"):
+            # 图表事件（V8.3: 发送 ECharts option JSON，不再发送 base64）
+            if r.get("chart_option"):
                 chart_count += 1
                 yield AgentEvent("chart",
                     task_id=task.task_id,
-                    chart_base64=r["chart_base64"],
+                    chart_option=r["chart_option"],
                     chart_index=chart_count,
                     message="图表已生成",
                 ).to_sse()
@@ -438,11 +438,12 @@ def run_agent_stream(
             report = _reporter.generate(user_input, task_objects, result_objects, chart_count)
 
         processing_time = round(time.time() - start_time, 1)
-        charts = [r.get("chart_base64") for r in task_results_list if r.get("chart_base64")]
+        chart_options = [r.get("chart_option") for r in task_results_list if r.get("chart_option")]
 
         yield AgentEvent("done",
             report=report,
-            charts=charts,
+            charts=[],  # V8.3: 已弃用 base64，保留字段向后兼容
+            chart_options=chart_options,
             task_count=len(task_results_list),
             processing_time=processing_time,
             message=f"分析完成，耗时 {processing_time} 秒",
@@ -494,12 +495,13 @@ def run_agent_sync(
                               processing_time=result["processing_time"], status="clarification")
             return result
         results = _executor.execute(plan.tasks)
-        chart_count = sum(1 for r in results if r.chart_base64)
+        chart_count = sum(1 for r in results if r.chart_option or r.chart_base64)
         report = _reporter.generate(user_input, plan.tasks, results, chart_count)
         processing_time = round(time.time() - start_time, 1)
         result = {
             "report": report,
             "charts": [r.chart_base64 for r in results if r.chart_base64],
+            "chart_options": [r.chart_option for r in results if r.chart_option],
             "task_count": len(plan.tasks),
             "processing_time": processing_time,
             "task_results": [r.model_dump() for r in results],  # V8.2: 供评测提取 data_values
@@ -543,6 +545,7 @@ def run_agent_sync(
     result = {
         "report": report,
         "charts": [r.get("chart_base64") for r in task_results if r.get("chart_base64")],
+        "chart_options": [r.get("chart_option") for r in task_results if r.get("chart_option")],
         "task_count": len(task_results),
         "processing_time": processing_time,
         "task_results": task_results,  # V8.2: 供评测提取 data_values

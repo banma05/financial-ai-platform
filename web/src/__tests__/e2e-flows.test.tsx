@@ -7,18 +7,17 @@ import { useAnalysisStore } from '@/stores/analysis';
 import { useDocumentStore } from '@/stores/document';
 
 /**
- * V8.2 E2E 流程测试 — 跨页面用户旅程
+ * V8.3 E2E 流程测试 — 跨页面用户旅程
  *
- * 与现有单元测试互补: 测跨页面状态保持和完整用户旅程
- * 已有单元测试覆盖: 按钮禁用、模板加载、RAG问答、报告渲染
+ * V8.3 架构变更: 砍掉独立 /report 页面，分析+结果+导出统一在分析工作台。
  */
 
-describe('E2E: 分析→返回→报告页结果保持', () => {
+describe('E2E: 分析→返回→再来一次', () => {
   beforeEach(() => {
     useAnalysisStore.getState().reset();
   });
 
-  it('完成分析 → 返回 → 侧边栏到报告页 → store中结果仍渲染', async () => {
+  it('完成分析 → 返回 → 重新选择 → 按钮可用', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -26,42 +25,27 @@ describe('E2E: 分析→返回→报告页结果保持', () => {
       </MemoryRouter>,
     );
 
-    // 分析
+    // 选择公司和模板
     await user.click(await screen.findByText('贵州茅台'));
     await user.click(screen.getByText('盈利能力评估'));
-    await user.click(screen.getByRole('button', { name: /开始分析/ }));
+    await user.click(screen.getByRole('button', { name: /开始智能分析/ }));
 
-    // 等待报告
+    // 等待报告出现
     await waitFor(() => {
       expect(screen.getByText(/分析报告/)).toBeInTheDocument();
     }, { timeout: 10000 });
 
-    // 返回 → 开始分析按钮重现
+    // 返回 → 按钮重现
     await user.click(screen.getByText(/返回重新分析/));
-    expect(screen.getByRole('button', { name: /开始分析/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
 
-    // 侧边栏 → 报告页 → 结果仍可见（跨页面状态保持）
-    const sidebarLink = screen.getAllByRole('link', { name: /报告展示/ })[0];
-    await user.click(sidebarLink);
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '分析报告' })).toBeInTheDocument();
-    });
+    // 可以换公司再分析
+    await user.click(screen.getByText('比亚迪'));
+    expect(screen.getByRole('button', { name: /开始智能分析/ })).toBeInTheDocument();
   });
 });
 
-describe('E2E: 三页面直接访问', () => {
-  it('报告页无结果 → 空状态', async () => {
-    useAnalysisStore.getState().reset();
-    render(
-      <MemoryRouter initialEntries={['/report']}>
-        <App />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '暂无分析结果' })).toBeInTheDocument();
-    });
-  });
-
+describe('E2E: 页面直接访问', () => {
   it('文档上传页 → 文档列表', async () => {
     render(
       <MemoryRouter initialEntries={['/upload']}>
@@ -73,7 +57,7 @@ describe('E2E: 三页面直接访问', () => {
     });
   });
 
-  it('预设分析页 → 公司标签和模板', async () => {
+  it('分析工作台 → 公司标签和模板', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <App />
@@ -86,7 +70,7 @@ describe('E2E: 三页面直接访问', () => {
   });
 });
 
-describe('E2E: RAG问答（复用已有测试模式）', () => {
+describe('E2E: RAG问答', () => {
   beforeEach(() => {
     useDocumentStore.getState().clearChat();
     useDocumentStore.setState({ documents: [], uploadError: null, chatError: null });
@@ -100,24 +84,19 @@ describe('E2E: RAG问答（复用已有测试模式）', () => {
       </MemoryRouter>,
     );
 
-    // 等文档列表 + 选文档（复用已有测试的已验证模式）
     await screen.findByText('贵州茅台2024年报.pdf');
     await user.click(screen.getByText('贵州茅台2024年报.pdf'));
 
-    // 输入问题（用 placeholder 匹配，与已有测试一致）
     const input = screen.getByPlaceholderText(/输入问题/);
     await user.type(input, '茅台2024年营收增长了多少？');
 
-    // 发送
     await user.click(screen.getByRole('button', { name: /发送/ }));
 
-    // 等待回答
     await waitFor(() => {
       const matches = screen.getAllByText(/营业收入/);
       expect(matches.length).toBeGreaterThanOrEqual(2);
     });
 
-    // 来源引用
     expect(screen.getByText('📎 来源引用')).toBeInTheDocument();
   });
 });

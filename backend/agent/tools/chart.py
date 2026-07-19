@@ -1,101 +1,170 @@
 """
-图表生成工具 — matplotlib 生成财务图表
+图表生成工具 — 生成 ECharts option JSON，前端直接渲染
 
 支持 5 种图表类型：
-- line: 折线图（趋势分析）
-- bar: 柱状图（对比分析）
-- pie: 饼图（结构分析）
+- line: 折线图（趋势分析）— 面积渐变 + 平滑曲线
+- bar: 柱状图（对比分析）— 圆角 + 渐变色
+- pie: 饼图/环形图（结构分析）— 扇区圆角 + 阴影
 - radar: 雷达图（多维度评估）
-- dual_axis: 双轴图（营收+增速对比）
+- dual_axis: 双轴图（柱状+折线）— 营收+增速经典组合
 
-图表以 base64 编码 PNG 返回，前端直接 st.image() 展示。
+V8.3: 从 matplotlib 静态 PNG 迁移到 ECharts 前端渲染。
+不再依赖 matplotlib，直接输出 ECharts option JSON 字典。
 """
-import io
-import base64
+
 from typing import Dict, Any, Optional, List
-from pathlib import Path
 from loguru import logger
 
-import matplotlib
-matplotlib.use("Agg")  # 非交互后端，适合服务端
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-from matplotlib import rcParams
-
 from agent.schemas import ChartConfig
-from config import CHART_OUTPUT_DIR
 
 
-# ==================== 中文字体配置 ====================
+# ==================== 现代 10 色调色板 ====================
+# 参考 Indigo 主色调，兼顾问色彩和色盲友好
+CHART_COLORS = [
+    '#4f46e5',  # Indigo 靛蓝 — 主色
+    '#10b981',  # Emerald 翠绿
+    '#f59e0b',  # Amber 琥珀
+    '#ef4444',  # Red 红
+    '#8b5cf6',  # Purple 紫
+    '#ec4899',  # Pink 粉
+    '#06b6d4',  # Cyan 青
+    '#84cc16',  # Lime 柠檬绿
+    '#f97316',  # Orange 橙
+    '#6366f1',  # Violet 蓝紫
+]
 
-def _setup_chinese_font():
-    """配置 matplotlib 中文字体"""
-    # 尝试常见中文字体
-    chinese_fonts = [
-        "Microsoft YaHei",      # Windows 雅黑
-        "SimHei",                # Windows 黑体
-        "SimSun",                # Windows 宋体
-        "WenQuanYi Micro Hei",   # Linux
-        "WenQuanYi Zen Hei",     # Linux
-        "Noto Sans CJK SC",      # Linux/通用
-        "PingFang SC",           # macOS
-        "Heiti SC",              # macOS
-    ]
-
-    available_fonts = {f.name for f in fm.fontManager.ttflist}
-
-    for font in chinese_fonts:
-        if font in available_fonts:
-            rcParams["font.sans-serif"] = [font, "DejaVu Sans"]
-            rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
-            logger.info(f"使用中文字体: {font}")
-            return font
-
-    # 没找到中文字体，降级处理
-    logger.warning("未找到中文字体，图表中文可能显示为方框")
-    rcParams["font.sans-serif"] = ["DejaVu Sans"]
-    rcParams["axes.unicode_minus"] = False
-    return "DejaVu Sans"
+# 系列级配色（用于折线/柱状图中同一图表的多条数据线）
+SERIES_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                 '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1']
 
 
-# 模块加载时执行一次
-_CHINESE_FONT_NAME = _setup_chinese_font()
+# ==================== 工具函数 ====================
+
+def _linear_gradient(color: str, direction: str = 'bottom',
+                     stops: List[Dict] = None) -> Dict:
+    """生成 ECharts linear 渐变配置"""
+    x, y, x2, y2 = 0, 0, 0, 1  # 默认从上到下
+    if direction == 'top':
+        x, y, x2, y2 = 0, 1, 0, 0
+    elif direction == 'right':
+        x, y, x2, y2 = 0, 0, 1, 0
+
+    if stops is None:
+        stops = [
+            {'offset': 0, 'color': color},
+            {'offset': 1, 'color': color + 'cc'},  # 80% 透明度
+        ]
+
+    return {
+        'type': 'linear',
+        'x': x, 'y': y, 'x2': x2, 'y2': y2,
+        'colorStops': stops,
+    }
 
 
-def _fig_to_base64(fig) -> str:
-    """将 matplotlib Figure 转为 base64 编码的 PNG 字符串"""
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight", facecolor="white")
-    buf.seek(0)
-    img_base64 = base64.b64encode(buf.read()).decode("utf-8")
-    plt.close(fig)
-    return img_base64
+def _area_gradient(color: str) -> Dict:
+    """生成面积渐变（从 40% 透明度到 5% 透明度）"""
+    return {
+        'type': 'linear',
+        'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
+        'colorStops': [
+            {'offset': 0, 'color': color + '66'},   # 40% opacity
+            {'offset': 1, 'color': color + '0D'},   # 5% opacity
+        ],
+    }
 
 
-# ==================== 图表生成类 ====================
+def _base_title(title: str) -> Dict:
+    """统一标题样式"""
+    return {
+        'text': title,
+        'left': 'center',
+        'top': 10,
+        'textStyle': {
+            'fontSize': 16,
+            'fontWeight': 600,
+            'color': '#1e293b',
+        },
+    }
+
+
+def _base_tooltip(trigger: str = 'axis') -> Dict:
+    """统一 tooltip 样式 — 白色悬浮卡 + 阴影"""
+    return {
+        'trigger': trigger,
+        'backgroundColor': 'rgba(255, 255, 255, 0.95)',
+        'borderColor': '#e2e8f0',
+        'borderWidth': 1,
+        'textStyle': {'color': '#334155', 'fontSize': 13},
+        'extraCssText': 'border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
+    }
+
+
+def _base_grid() -> Dict:
+    """统一 grid 布局"""
+    return {
+        'left': '5%',
+        'right': '8%',
+        'bottom': '18%',
+        'top': '22%',
+        'containLabel': True,
+    }
+
+
+def _base_legend() -> Dict:
+    """统一图例样式"""
+    return {
+        'orient': 'horizontal',
+        'bottom': 0,
+        'textStyle': {'color': '#64748b', 'fontSize': 12},
+        'itemWidth': 12,
+        'itemHeight': 12,
+    }
+
+
+def _format_labels(labels: List, max_len: int = 8) -> List[str]:
+    """截断过长的标签并添加省略号"""
+    result = []
+    for label in labels:
+        s = str(label)
+        if len(s) > max_len:
+            s = s[:max_len] + '..'
+        result.append(s)
+    return result
+
+
+def _should_show_label(data_len: int) -> bool:
+    """数据点 <= 15 时显示数据标签"""
+    return data_len <= 15
+
+
+# ==================== ChartTool 类 ====================
 
 class ChartTool:
     """
-    财务图表生成工具。
+    财务图表生成工具（ECharts 版）。
 
     用法:
         tool = ChartTool()
-        base64_img = tool.run(ChartConfig(
+        result = tool.run(
             chart_type="line",
             title="茅台近三年毛利率趋势",
             data={"labels": ["2022","2023","2024"], "values": [92.0, 91.8, 91.5]},
-        ))
+        )
+        # result = {"chart_option": {...}}  — 前端直接 echarts.setOption()
+
+    V8.3 重构: 从 matplotlib PNG → ECharts option JSON
     """
 
     def __init__(self, output_dir: str = None):
         self.name = "chart"
-        self.output_dir = output_dir or str(CHART_OUTPUT_DIR)
+        # output_dir 保留参数，ECharts 模式下不需要
 
     def run(self, chart_type: str = "bar", title: str = "财务分析图表",
             data: dict = None, x_label: str = "", y_label: str = "",
-            **kwargs) -> str:
+            **kwargs) -> Dict[str, Any]:
         """
-        生成图表并返回 base64 编码的 PNG。
+        生成 ECharts option 并返回。
 
         参数（与 Planner 输出的 params 字段对应）:
             chart_type: line/bar/pie/radar/dual_axis
@@ -105,16 +174,17 @@ class ChartTool:
             y_label: Y 轴标签
 
         返回:
-            base64 编码的 PNG 字符串
+            {"chart_option": <ECharts option dict>}
         """
-        # 从依赖注入的数据中提取 labels/values
         if data is None:
             data = {}
-        # 合并 kwargs 中的数值参数到 data
-        numeric_data = {k: v for k, v in {**kwargs, **data}.items() if isinstance(v, (int, float))}
-        if numeric_data and not data.get("values"):
-            data["labels"] = list(numeric_data.keys())
-            data["values"] = list(numeric_data.values())
+
+        # 合并 kwargs 中的数值参数到 data（兼容 LLM 产出 var=value 格式）
+        numeric_extra = {k: v for k, v in {**kwargs, **data}.items()
+                        if isinstance(v, (int, float))}
+        if numeric_extra and not data.get("values") and not data.get("labels"):
+            data["labels"] = list(numeric_extra.keys())
+            data["values"] = list(numeric_extra.values())
 
         config = ChartConfig(
             chart_type=chart_type,
@@ -123,6 +193,7 @@ class ChartTool:
             x_label=x_label or "指标",
             y_label=y_label or "数值",
         )
+
         chart_methods = {
             "line": self._line_chart,
             "bar": self._bar_chart,
@@ -137,177 +208,418 @@ class ChartTool:
             method = self._bar_chart
 
         try:
-            return method(config)
+            option = method(config)
+            return {"chart_option": option}
         except Exception as e:
             logger.error(f"图表生成失败 [{config.chart_type}]: {e}")
-            return _fig_to_base64(self._error_chart(str(e)))
+            return {"chart_option": self._error_option(str(e))}
 
-    def _line_chart(self, config: ChartConfig) -> str:
-        """折线图：适用于趋势分析"""
+    # ============ 折线图 ============
+
+    def _line_chart(self, config: ChartConfig) -> Dict:
+        """折线图 — 面积渐变 + 平滑曲线 + 数据标记"""
         data = config.data
         labels = data.get("labels", [])
         values = data.get("values", [])
+        series_data = data.get("series", {})
 
-        fig, ax = plt.subplots(figsize=(8, 4.5))
-        ax.plot(labels, values, marker="o", linewidth=2, markersize=6, color="#2E86AB")
-        ax.set_title(config.title, fontsize=14, fontweight="bold")
-        ax.set_xlabel(config.x_label or "年份")
-        ax.set_ylabel(config.y_label or "数值")
-        ax.grid(True, alpha=0.3)
+        # 多系列折线图
+        if series_data:
+            series = []
+            for i, (name, vals) in enumerate(series_data.items()):
+                color = SERIES_COLORS[i % len(SERIES_COLORS)]
+                s = {
+                    'name': str(name),
+                    'type': 'line',
+                    'data': vals,
+                    'smooth': True,
+                    'smoothMonotone': 'x',
+                    'symbol': 'circle',
+                    'symbolSize': 6 if len(vals) <= 15 else 4,
+                    'lineStyle': {'width': 3, 'color': color},
+                    'itemStyle': {'color': color},
+                    'areaStyle': {'color': _area_gradient(color)},
+                    'emphasis': {'focus': 'series'},
+                }
+                if _should_show_label(len(vals)):
+                    s['label'] = {
+                        'show': True, 'position': 'top',
+                        'fontSize': 10, 'color': '#64748b',
+                    }
+                series.append(s)
+        else:
+            # 单系列折线图
+            color = CHART_COLORS[0]
+            series = [{
+                'name': config.title,
+                'type': 'line',
+                'data': values,
+                'smooth': True,
+                'smoothMonotone': 'x',
+                'symbol': 'circle',
+                'symbolSize': 6 if _should_show_label(len(values)) else 0,
+                'lineStyle': {'width': 3, 'color': color},
+                'itemStyle': {'color': color},
+                'areaStyle': {'color': _area_gradient(color)},
+                'emphasis': {'focus': 'series'},
+            }]
+            if _should_show_label(len(values)):
+                series[0]['label'] = {
+                    'show': True, 'position': 'top',
+                    'fontSize': 10, 'color': '#1e293b',
+                    'formatter': '{c}',
+                }
 
-        # 在数据点上标注数值
-        for i, v in enumerate(values):
-            ax.annotate(str(v), (labels[i], v), textcoords="offset points",
-                       xytext=(0, 10), ha="center", fontsize=9)
+        return {
+            'title': _base_title(config.title),
+            'tooltip': {
+                **_base_tooltip('axis'),
+                'axisPointer': {'type': 'cross'},
+            },
+            'legend': _base_legend() if series_data else None,
+            'grid': _base_grid(),
+            'xAxis': {
+                'type': 'category',
+                'data': _format_labels(labels),
+                'name': config.x_label if config.x_label != '指标' else '',
+                'nameTextStyle': {'color': '#64748b', 'fontSize': 11},
+                'axisLabel': {'color': '#64748b', 'fontSize': 11, 'rotate': len(labels) > 6 and 30 or 0},
+                'axisLine': {'lineStyle': {'color': '#e2e8f0'}},
+                'axisTick': {'show': False},
+            },
+            'yAxis': {
+                'type': 'value',
+                'name': config.y_label if config.y_label != '数值' else '',
+                'nameTextStyle': {'color': '#64748b', 'fontSize': 11},
+                'splitLine': {'lineStyle': {'color': '#f1f5f9', 'type': 'dashed'}},
+                'axisLabel': {'color': '#94a3b8', 'fontSize': 10},
+                'axisLine': {'show': False},
+                'axisTick': {'show': False},
+            },
+            'series': series,
+        }
 
-        return _fig_to_base64(fig)
+    # ============ 柱状图 ============
 
-    def _bar_chart(self, config: ChartConfig) -> str:
-        """柱状图：适用于对比分析（分组柱状图）"""
+    def _bar_chart(self, config: ChartConfig) -> Dict:
+        """柱状图 — 圆角顶部 + 渐变填充 + 数据标签"""
         data = config.data
+        labels = data.get("labels", [])
+        values = data.get("values", [])
+        series_data = data.get("series", {})
         categories = data.get("categories", [])
-        series = data.get("series", {})
 
-        # 🔧 兼容自动转换格式：labels+values → categories+series
-        if not categories and not series:
-            labels = data.get("labels", [])
-            values = data.get("values", [])
-            if labels and values:
-                categories = [str(l) for l in labels]
-                series = {"数值": values}
+        # 兼容 labels → categories 转换
+        if not categories and not series_data and labels:
+            categories = [str(l) for l in labels]
 
-        fig, ax = plt.subplots(figsize=(8, 4.5))
-        colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6A994E"]
+        # 多系列分组柱状图
+        if series_data:
+            series = []
+            for i, (name, vals) in enumerate(series_data.items()):
+                color = SERIES_COLORS[i % len(SERIES_COLORS)]
+                s = {
+                    'name': str(name),
+                    'type': 'bar',
+                    'data': vals,
+                    'barMaxWidth': 40,
+                    'itemStyle': {
+                        'color': _linear_gradient(color, 'bottom'),
+                        'borderRadius': [4, 4, 0, 0],
+                    },
+                    'emphasis': {
+                        'itemStyle': {'color': color},
+                    },
+                }
+                if _should_show_label(len(vals)):
+                    s['label'] = {
+                        'show': True, 'position': 'top',
+                        'fontSize': 10, 'color': '#64748b',
+                    }
+                series.append(s)
+        elif values:
+            # 单系列柱状图 — 每个柱子不同颜色
+            colors = CHART_COLORS[:len(values)]
+            series = [{
+                'name': config.title,
+                'type': 'bar',
+                'data': [
+                    {
+                        'value': v,
+                        'itemStyle': {
+                            'color': _linear_gradient(colors[i % len(colors)], 'bottom'),
+                            'borderRadius': [4, 4, 0, 0],
+                        },
+                    }
+                    for i, v in enumerate(values)
+                ],
+                'barMaxWidth': 40,
+                'emphasis': {
+                    'itemStyle': {'color': CHART_COLORS[0]},
+                },
+            }]
+            if _should_show_label(len(values)):
+                series[0]['label'] = {
+                    'show': True, 'position': 'top',
+                    'fontSize': 10, 'color': '#1e293b',
+                }
+        else:
+            series = []
 
-        x = range(len(categories))
-        bar_width = 0.8 / max(len(series), 1)
+        x_data = categories if categories else _format_labels(labels)
+        return {
+            'title': _base_title(config.title),
+            'tooltip': _base_tooltip('axis'),
+            'legend': _base_legend() if series_data else None,
+            'grid': _base_grid(),
+            'xAxis': {
+                'type': 'category',
+                'data': x_data,
+                'name': config.x_label if config.x_label != '指标' else '',
+                'nameTextStyle': {'color': '#64748b', 'fontSize': 11},
+                'axisLabel': {
+                    'color': '#64748b', 'fontSize': 11,
+                    'rotate': len(x_data) > 6 and 30 or 0,
+                },
+                'axisLine': {'lineStyle': {'color': '#e2e8f0'}},
+                'axisTick': {'show': False},
+            },
+            'yAxis': {
+                'type': 'value',
+                'name': config.y_label if config.y_label != '数值' else '',
+                'nameTextStyle': {'color': '#64748b', 'fontSize': 11},
+                'splitLine': {'lineStyle': {'color': '#f1f5f9', 'type': 'dashed'}},
+                'axisLabel': {'color': '#94a3b8', 'fontSize': 10},
+                'axisLine': {'show': False},
+                'axisTick': {'show': False},
+            },
+            'series': series,
+        }
 
-        for i, (name, values) in enumerate(series.items()):
-            offset = (i - (len(series) - 1) / 2) * bar_width
-            positions = [pos + offset for pos in x]
-            ax.bar(positions, values, bar_width, label=name, color=colors[i % len(colors)])
+    # ============ 饼图 ============
 
-        ax.set_title(config.title, fontsize=14, fontweight="bold")
-        ax.set_xlabel(config.x_label or "类别")
-        ax.set_ylabel(config.y_label or "数值")
-        ax.set_xticks(x)
-        ax.set_xticklabels(categories, rotation=30, ha="right")
-        # 🔧 只在有图例项时才调用 legend（避免 "No artists with labels" 警告）
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend()
-        ax.grid(True, alpha=0.3, axis="y")
-
-        return _fig_to_base64(fig)
-
-    def _pie_chart(self, config: ChartConfig) -> str:
-        """饼图：适用于结构分析"""
+    def _pie_chart(self, config: ChartConfig) -> Dict:
+        """饼图/环形图 — 扇区圆角 + 阴影 + 标签"""
         data = config.data
         labels = data.get("labels", [])
         values = data.get("values", [])
 
-        fig, ax = plt.subplots(figsize=(7, 7))
-        colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6A994E", "#3B1F2B"]
+        # 构建 [{name, value}, ...]
+        items = []
+        for i, (label, value) in enumerate(zip(labels, values)):
+            items.append({
+                'name': str(label),
+                'value': value,
+                'itemStyle': {
+                    'color': CHART_COLORS[i % len(CHART_COLORS)],
+                    'borderRadius': 6,
+                    'borderColor': '#fff',
+                    'borderWidth': 2,
+                },
+            })
 
-        wedges, texts, autotexts = ax.pie(
-            values, labels=labels, autopct="%1.1f%%",
-            colors=colors[:len(labels)], startangle=90,
-            textprops={"fontsize": 10}
-        )
-        ax.set_title(config.title, fontsize=14, fontweight="bold")
+        return {
+            'title': _base_title(config.title),
+            'tooltip': {
+                **_base_tooltip('item'),
+                'formatter': '{b}: {c} ({d}%)',
+            },
+            'legend': {
+                'orient': 'vertical',
+                'right': '5%',
+                'top': 'center',
+                'textStyle': {'color': '#64748b', 'fontSize': 12},
+                'itemWidth': 10,
+                'itemHeight': 10,
+            },
+            'series': [{
+                'name': config.title,
+                'type': 'pie',
+                'radius': ['35%', '65%'],  # 环形图
+                'center': ['40%', '55%'],
+                'avoidLabelOverlap': False,
+                'itemStyle': {
+                    'borderRadius': 6,
+                    'borderColor': '#fff',
+                    'borderWidth': 2,
+                },
+                'label': {
+                    'show': True,
+                    'formatter': '{b}\n{d}%',
+                    'fontSize': 12,
+                    'color': '#334155',
+                },
+                'emphasis': {
+                    'label': {'show': True, 'fontSize': 14, 'fontWeight': 'bold'},
+                    'shadowBlur': 20,
+                    'shadowColor': 'rgba(0, 0, 0, 0.3)',
+                },
+                'data': items,
+            }],
+        }
 
-        return _fig_to_base64(fig)
+    # ============ 雷达图 ============
 
-    def _radar_chart(self, config: ChartConfig) -> str:
-        """雷达图：适用于多维度综合评估"""
-        import numpy as np
-
+    def _radar_chart(self, config: ChartConfig) -> Dict:
+        """雷达图 — 多维财务指标评估"""
         data = config.data
-        categories = data.get("categories", [])  # 维度名称
-        values = data.get("series", {})            # {"公司A": [v1, v2, ...], ...}
+        categories = data.get("categories", [])  # 维度名
+        series_data = data.get("series", {})       # {"公司A": [v1,v2,...]}
 
-        N = len(categories)
-        angles = [n / float(N) * 2 * np.pi for n in range(N)]
-        angles += angles[:1]  # 闭合
+        # 计算最大值用于设置合理的轴范围
+        all_values = []
+        for vals in series_data.values():
+            all_values.extend(vals)
+        max_val = max(all_values) if all_values else 100
 
-        fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
-        colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D"]
+        indicator = [{'name': str(c), 'max': max_val * 1.2} for c in categories]
 
-        for i, (name, vals) in enumerate(values.items()):
-            vals_plot = list(vals) + [vals[0]]
-            ax.plot(angles, vals_plot, "o-", linewidth=2, label=name, color=colors[i % len(colors)])
-            ax.fill(angles, vals_plot, alpha=0.1, color=colors[i % len(colors)])
+        series = []
+        for i, (name, vals) in enumerate(series_data.items()):
+            color = SERIES_COLORS[i % len(SERIES_COLORS)]
+            series.append({
+                'name': str(name),
+                'type': 'radar',
+                'data': [{
+                    'value': vals,
+                    'name': str(name),
+                    'areaStyle': {'color': color + '33'},
+                    'lineStyle': {'color': color, 'width': 2},
+                    'itemStyle': {'color': color},
+                }],
+                'symbol': 'circle',
+                'symbolSize': 6,
+            })
 
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(categories, fontsize=10)
-        ax.set_title(config.title, fontsize=14, fontweight="bold", pad=20)
-        # 🔧 只在有图例项时才调用 legend（避免 "No artists with labels" 警告）
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
+        return {
+            'title': _base_title(config.title),
+            'tooltip': _base_tooltip('item'),
+            'legend': _base_legend(),
+            'radar': {
+                'indicator': indicator,
+                'center': ['50%', '55%'],
+                'radius': '60%',
+                'splitArea': {
+                    'areaStyle': {'color': ['#f8fafc', '#ffffff']},
+                },
+                'axisName': {'color': '#64748b', 'fontSize': 11},
+            },
+            'series': series,
+        }
 
-        return _fig_to_base64(fig)
+    # ============ 双轴图 ============
 
-    def _dual_axis_chart(self, config: ChartConfig) -> str:
-        """双轴图：柱状图（左轴）+ 折线图（右轴），适用于营收+增速等场景"""
+    def _dual_axis_chart(self, config: ChartConfig) -> Dict:
+        """双轴图 — 柱状图（左轴）+ 折线图（右轴），经典营收+增速组合"""
         data = config.data
         labels = data.get("labels", [])
         bar_values = data.get("bar_values", [])
         line_values = data.get("line_values", [])
 
-        # ── V8.2 防御：数据为空时降级为柱状图 ──
+        # 防御：数据为空时降级为柱状图
         if not labels or not bar_values:
             logger.warning("dual_axis 数据不完整，降级为柱状图")
-            # 尝试从 data 的 flat values 重建
             flat_values = {k: v for k, v in data.items()
-                          if isinstance(v, (int, float)) and k not in ("labels", "bar_values", "line_values")}
+                          if isinstance(v, (int, float)) and k not in
+                          ("labels", "bar_values", "line_values", "bar_label", "line_label")}
             if flat_values:
                 config.data["labels"] = list(flat_values.keys())
                 config.data["values"] = list(flat_values.values())
                 return self._bar_chart(config)
-            return _fig_to_base64(self._error_chart("数据不完整：缺少 labels 或 bar_values"))
+            return self._error_option("数据不完整：缺少 labels 或 bar_values")
 
         bar_label = data.get("bar_label", "数值")
         line_label = data.get("line_label", "增速")
 
-        fig, ax1 = plt.subplots(figsize=(8, 4.5))
+        bar_color = CHART_COLORS[0]  # Indigo
+        line_color = CHART_COLORS[3]  # Red
 
-        # 左轴：柱状图
-        ax1.bar(labels, bar_values, color="#2E86AB", alpha=0.7, label=bar_label)
-        ax1.set_xlabel(config.x_label or "年份")
-        ax1.set_ylabel(bar_label, color="#2E86AB")
-        ax1.tick_params(axis="y", labelcolor="#2E86AB")
+        return {
+            'title': _base_title(config.title),
+            'tooltip': _base_tooltip('axis'),
+            'legend': _base_legend(),
+            'grid': _base_grid(),
+            'xAxis': {
+                'type': 'category',
+                'data': _format_labels(labels),
+                'axisLabel': {
+                    'color': '#64748b', 'fontSize': 11,
+                    'rotate': len(labels) > 6 and 30 or 0,
+                },
+                'axisLine': {'lineStyle': {'color': '#e2e8f0'}},
+                'axisTick': {'show': False},
+            },
+            'yAxis': [
+                {
+                    'type': 'value',
+                    'name': bar_label,
+                    'nameTextStyle': {'color': bar_color, 'fontSize': 11},
+                    'splitLine': {'lineStyle': {'color': '#f1f5f9', 'type': 'dashed'}},
+                    'axisLabel': {'color': bar_color, 'fontSize': 10},
+                    'axisLine': {'show': False},
+                    'axisTick': {'show': False},
+                },
+                {
+                    'type': 'value',
+                    'name': line_label + ' (%)',
+                    'nameTextStyle': {'color': line_color, 'fontSize': 11},
+                    'splitLine': {'show': False},
+                    'axisLabel': {
+                        'color': line_color, 'fontSize': 10,
+                        'formatter': '{value}%',
+                    },
+                    'axisLine': {'show': False},
+                    'axisTick': {'show': False},
+                },
+            ],
+            'series': [
+                {
+                    'name': bar_label,
+                    'type': 'bar',
+                    'data': bar_values,
+                    'barMaxWidth': 40,
+                    'itemStyle': {
+                        'color': _linear_gradient(bar_color, 'bottom'),
+                        'borderRadius': [4, 4, 0, 0],
+                    },
+                    'emphasis': {'itemStyle': {'color': bar_color}},
+                },
+                {
+                    'name': line_label,
+                    'type': 'line',
+                    'yAxisIndex': 1,
+                    'data': line_values if line_values and len(line_values) == len(labels) else [],
+                    'smooth': True,
+                    'symbol': 'diamond',
+                    'symbolSize': 8,
+                    'lineStyle': {'width': 2.5, 'color': line_color},
+                    'itemStyle': {'color': line_color},
+                },
+            ] if line_values and len(line_values) == len(labels) else [
+                {
+                    'name': bar_label,
+                    'type': 'bar',
+                    'data': bar_values,
+                    'barMaxWidth': 40,
+                    'itemStyle': {
+                        'color': _linear_gradient(bar_color, 'bottom'),
+                        'borderRadius': [4, 4, 0, 0],
+                    },
+                },
+            ],
+        }
 
-        # 在柱子上标注数值
-        for i, v in enumerate(bar_values):
-            ax1.text(i, v, str(v), ha="center", va="bottom", fontsize=9)
+    # ============ 错误降级 ============
 
-        # 右轴：折线图（仅当有增速数据时）
-        if line_values and len(line_values) == len(labels):
-            ax2 = ax1.twinx()
-            ax2.plot(labels, line_values, marker="s", linewidth=2, color="#A23B72", label=line_label)
-            ax2.set_ylabel(line_label + " (%)", color="#A23B72")
-            ax2.tick_params(axis="y", labelcolor="#A23B72")
-        else:
-            logger.info("dual_axis: 无增速数据，仅显示柱状图")
-
-        ax1.set_title(config.title, fontsize=14, fontweight="bold")
-
-        # 合并图例
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        if line_values and len(line_values) == len(labels):
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
-        elif lines1:
-            ax1.legend()
-
-        return _fig_to_base64(fig)
-
-    def _error_chart(self, error_msg: str) -> plt.Figure:
-        """错误时的降级图表"""
-        fig, ax = plt.subplots(figsize=(6, 3))
-        ax.text(0.5, 0.5, f"图表生成失败\n{error_msg}",
-                ha="center", va="center", fontsize=12, color="red",
-                transform=ax.transAxes)
-        ax.axis("off")
-        return fig
+    def _error_option(self, error_msg: str) -> Dict:
+        """生成错误提示图表"""
+        return {
+            'title': {
+                'text': '图表生成失败',
+                'subtext': error_msg,
+                'left': 'center',
+                'top': 'center',
+                'textStyle': {'color': '#ef4444', 'fontSize': 16},
+                'subtextStyle': {'color': '#94a3b8', 'fontSize': 12},
+            },
+        }

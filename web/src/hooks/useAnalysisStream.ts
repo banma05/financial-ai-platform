@@ -20,8 +20,8 @@ export interface AnalysisProgress {
   tasks: Array<{ id: string; desc: string; success: boolean; summary?: string }>;
   /** 最终报告 */
   report: string | null;
-  /** 图表 base64 数组 */
-  charts: string[];
+  /** 图表 ECharts option 数组（V8.3: 替代旧的 charts base64） */
+  chartOptions: Record<string, unknown>[];
   /** 总耗时 */
   processingTime: number | null;
   /** 错误信息 */
@@ -35,7 +35,7 @@ const INITIAL_PROGRESS: AnalysisProgress = {
   currentTask: '',
   tasks: [],
   report: null,
-  charts: [],
+  chartOptions: [],
   processingTime: null,
   error: null,
 };
@@ -178,7 +178,7 @@ export function useAnalysisStream() {
       case 'chart':
         setProgress((p) => ({
           ...p,
-          charts: [...p.charts, (event['chart_base64'] as string) || ''],
+          chartOptions: [...p.chartOptions, (event['chart_option'] as Record<string, unknown>) || {}],
         }));
         break;
 
@@ -191,7 +191,7 @@ export function useAnalysisStream() {
           ...p,
           phase: 'done',
           report: (event['report'] as string) || '',
-          charts: (event['charts'] as string[]) || p.charts,
+          chartOptions: (event['chart_options'] as Record<string, unknown>[]) || p.chartOptions,
           processingTime: (event['processing_time'] as number) || 0,
         }));
         break;
