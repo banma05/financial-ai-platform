@@ -76,12 +76,14 @@ class DataQueryTool:
         # Step 3: LLM 从检索结果中提取结构化数据
         extracted = self._extract_structured_data(query, sources)
 
+        # V8.5: RAG 路径始终标记 source，供下游区分数据可靠性
         return {
             "found": extracted.get("found", False),
             "data": extracted.get("data", {}),
             "summary": extracted.get("summary", ""),
             "raw_chunks": [{"content": s["content"][:300], "source": s["source"], "page": s["page"]} for s in sources],
             "confidence": extracted.get("confidence", 0.5),
+            "source": "RAG",
         }
 
     def _extract_structured_data(self, query: str, sources: List[dict]) -> dict:
@@ -241,4 +243,5 @@ class DataQueryTool:
             "data": data,
             "summary": summary,
             "confidence": 0.3,
+            "source": "regex",
         }

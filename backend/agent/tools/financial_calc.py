@@ -537,10 +537,27 @@ class FinancialCalcTool:
             "debt_ratio": (0, 100, "资产负债率超出合理范围 (0-100%)"),
             "revenue_growth": (-500, 500, "营收增长率超出合理范围 (-500%~500%)，可能年份数据错配"),
             "net_profit_growth": (-500, 500, "净利润增长率超出合理范围 (-500%~500%)，可能年份数据错配"),
+            # V8.5: FCF 合理性 — 如果资本支出 >> 经营现金流的 5 倍，说明数据源有问题
+            "free_cash_flow": (None, None, None),  # 占位，FCF 的校验在下面用自定义逻辑
         }
         if formula in checks:
             lo, hi, reason = checks[formula]
-            if not (lo <= result <= hi):
+            # V8.5: FCF 自定义校验 — 资本支出不应使 FCF 与实际经营现金流严重背离
+            if formula == "free_cash_flow":
+                operating_cf = params.get("operating_cf", 0)
+                capex = params.get("capital_expenditure", 0)
+                # 如果资本支出绝对值 > 经营现金流绝对值的 10 倍，数据可疑
+                if operating_cf != 0 and abs(capex) > abs(operating_cf) * 10:
+                    return {"ok": False,
+                            "reason": f"资本支出({capex})远超经营现金流({operating_cf})的10倍，"
+                                      f"数据源可能有误（注意：资本支出当前用 investing_cf_out 近似，"
+                                      f"包含了非资本性投资支出）"}
+                # 如果 FCF 几乎等于经营现金流（即 capex ≈ 0），对重资产公司也需警告
+                if abs(result - operating_cf) < abs(operating_cf) * 0.01:
+                    return {"ok": False,
+                            "reason": f"资本支出近似为0（FCF≈经营现金流={result}），"
+                                      f"可能 investing_cf_out 数据缺失或异常"}
+            elif not (lo <= result <= hi):
                 return {"ok": False, "reason": f"{reason}（计算值: {result}%）"}
         return {"ok": True}
 

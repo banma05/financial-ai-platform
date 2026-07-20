@@ -167,6 +167,7 @@ class ChartTool:
 
     def run(self, chart_type: str = "auto", title: str = "财务分析图表",
             data: dict = None, x_label: str = "", y_label: str = "",
+            _skip_multi: bool = False,  # V8.5: 防止 generate_multi → run → generate_multi 无限递归
             **kwargs) -> Dict[str, Any]:
         """
         生成 ECharts option 并返回。V8.4: 自主决策图表类型 + 多图互补。
@@ -188,17 +189,18 @@ class ChartTool:
         # ── 标签中文化（剥离年份后缀 + 去重）──
         self._ensure_chinese_labels(data)
 
-        # ── V8.4: 指标多 → 多图互补 ──
+        # ── V8.5: 指标多 → 多图互补（_skip_multi 防止 generate_multi 内部递归）──
         import re
-        dim_count = len(set(re.sub(r'_\d{4}$', '', str(l)) for l in data.get("labels", [])))
-        if dim_count > 5:
-            multi = self.generate_multi(data, title)
-            if len(multi) > 1:
-                return {
-                    "chart_options": [m.get("chart_option") for m in multi],
-                    "chart_descriptions": [m.get("chart_description", "") for m in multi],
-                    "chart_count": len(multi),
-                }
+        if not _skip_multi:
+            dim_count = len(set(re.sub(r'_\d{4}$', '', str(l)) for l in data.get("labels", [])))
+            if dim_count > 5:
+                multi = self.generate_multi(data, title)
+                if len(multi) > 1:
+                    return {
+                        "chart_options": [m.get("chart_option") for m in multi],
+                        "chart_descriptions": [m.get("chart_description", "") for m in multi],
+                        "chart_count": len(multi),
+                    }
 
         # ── 单片图流程 ──
         rec = self.recommend(data)
@@ -281,10 +283,18 @@ class ChartTool:
         dim_count = len(base_metrics)
 
         # 3. 检测值域差异（量纲不一致 → 雷达图更合适）
+        # V8.5: 财务数据天生不同量纲（营收千亿 vs 增长率%），
+        # 若半数以上值为 0-100 范围（百分比/比率类），说明是混合量纲的财务指标集，
+        # 此时用柱状图比雷达图更合适（每个柱可以独立标注单位）
         if values and len(values) >= 3:
             abs_vals = [abs(v) for v in values if v != 0]
             if abs_vals and max(abs_vals) / max(min(abs_vals), 0.01) > 10:
-                return {"chart_type": "radar", "reason": f"{dim_count}个不同量纲指标，雷达图最优", "confidence": 0.95}
+                pct_like = sum(1 for v in values if 0 < abs(v) <= 100)
+                if pct_like < len(values) * 0.5:
+                    return {"chart_type": "radar",
+                            "reason": f"{dim_count}个不同量纲指标，雷达图最优",
+                            "confidence": 0.85}
+                # 否则：混合百分比+大量纲，不适合雷达图，继续往下走到 bar
 
         # 4. 检测结构占比（values 全正 + sum ≈ 100 → 饼图）
         if values and len(values) <= 6 and all(v > 0 for v in values):
@@ -368,19 +378,19 @@ class ChartTool:
         import re
         results = []
 
-        # 主图
-        main_result = self.run(chart_type="auto", title=title, data=data)
+        # 主图（_skip_multi=True 防止无限递归）
+        main_result = self.run(chart_type="auto", title=title, data=data, _skip_multi=True)
         main_result["chart_description"] = f"主图 · {main_result.get('chart_description', '')}"
         results.append(main_result)
 
-        # 补充图: 数据维度>5 → 加分组柱状图展示细节
+        # 补充图: 数据维度>5 → 加分组柱状图展示细节（_skip_multi=True 防止递归）
         numeric_keys = [k for k, v in data.items() if isinstance(v, (int, float))]
         base_metrics = set()
         for k in numeric_keys:
             base_metrics.add(re.sub(r'_\d{4}$', '', str(k)))
 
         if len(base_metrics) > 5:
-            detail = self.run(chart_type="bar", title=f"{title}（明细）", data=data)
+            detail = self.run(chart_type="bar", title=f"{title}（明细）", data=data, _skip_multi=True)
             detail["chart_description"] = "补充 · 各维度详细数值对比"
             results.append(detail)
 

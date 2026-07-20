@@ -123,6 +123,7 @@ class ToolRegistry:
                         chart_option=charts[0],  # 主图
                         chart_options=charts,     # 全部图表
                         chart_description=result_dict.get("chart_descriptions", [""])[0] if result_dict.get("chart_descriptions") else "",
+                        confidence=result_dict.get("confidence", 0.95),  # V8.5
                         data=result,
                     )
                 return TaskResult(
@@ -163,6 +164,7 @@ class ToolRegistry:
                         summary=result.get("expression", "") if result.get("success") else "",
                         data=result,
                         error=result.get("error"),
+                        confidence=result.get("confidence", 0.95) if result.get("success") else None,  # V8.5
                     )
             elif task.task_type == "data_query":
                 return TaskResult(
@@ -171,6 +173,7 @@ class ToolRegistry:
                     success=result.get("found", False),
                     summary=result.get("summary", ""),
                     data=result,
+                    confidence=result.get("confidence"),  # V8.5: 传播数据置信度（SQL≈0.99, RAG≈0.5-0.7, regex≈0.3）
                 )
             elif task.task_type.startswith("mcp_"):
                 # MCP 工具统一格式化：{success, data, summary, error}

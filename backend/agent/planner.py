@@ -147,7 +147,8 @@ BUILTIN_TEMPLATES = {
              "params": {"query": "{company} 总资产 总负债 流动资产 流动负债 存货"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询盈利和偿债能力数据",
-             "params": {"query": "{company} 净利润 净资产 EBIT 利息费用 财务费用"}},
+             "params": {"query": "{company} 净利润 净资产 营业利润 利息费用 财务费用"}},
+             # V8.5: "EBIT"→"营业利润"（DB 无 ebit 字段，用 operating_profit 近似）
             {"task_id": "3", "task_type": "calculate",
              "description": "计算资产负债率（杠杆水平）",
              "params": {"formula": "debt_ratio"},
@@ -290,10 +291,13 @@ class Planner:
         tasks = plan.tasks
         has_chart = any(t.task_type == "chart" for t in tasks)
         if has_chart:
-            # 已有图表，补充 auto 类型（让 chart 工具自己决定）
+            # V8.5: 保留模板明确指定的 chart_type（如 radar/line），
+            # 仅当 chart_type 为空、未设置或为默认值 'bar' 时改为 auto
             for t in tasks:
-                if t.task_type == "chart" and t.params.get("chart_type") == "bar":
-                    t.params["chart_type"] = "auto"
+                if t.task_type == "chart":
+                    ct = t.params.get("chart_type")
+                    if ct in (None, "", "bar"):
+                        t.params["chart_type"] = "auto"
             return plan
 
         data_tasks = [t for t in tasks if t.task_type == "data_query"]

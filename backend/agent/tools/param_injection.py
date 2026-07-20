@@ -34,8 +34,15 @@ FINANCIAL_TERM_TO_PARAM: Dict[str, str] = {
     "流动资产": "current_assets", "流动资产合计": "current_assets",
     "流动负债": "current_liabilities", "流动负债合计": "current_liabilities",
     "存货": "inventory", "存货净额": "inventory",
-    "利息费用": "interest_expense", "财务费用": "interest_expense",
+    # V8.5: 财务费用≠利息费用！DB 中两个字段独立存在
+    #   - 利息费用(interest_expense) = 纯粹的利息支出
+    #   - 财务费用(finance_expenses) = 利息费用 + 汇兑损益 + 银行手续费等
+    #   interest_coverage 公式需要 interest_expense，不是 finance_expenses
+    "利息费用": "interest_expense",
+    "财务费用": "finance_expenses",
+    # V8.5: DB 无 ebit 字段，用 operating_profit(营业利润) 近似
     "EBIT": "ebit", "息税前利润": "ebit",
+    "营业利润": "ebit",  # 近似：营业利润 ≈ EBIT（差异主要来自投资收益等非经营性项目）
     # ── 现金流 ──
     "经营活动现金流净额": "operating_cf",
     "经营活动产生的现金流量净额": "operating_cf",
