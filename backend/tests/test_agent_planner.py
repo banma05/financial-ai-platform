@@ -46,7 +46,9 @@ class TestPlannerTemplates:
         plan = planner._load_template("dupont", "贵州茅台2024年")
         data_query = next(t for t in plan.tasks if t.task_type == "data_query")
         # dupont 模板的 description 不含 {company}，params.query 含 {company}
-        assert "贵州茅台2024年" in str(data_query.params["query"])
+        # V9.0: 模板加 {year} 占位符后，query = "贵州茅台 2024年 ..."（有空格）
+        assert "贵州茅台" in str(data_query.params["query"])
+        assert "2024" in str(data_query.params["query"])
 
     def test_all_builtin_templates(self):
         """所有内置模板都应该可加载"""

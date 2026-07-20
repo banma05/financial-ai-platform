@@ -349,6 +349,13 @@ class Planner:
         except Exception:
             known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
         found = [c for c in known_companies if c in user_input]
+        # V9.0: 去子串 — "茅台"是"贵州茅台"的子串，只保留最长的匹配
+        found_sorted = sorted(found, key=len, reverse=True)
+        found_unique = []
+        for c in found_sorted:
+            if not any(c in other and c != other for other in found_unique):
+                found_unique.append(c)
+        found = found_unique
         if len(found) >= 2:
             company_a = found[0]
             company_b = found[1]
