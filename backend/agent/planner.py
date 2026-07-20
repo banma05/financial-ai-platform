@@ -348,14 +348,20 @@ class Planner:
             known_companies = sorted(set(COMPANY_ALIASES.keys()))
         except Exception:
             known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
-        found = [c for c in known_companies if c in user_input]
-        # V9.0: 去子串 — "茅台"是"贵州茅台"的子串，只保留最长的匹配
-        found_sorted = sorted(found, key=len, reverse=True)
-        found_unique = []
-        for c in found_sorted:
-            if not any(c in other and c != other for other in found_unique):
-                found_unique.append(c)
-        found = found_unique
+        # V9.0: 从 COMPANY_ALIASES 动态取公司列表，匹配时优先最长（避免"茅台"误匹配为"贵州茅台"的子串）
+        raw_matches = [c for c in known_companies if c in user_input]
+        # 去重规则：如果短名称是另一个匹配的子串（如"茅台"⊂"贵州茅台"），丢弃短名称
+        if len(raw_matches) > 1:
+            found = []
+            for name in raw_matches:
+                is_substring_of_another = any(
+                    name in other and len(name) < len(other)
+                    for other in raw_matches
+                )
+                if not is_substring_of_another:
+                    found.append(name)
+        else:
+            found = raw_matches
         if len(found) >= 2:
             company_a = found[0]
             company_b = found[1]
