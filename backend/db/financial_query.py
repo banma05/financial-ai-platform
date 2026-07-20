@@ -194,6 +194,35 @@ METRIC_ALIASES: Dict[str, dict] = {
     },
 }
 
+# ── V9.0: 复合概念 → 多指标展开映射 ──
+# 用户常说"财务整体表现""盈利能力"等模糊词，这些不在标准 METRIC_ALIASES 中，
+# 但 SQL 层应能展开为具体指标集。映射值是 METRIC_ALIASES 中已存在的键名。
+COMPOSITE_CONCEPT_MAP: Dict[str, List[str]] = {
+    "财务整体表现": ["营业收入", "净利润", "毛利率", "净利率", "ROE", "资产负债率", "经营现金流"],
+    "财务整体": ["营业收入", "净利润", "毛利率", "净利率", "ROE", "资产负债率", "经营现金流"],
+    "盈利能力": ["营业收入", "营业成本", "净利润", "毛利率", "净利率", "ROE", "ROA"],
+    "偿债能力": ["资产负债率", "流动比率", "速动比率", "总资产", "总负债", "流动资产", "流动负债"],
+    "成长能力": ["营收增长率", "净利润增长率", "营业收入", "净利润"],
+    "营运能力": ["总资产周转率", "存货周转率", "应收账款周转率"],
+    "现金流状况": ["经营现金流", "投资现金流", "筹资现金流", "自由现金流"],
+    "估值水平": ["市盈率", "市净率", "每股收益"],
+    "现金流": ["经营现金流", "投资现金流", "筹资现金流", "自由现金流"],
+}
+
+
+def _expand_composite_concepts(query: str, metrics: List[str]) -> List[str]:
+    """
+    V9.0: 将查询中的复合概念展开为具体指标列表。
+    例如 "盈利能力" → ["营业收入", "营业成本", "净利润", "毛利率", "净利率", "ROE", "ROA"]
+    """
+    expanded = list(metrics)
+    for concept, sub_metrics in COMPOSITE_CONCEPT_MAP.items():
+        if concept in query:
+            for sm in sub_metrics:
+                if sm not in expanded:
+                    expanded.append(sm)
+    return expanded
+
 
 def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
     """
@@ -242,6 +271,8 @@ def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
     # 直接匹配: query 中包含完整的别名 → 精确命中
     raw_metrics = [alias for alias in METRIC_ALIASES if alias in query]
     raw_metrics = list(dict.fromkeys(raw_metrics))  # 去重
+    # V9.0: 复合概念展开 — "财务整体表现"/"盈利能力"等 → 多个具体指标
+    raw_metrics = _expand_composite_concepts(query, raw_metrics)
     # 去子串: 短别名是长别名的子串时，保留长的（如 "净利" ⊂ "净利率", "营收" ⊂ "营业收入"）
     metrics = []
     for m in raw_metrics:

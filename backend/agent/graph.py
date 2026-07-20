@@ -442,7 +442,14 @@ def run_agent_stream(
             report = _reporter.generate(user_input, task_objects, result_objects, chart_count)
 
         processing_time = round(time.time() - start_time, 1)
-        chart_options = [r.get("chart_option") for r in task_results_list if r.get("chart_option")]
+        # V9.0: 收集所有图表（单图 chart_option + 多图 chart_options）
+        chart_options = []
+        for r in task_results_list:
+            if r.get("chart_options"):
+                chart_options.extend(r["chart_options"])
+            elif r.get("chart_option"):
+                chart_options.append(r["chart_option"])
+        chart_count = len(chart_options)
 
         yield AgentEvent("done",
             report=report,
