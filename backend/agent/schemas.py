@@ -48,7 +48,7 @@ class AnalysisPlan(BaseModel):
 # ============ 图表配置模型 ============
 
 # V8.3: 新增 radar 雷达图（多维度评估），含智能量纲检测自动切换
-ChartType = Literal["line", "bar", "pie", "radar", "dual_axis"]
+ChartType = Literal["line", "bar", "pie", "radar", "dual_axis", "auto"]
 
 
 class ChartConfig(BaseModel):

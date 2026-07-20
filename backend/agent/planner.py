@@ -24,10 +24,10 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询营业收入、营业成本数据",
-             "params": {"query": "{company} 营业收入 营业成本"}},
+             "params": {"query": "{company} {year}年 营业收入 营业成本"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询净利润、净资产、总资产数据",
-             "params": {"query": "{company} 净利润 净资产 总资产"}},
+             "params": {"query": "{company} {year}年 净利润 净资产 总资产"}},
             {"task_id": "3", "task_type": "calculate",
              "description": "计算毛利率",
              "params": {"formula": "gross_profit_margin"},
@@ -61,7 +61,7 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询净利润、营业收入、总资产、净资产",
-             "params": {"query": "{company} 净利润 营业收入 总资产 净资产"}},
+             "params": {"query": "{company} {year}年 净利润 营业收入 总资产 净资产"}},
             {"task_id": "2", "task_type": "calculate",
              "description": "执行杜邦三因子分解",
              "params": {"formula": "dupont"},
@@ -84,10 +84,10 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询近三年营收数据",
-             "params": {"query": "{company} 2022年 2023年 2024年 营业收入"}},
+             "params": {"query": "{company} {last_year}年 {year}年 营业收入"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询近三年净利润数据",
-             "params": {"query": "{company} 2022年 2023年 2024年 净利润"}},
+             "params": {"query": "{company} {last_year}年 {year}年 净利润"}},
             {"task_id": "3", "task_type": "calculate",
              "description": "计算营收增长率",
              "params": {"formula": "revenue_growth"},
@@ -114,10 +114,10 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询经营活动现金流净额和净利润数据",
-             "params": {"query": "{company} 经营活动产生的现金流量净额 净利润"}},
+             "params": {"query": "{company} {year}年 经营活动产生的现金流量净额 净利润"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询投资活动和筹资活动现金流数据",
-             "params": {"query": "{company} 投资活动产生的现金流量净额 筹资活动产生的现金流量净额 资本支出"}},
+             "params": {"query": "{company} {year}年 投资活动产生的现金流量净额 筹资活动产生的现金流量净额 资本支出"}},
             {"task_id": "3", "task_type": "calculate",
              "description": "计算自由现金流 FCF",
              "params": {"formula": "free_cash_flow"},
@@ -144,10 +144,10 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询资产负债和流动性数据",
-             "params": {"query": "{company} 总资产 总负债 流动资产 流动负债 存货"}},
+             "params": {"query": "{company} {year}年 总资产 总负债 流动资产 流动负债 存货"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询盈利和偿债能力数据",
-             "params": {"query": "{company} 净利润 净资产 营业利润 利息费用 财务费用"}},
+             "params": {"query": "{company} {year}年 净利润 净资产 营业利润 利息费用 财务费用"}},
              # V8.5: "EBIT"→"营业利润"（DB 无 ebit 字段，用 operating_profit 近似）
             {"task_id": "3", "task_type": "calculate",
              "description": "计算资产负债率（杠杆水平）",
@@ -184,10 +184,10 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询公司A的盈利数据",
-             "params": {"query": "{company_a} 营业收入 营业成本 净利润 净资产 总资产"}},
+             "params": {"query": "{company_a} {year}年 营业收入 营业成本 净利润 净资产 总资产"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询公司B的盈利数据",
-             "params": {"query": "{company_b} 营业收入 营业成本 净利润 净资产 总资产"}},
+             "params": {"query": "{company_b} {year}年 营业收入 营业成本 净利润 净资产 总资产"}},
             {"task_id": "3", "task_type": "calculate",
              "description": "计算公式A的毛利率、净利率、ROE、ROA",
              "params": {"formula": "gross_profit_margin,net_profit_margin,roe,roa"},
@@ -214,13 +214,13 @@ BUILTIN_TEMPLATES = {
         "tasks": [
             {"task_id": "1", "task_type": "data_query",
              "description": "查询盈利相关数据",
-             "params": {"query": "{company} 营业收入 营业成本 净利润 净资产 总资产"}},
+             "params": {"query": "{company} {year}年 营业收入 营业成本 净利润 净资产 总资产"}},
             {"task_id": "2", "task_type": "data_query",
              "description": "查询资产负债和现金流数据",
-             "params": {"query": "{company} 总负债 流动资产 流动负债 存货 经营活动产生的现金流量净额"}},
+             "params": {"query": "{company} {year}年 总负债 流动资产 流动负债 存货 经营活动产生的现金流量净额"}},
             {"task_id": "3", "task_type": "data_query",
              "description": "查询历史对比数据",
-             "params": {"query": "{company} 去年 营业收入 净利润 总资产"}},
+             "params": {"query": "{company} {last_year}年 营业收入 净利润 总资产"}},
             {"task_id": "4", "task_type": "calculate",
              "description": "盈利维度：毛利率、净利率、ROE",
              "params": {"formula": "gross_profit_margin,net_profit_margin,roe"},
@@ -334,31 +334,51 @@ class Planner:
         return len(found)
 
     def _load_template(self, template_name: str, user_input: str) -> AnalysisPlan:
-        """从模板库加载预设任务，替换 {company}/{company_a}/{company_b} 占位符"""
+        """从模板库加载预设任务，替换 {company}/{year} 等占位符"""
+        import re
+        from datetime import datetime
+
         template = BUILTIN_TEMPLATES[template_name]
 
-        # 尝试从用户输入中提取公司名
+        # ── V9.0: 从用户输入提取公司名（动态从 COMPANY_ALIASES 读）──
         company = user_input
-
-        # 多公司模板：提取公司A和公司B
         company_a = company_b = user_input
-        known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
+        try:
+            from db.financial_query import COMPANY_ALIASES
+            known_companies = sorted(set(COMPANY_ALIASES.keys()))
+        except Exception:
+            known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
         found = [c for c in known_companies if c in user_input]
         if len(found) >= 2:
             company_a = found[0]
             company_b = found[1]
         elif len(found) == 1:
+            company = found[0]
             company_a = company_b = found[0]
+
+        # ── V9.0: 从用户输入提取年份 ──
+        year_matches = re.findall(r'(20\d{2})\s*年?', user_input)
+        if year_matches:
+            year = year_matches[0]  # 取第一个匹配的年份
+            year_range = f"{year_matches[0]}-{year_matches[-1]}" if len(year_matches) > 1 else year_matches[0]
+            last_year = str(int(year) - 1)
+        else:
+            current_year = datetime.now().year
+            year = str(current_year - 1)  # 默认最近完整财年
+            year_range = year
+            last_year = str(current_year - 2)
 
         tasks = []
         for t in template["tasks"]:
             desc = t["description"].replace("{company}", company)
             desc = desc.replace("{company_a}", company_a).replace("{company_b}", company_b)
+            desc = desc.replace("{year}", year).replace("{year_range}", year_range).replace("{last_year}", last_year)
             params = {}
             for k, v in t["params"].items():
                 if isinstance(v, str):
                     v = v.replace("{company}", company)
                     v = v.replace("{company_a}", company_a).replace("{company_b}", company_b)
+                    v = v.replace("{year}", year).replace("{year_range}", year_range).replace("{last_year}", last_year)
                 params[k] = v
             tasks.append(AnalysisTask(
                 task_id=t["task_id"],
