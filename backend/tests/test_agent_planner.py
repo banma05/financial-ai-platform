@@ -45,14 +45,8 @@ class TestPlannerTemplates:
         planner = Planner()
         plan = planner._load_template("dupont", "贵州茅台2024年")
         data_query = next(t for t in plan.tasks if t.task_type == "data_query")
-        actual = str(data_query.params["query"])
-        # === CI DEBUG: 确认到底是哪个公司名被注入 ===
-        print(f"\n[DEBUG] user_input='贵州茅台2024年'")
-        print(f"[DEBUG] query='{actual}'")
-        # === end debug ===
-        # V9.0: 模板加 {year} 占位符后，query = "贵州茅台 2024年 ..."（有空格）
-        assert "贵州茅台" in actual, f"期望含'贵州茅台', 实际: '{actual}'"
-        assert "2024" in actual
+        assert "贵州茅台" in str(data_query.params["query"])
+        assert "2024" in str(data_query.params["query"])
 
     def test_all_builtin_templates(self):
         """所有内置模板都应该可加载"""

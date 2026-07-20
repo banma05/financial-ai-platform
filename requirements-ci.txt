@@ -10,3 +10,4 @@ python-dotenv
 redis
 openai
 numpy
+sqlalchemy  # planner._load_template 导入 COMPANY_ALIASES 时需要
