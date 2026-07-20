@@ -343,20 +343,18 @@ class Planner:
         # ── V9.0: 从用户输入提取公司名（动态从 COMPANY_ALIASES 读）──
         company = user_input
         company_a = company_b = user_input
-        import traceback
         try:
             from db.financial_query import COMPANY_ALIASES
             known_companies = sorted(set(COMPANY_ALIASES.keys()))
-        except Exception as e:
-            print(f"[DEBUG] COMPANY_ALIASES 导入失败: {e}")
-            traceback.print_exc()
-            known_companies = ["茅台", "比亚迪", "腾讯", "五粮液", "宁德", "阿里", "京东", "美团"]
-        # V9.0: 从 COMPANY_ALIASES 动态取公司列表。用 max(len) 取最长匹配避免子串冲突
+        except Exception:
+            known_companies = ["贵州茅台", "比亚迪", "宁德时代", "五粮液", "招商银行", "美的集团"]
+        # 用 max(len) 取最长匹配——"贵州茅台"比"茅台"更精确，自动去子串冲突
         raw_matches = [c for c in known_companies if c in user_input]
-        print(f"[DEBUG] user_input={user_input!r}")
-        print(f"[DEBUG] known_companies 含'贵州茅台': {'贵州茅台' in known_companies}")
-        print(f"[DEBUG] known_companies 含'茅台': {'茅台' in known_companies}")
-        print(f"[DEBUG] raw_matches={raw_matches}")
+        if len(raw_matches) <= 1:
+            found = raw_matches
+        else:
+            best = max(raw_matches, key=len)
+            found = [best] + [c for c in raw_matches if c != best and c not in best]
         if not raw_matches:
             found = []
         elif len(raw_matches) == 1:
