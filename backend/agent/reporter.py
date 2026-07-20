@@ -50,6 +50,7 @@ class Reporter:
         # 收集数据
         data_summaries = []
         data_values = {}
+        data_sources = {}  # V8.5: 追踪每个键的来源，用于冲突检测
         calc_results = []
         rag_insights = []  # V8.0: RAG 文字解读
         rag_quotations = []  # V8.0: 原文引用
@@ -61,7 +62,23 @@ class Reporter:
                 if r.summary:
                     data_summaries.append(r.summary)
                 if isinstance(r.data, dict) and r.data.get("data"):
-                    data_values.update(r.data["data"])
+                    source = r.data.get("source", "unknown")
+                    source_conf = r.data.get("confidence", 0.5)
+                    for k, v in r.data["data"].items():
+                        if k in data_values:
+                            existing_val = data_values[k]
+                            if isinstance(v, (int, float)) and isinstance(existing_val, (int, float)):
+                                # 检测冲突：相对差异 > 5% 视为冲突
+                                rel_diff = abs(v - existing_val) / max(abs(existing_val), 0.01)
+                                if rel_diff > 0.05:
+                                    logger.warning(
+                                        f"[数据冲突] '{k}': 旧值={existing_val}("
+                                        f"来自{data_sources.get(k, '?')}), "
+                                        f"新值={v}(来自{source}), 保留旧值"
+                                    )
+                                    continue  # 保留先到的值，不覆盖
+                        data_values[k] = v
+                        data_sources[k] = f"{source}(conf={source_conf})"
             elif r.task_type == "calculate" and r.data:
                 calc_results.append(r.data)
             elif r.task_type == "rag_context":  # V8.0
@@ -523,11 +540,20 @@ class Reporter:
                 allowed_values.add(str(v))
                 allowed_values.add(self._fmt_num(v))
 
+        # V8.5: 同时支持单公式和批量计算结果
         for cr in calc_results:
-            if cr.get("success") and cr.get("result") is not None:
-                r = cr.get("result")
-                allowed_values.add(str(r))
-                allowed_values.add(self._fmt_num(r))
+            if cr.get("is_batch") and cr.get("results"):
+                for item in cr["results"]:
+                    if item.get("success") and item.get("result") is not None:
+                        if isinstance(item["result"], (int, float)):
+                            r = item["result"]
+                            allowed_values.add(str(r))
+                            allowed_values.add(self._fmt_num(r))
+            elif cr.get("success") and cr.get("result") is not None:
+                if isinstance(cr["result"], (int, float)):
+                    r = cr["result"]
+                    allowed_values.add(str(r))
+                    allowed_values.add(self._fmt_num(r))
 
         # 解析所有允许值及其格式化变体为 float 列表（用于容差比较）
         allowed_floats = []
@@ -576,8 +602,12 @@ class Reporter:
             logger.warning(
                 f"[数值校验] 发现 {len(suspicious)} 个未在数据源中的数字: {suspicious[:5]}"
             )
-
-        return response
+            warning_note = (
+                "\n\n> ⚠️ **数据一致性提示**：AI 生成的分析结论中检测到部分数字与原始数据源"
+                "存在差异，以上分析仅供参考。请以「二、数据概览」和「三、分维度分析」表格中的"
+                "精确值为准。"
+            )
+            return response + warning_note
 
     def _build_fallback_insights(self, data_values: dict, calc_results: List[dict]) -> str:
         """V8.2 降级方案：LLM 调用失败时，基于结构化数据直接生成结论（零 LLM）"""

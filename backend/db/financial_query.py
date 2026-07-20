@@ -106,7 +106,11 @@ METRIC_ALIASES: Dict[str, dict] = {
     "管理费用": {"keys": ["admin_expenses"], "formula": None},
     "研发费用": {"keys": ["rd_expenses"], "formula": None},
     "财务费用": {"keys": ["finance_expenses"], "formula": None},
+    "利息费用": {"keys": ["interest_expense"], "formula": None},  # V8.5: DB 有此字段，补充别名
     "营业利润": {"keys": ["operating_profit"], "formula": None},
+    # ── V8.5: EBIT/息税前利润 → operating_profit 近似（DB 无 ebit 字段）──
+    "EBIT": {"keys": ["operating_profit"], "formula": None},
+    "息税前利润": {"keys": ["operating_profit"], "formula": None},
     "利润总额": {"keys": ["total_profit"], "formula": None},
     "净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
     "归母净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
@@ -120,7 +124,8 @@ METRIC_ALIASES: Dict[str, dict] = {
     "流动负债": {"keys": ["current_liabilities"], "formula": None},
     "货币资金": {"keys": ["cash_and_equivalents"], "formula": None},
     "存货": {"keys": ["inventory"], "formula": None},
-    "固定资产": {"keys": ["fixed_assets"], "formula": None},
+    "固定资产": {"keys": ["construction_in_progress"], "formula": None},  # V8.5: DB 无 fixed_assets，用在建工程近似
+    "在建工程": {"keys": ["construction_in_progress"], "formula": None},
     "无形资产": {"keys": ["intangible_assets"], "formula": None},
     "商誉": {"keys": ["goodwill"], "formula": None},
     "长期借款": {"keys": ["long_term_borrowings"], "formula": None},
@@ -134,13 +139,25 @@ METRIC_ALIASES: Dict[str, dict] = {
     "经营现金流": {"keys": ["operating_cf"], "formula": None},
     "经营性现金流": {"keys": ["operating_cf"], "formula": None},
     "归属母公司净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
+    # ── V8.5: 补全现金流量表完整短语别名（修复 SQL 不命中 → RAG 幻觉）──
+    "投资活动产生的现金流量净额": {"keys": ["investing_cf"], "formula": None},
+    "投资活动现金流净额": {"keys": ["investing_cf"], "formula": None},
+    "投资活动现金流量净额": {"keys": ["investing_cf"], "formula": None},
     "投资现金流": {"keys": ["investing_cf"], "formula": None},
+    "投资活动现金净流出": {"keys": ["investing_cf"], "formula": None},
+    "筹资活动产生的现金流量净额": {"keys": ["financing_cf"], "formula": None},
+    "筹资活动现金流净额": {"keys": ["financing_cf"], "formula": None},
+    "筹资活动现金流量净额": {"keys": ["financing_cf"], "formula": None},
     "筹资现金流": {"keys": ["financing_cf"], "formula": None},
+    # ── V8.5: 资本支出 — 优先用 investing_cf_out（含购建固定/无形/长期资产支付的现金）──
+    # DB 无 fixed_assets 字段！旧映射导致 SQL 不命中 → RAG 兜底 → LLM 幻觉数值
+    "购建固定资产无形资产和其他长期资产支付的现金": {"keys": ["investing_cf_out"], "formula": None},
+    "资本支出": {"keys": ["investing_cf_out"], "formula": None},
+    "capex": {"keys": ["investing_cf_out"], "formula": None},
+    "投资活动现金流出": {"keys": ["investing_cf_out"], "formula": None},
     # 权益/资产补充别名（LLM 常用术语）
     "所有者权益": {"keys": ["equity_attr_parent"], "formula": None},
     "股东权益": {"keys": ["equity_attr_parent"], "formula": None},
-    "资本支出": {"keys": ["fixed_assets"], "formula": None},  # V8.4: 自由现金流用，以固定资产近似
-    "capex": {"keys": ["fixed_assets"], "formula": None},
     # ── 复合指标（需要查多个 key 再计算）──
     "毛利率": {
         "keys": ["revenue", "cost_of_revenue"],
@@ -170,9 +187,10 @@ METRIC_ALIASES: Dict[str, dict] = {
         "keys": ["total_assets", "equity_attr_parent"],
         "formula": "total_assets / equity_attr_parent",
     },
+    # V8.5: 自由现金流用 investing_cf_out 替代 fixed_assets（DB 无 fixed_assets 字段）
     "自由现金流": {
-        "keys": ["operating_cf", "fixed_assets"],
-        "formula": "operating_cf - fixed_assets",
+        "keys": ["operating_cf", "investing_cf_out"],
+        "formula": "operating_cf - investing_cf_out",
     },
 }
 
@@ -364,12 +382,18 @@ def try_query(query: str) -> Optional[dict]:
         else:
             summary = f"{company_names[0]} {years[0]}-{years[-1]}年"
 
+        # 动态置信度：基于实际查到的指标数 vs 预期指标数
+        total_expected = len(symbols) * len(years) * len(metrics)
+        total_found = len(all_data)
+        completeness = min(total_found / max(total_expected, 1), 1.0)
+        confidence = round(0.75 + 0.24 * completeness, 2)  # 0.75-0.99
+
         return {
             "found": True,
             "data": all_data,
             "summary": summary,
             "raw_chunks": [],
-            "confidence": 0.99,
+            "confidence": confidence,
             "source": "SQL",
         }
     except Exception as e:
