@@ -298,24 +298,53 @@ class Reporter:
     def _build_summary(
         self, user_input: str, tasks: List[AnalysisTask], results: List[TaskResult]
     ) -> str:
-        """构建分析摘要章节"""
+        """V9.0: 构建执行摘要 — 核心发现而非任务清单"""
+        # 提取计算指标
+        key_metrics = []
+        for r in results:
+            if r.task_type == "calculate" and r.success and r.data:
+                name = r.data.get("display_name", "")
+                val = r.data.get("result")
+                unit = r.data.get("unit", "")
+                if name and val is not None:
+                    key_metrics.append(f"{name}：{self._fmt_num(val)}{unit}")
+
+        # 提取 RAG 洞察
+        rag_found = False
+        for r in results:
+            if r.task_type == "rag_context" and r.success:
+                rag_found = True
+                break
+
+        # 统计
         success_count = sum(1 for r in results if r.success)
-        total_count = len(results)
+        total = len(results)
+        has_issues = success_count < total
+        failed_tasks = [(t.description, r.error) for t, r in zip(tasks, results)
+                       if not r.success and t.task_type != "analyze"]
 
-        task_list = "\n".join(
-            f"- {'✅' if r.success else '❌'} {task.description}" +
-            (f" — {r.summary}" if r.summary else f" — *{r.error or '跳过'}*")
-            for task, r in zip(tasks, results)
-        )
+        lines = ["## 一、执行摘要", ""]
+        lines.append(f"**分析需求：**{user_input}")
+        lines.append("")
 
-        return f"""## 一、分析摘要
+        if key_metrics:
+            lines.append("**核心指标：**")
+            for m in key_metrics:
+                lines.append(f"- {m}")
+            lines.append("")
 
-**分析需求：** {user_input}
+        if rag_found:
+            lines.append("📄 已从年报原文中检索相关解读，详见分维度分析章节。")
+            lines.append("")
 
-**执行情况：** {success_count}/{total_count} 个子任务成功完成
+        if has_issues:
+            lines.append(f"**数据说明：**{success_count}/{total} 项分析完成")
+            if failed_tasks:
+                for desc, err in failed_tasks[:3]:
+                    reason = (err or "数据缺失")[:40]
+                    lines.append(f"- {desc}：{reason}")
 
-**子任务详情：**
-{task_list}"""
+        return "\n".join(lines)
 
     def _build_data_overview(self, summaries: List[str], data_values: dict) -> str:
         """构建数据概览 — 数据已从 SQL 查得，直接格式化展示"""
