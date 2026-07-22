@@ -473,7 +473,7 @@ class FinancialCalcTool:
 
         try:
             # ── V7.0: 智能参数补全（ROE/ROA/Growth 自动回退）──
-            params = self._auto_fill_params(formula, dict(params))
+            params, fill_sources = self._auto_fill_params(formula, dict(params))
 
             func = entry["func"]
             # 提取所需参数
@@ -501,6 +501,14 @@ class FinancialCalcTool:
             # 构建计算表达式（简洁版：只显示公式名和结果，不暴露中间参数）
             expr = f"{entry['formula_text']} = {result}{entry['unit']}"
 
+            # V9.0: 确定来源 — 仅非平凡推算标记 auto_fill（年份回退是常规操作，不算"推算"）
+            nontrivial_fills = {k: v for k, v in fill_sources.items()
+                               if not v.startswith("auto_fill:year_suffix")
+                               and not v.startswith("auto_fill:avg_fallback")}
+            has_nontrivial = len(nontrivial_fills) > 0
+            source = "calc:auto_fill" if has_nontrivial else "calc"
+            confidence = 0.95 if not has_nontrivial else 0.80
+
             return {
                 "success": True,
                 "result": result,
@@ -509,6 +517,8 @@ class FinancialCalcTool:
                 "expression": expr,
                 "unit": entry["unit"],
                 "error": None,
+                "source": source,
+                "confidence": confidence,
             }
         except Exception as e:
             return {
@@ -562,15 +572,19 @@ class FinancialCalcTool:
         return {"ok": True}
 
     @staticmethod
-    def _auto_fill_params(formula: str, params: dict) -> dict:
+    def _auto_fill_params(formula: str, params: dict) -> tuple:
         """
-        V8.3: 智能参数补全 — 三种策略覆盖所有公式缺参场景。
+        V8.3: 智能参数补全 — 多种策略覆盖所有公式缺参场景。
+        V9.0: 返回 (params, fill_sources) — fill_sources 记录每个被补全参数的来源。
 
         策略1 (avg_* 回退): avg_equity←equity, avg_total_assets←total_assets 等
         策略2 (增长公式): 从年份后缀键名提取 current/previous 对
         策略3 (负债率/流动率): 从已有数据推算缺失参数
+        策略5 (bvps): 从 equity + net_profit + eps 推算每股净资产
+        策略6 (ebitda): 从 operating_profit 近似
         """
         params = dict(params)
+        fill_sources = {}  # V9.0: 记录自动补全的参数来源
 
         # ── 策略0: 年份后缀通用回退（revenue_2024 → revenue）──
         # ParamInjector 注入的是英文名_年份（如 revenue_2024）
@@ -589,6 +603,7 @@ class FinancialCalcTool:
             if _base_name not in params:
                 _latest_yr = max(_years.keys())
                 params.setdefault(_base_name, _years[_latest_yr])
+                fill_sources[_base_name] = "auto_fill:year_suffix"
 
         # ── 策略1: avg_* 回退（覆盖 ROE/ROA/周转率等 6 个公式）──
         avg_fallbacks = {
@@ -600,6 +615,7 @@ class FinancialCalcTool:
         for avg_key, fallback_key in avg_fallbacks.items():
             if avg_key not in params and fallback_key in params:
                 params[avg_key] = params[fallback_key]
+                fill_sources[avg_key] = f"auto_fill:avg_fallback:{fallback_key}"
 
         # ── 策略2: 增长公式 — 从年份后缀键名提取当期/上期 ──
         growth_formulas = {
@@ -612,14 +628,19 @@ class FinancialCalcTool:
                 yearly = FinancialCalcTool._extract_yearly(params, metric)
                 if len(yearly) >= 2:
                     sorted_yrs = sorted(yearly.keys(), reverse=True)
-                    params.setdefault(cur_key, yearly[sorted_yrs[0]])
-                    params.setdefault(prev_key, yearly[sorted_yrs[1]])
+                    if cur_key not in params:
+                        params[cur_key] = yearly[sorted_yrs[0]]
+                        fill_sources[cur_key] = "auto_fill:growth_yearly"
+                    if prev_key not in params:
+                        params[prev_key] = yearly[sorted_yrs[1]]
+                        fill_sources[prev_key] = "auto_fill:growth_yearly"
 
         # ── 策略3: 负债 ← 总资产 - 净资产（数据查询常缺负债项）──
         if formula == "debt_ratio":
             if "total_liabilities" not in params:
                 if "total_assets" in params and "equity" in params:
                     params["total_liabilities"] = round(params["total_assets"] - params["equity"], 2)
+                    fill_sources["total_liabilities"] = "auto_fill:debt_computed"
 
         # ── 策略4: 流动比率 — current_assets/current_liabilities 缺一不可时不补（安全）──
         # 不自动推算，避免错误
@@ -641,8 +662,17 @@ class FinancialCalcTool:
             if equity and net_profit and eps_key and eps_key != 0:
                 total_shares = net_profit / eps_key  # EPS = 净利润/总股本 → 总股本 = 净利润/EPS
                 params["bvps"] = round(equity / total_shares, 2)
+                fill_sources["bvps"] = "auto_fill:bvps_computed"
 
-        return params
+        # ── 策略6: ebitda 回退 — 无折旧数据时用 operating_profit 近似 ──
+        if formula == "ebitda_margin" and "ebitda" not in params:
+            ebitda_fb = (params.get("operating_profit") or params.get("营业利润")
+                        or params.get("ebit"))
+            if ebitda_fb is not None:
+                params["ebitda"] = ebitda_fb
+                fill_sources["ebitda"] = "auto_fill:ebitda_approx"
+
+        return params, fill_sources
 
     @staticmethod
     def _extract_yearly(params: dict, metric_base: str) -> dict:

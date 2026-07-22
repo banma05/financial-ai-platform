@@ -23,19 +23,19 @@ class TestPlannerTemplates:
         assert "analyze" in task_types
 
     def test_load_dupont_template(self):
-        """加载杜邦分析模板"""
+        """加载杜邦分析模板（V9.0: 含 rag_context）"""
         planner = Planner()
         plan = planner._load_template("dupont", "比亚迪")
-        assert len(plan.tasks) == 4
+        assert len(plan.tasks) == 5
         # 验证依赖关系：calculate 依赖 data_query
         calc_task = next(t for t in plan.tasks if t.task_type == "calculate")
         assert len(calc_task.depends_on) > 0
 
     def test_load_growth_template(self):
-        """加载成长性分析模板"""
+        """加载成长性分析模板（V9.0: 含 rag_context）"""
         planner = Planner()
         plan = planner._load_template("growth", "腾讯")
-        assert len(plan.tasks) == 6
+        assert len(plan.tasks) == 7
         # 验证有双轴图表
         chart_task = next(t for t in plan.tasks if t.task_type == "chart")
         assert chart_task.params.get("chart_type") == "dual_axis"
@@ -57,13 +57,14 @@ class TestPlannerTemplates:
             assert all(isinstance(t, AnalysisTask) for t in plan.tasks)
 
     def test_load_cash_flow_template(self):
-        """加载现金流分析模板"""
+        """加载现金流分析模板（V9.0: 含 rag_context）"""
         planner = Planner()
         plan = planner._load_template("cash_flow", "比亚迪")
-        assert len(plan.tasks) == 6
+        assert len(plan.tasks) == 7
         task_types = [t.task_type for t in plan.tasks]
         assert task_types.count("data_query") == 2
         assert task_types.count("calculate") == 2
+        assert task_types.count("rag_context") >= 1
         assert task_types.count("chart") == 1
         assert task_types.count("analyze") == 1
         # 验证公式使用
@@ -72,10 +73,10 @@ class TestPlannerTemplates:
         assert "cf_to_net_profit" in formulas
 
     def test_load_risk_scan_template(self):
-        """加载财务风险扫描模板"""
+        """加载财务风险扫描模板（V9.0: 含 rag_context）"""
         planner = Planner()
         plan = planner._load_template("risk_scan", "贵州茅台")
-        assert len(plan.tasks) == 8
+        assert len(plan.tasks) == 9
         task_types = [t.task_type for t in plan.tasks]
         assert task_types.count("data_query") == 2
         assert task_types.count("calculate") == 4
