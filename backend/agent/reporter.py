@@ -622,13 +622,18 @@ class Reporter:
             return response
 
         # 构建"允许出现的数字"集合（来自数据源）
+        # V9.0: 同时存储纯数字字符串和带格式的字符串（如 "1688.38" 和 "1688.38亿"）
         allowed_values = set()
         for v in data_values.values():
             if isinstance(v, (int, float)):
                 allowed_values.add(str(v))
-                allowed_values.add(self._fmt_num(v))
+                fmt = self._fmt_num(v)
+                allowed_values.add(fmt)
+                # 提取格式字符串中的纯数字部分（去"亿""万""%"等后缀）
+                num_only = re.sub(r'[亿万元%倍次]', '', fmt).strip()
+                if num_only != fmt:
+                    allowed_values.add(num_only)
 
-        # V8.5: 同时支持单公式和批量计算结果
         for cr in calc_results:
             if cr.get("is_batch") and cr.get("results"):
                 for item in cr["results"]:
@@ -636,12 +641,20 @@ class Reporter:
                         if isinstance(item["result"], (int, float)):
                             r = item["result"]
                             allowed_values.add(str(r))
-                            allowed_values.add(self._fmt_num(r))
+                            fmt = self._fmt_num(r)
+                            allowed_values.add(fmt)
+                            num_only = re.sub(r'[亿万元%倍次]', '', fmt).strip()
+                            if num_only != fmt:
+                                allowed_values.add(num_only)
             elif cr.get("success") and cr.get("result") is not None:
                 if isinstance(cr["result"], (int, float)):
                     r = cr["result"]
                     allowed_values.add(str(r))
-                    allowed_values.add(self._fmt_num(r))
+                    fmt = self._fmt_num(r)
+                    allowed_values.add(fmt)
+                    num_only = re.sub(r'[亿万元%倍次]', '', fmt).strip()
+                    if num_only != fmt:
+                        allowed_values.add(num_only)
 
         # 解析所有允许值及其格式化变体为 float 列表（用于容差比较）
         allowed_floats = []
@@ -656,6 +669,9 @@ class Reporter:
         for num in numbers_in_output:
             # 年份数字跳过
             if re.match(r'^20\d{2}$', num):
+                continue
+            # 公式常数、百分比基数等元数据数字跳过
+            if num in ("100",):
                 continue
             # 小于 100 的整数跳过（通常是百分比置信度、序号等元数据，非财务数值）
             try:
@@ -684,7 +700,51 @@ class Reporter:
                 pass
 
             if not found_close:
-                suspicious.append(num)
+                # V9.0: 检查是否可由已知数据通过基本运算推导得出
+                # LLM 常用已知数值做加减乘除（如 100-91.18=8.82 成本率），
+                # 这些推导数字是正确的，不应误报为幻觉
+                can_derive = False
+                try:
+                    num_f = float(num)
+                    # 检查常见推导模式：A±B, A*B/100, 100-A, A/B*100
+                    for a in allowed_floats:
+                        if a == 0:
+                            continue
+                        for b in allowed_floats:
+                            if b == 0:
+                                continue
+                            # 加减
+                            if abs(num_f - (a + b)) < 0.1 or abs(num_f - abs(a - b)) < 0.1:
+                                can_derive = True
+                                break
+                            # 100-A (百分比互补)
+                            if a > 1 and abs(num_f - abs(100 - a)) < 0.1:
+                                can_derive = True
+                                break
+                            # A-B (差)
+                            if abs(num_f - abs(a - b)) < 0.1:
+                                can_derive = True
+                                break
+                        if can_derive:
+                            break
+                    # A/B*100
+                    if not can_derive and len(allowed_floats) >= 2:
+                        for i, a in enumerate(allowed_floats):
+                            if a == 0:
+                                continue
+                            for b in allowed_floats[i+1:]:
+                                if b == 0:
+                                    continue
+                                if abs(num_f - a/b*100) < 1.0 or abs(num_f - b/a*100) < 1.0:
+                                    can_derive = True
+                                    break
+                            if can_derive:
+                                break
+                except ValueError:
+                    pass
+
+                if not can_derive:
+                    suspicious.append(num)
 
         if suspicious:
             logger.warning(
