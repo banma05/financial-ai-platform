@@ -43,9 +43,13 @@ METRIC_NAME_MAP: Dict[str, str] = {
     "利润总额": "total_profit",
     "所得税费用": "income_tax",
     "净利润": "net_profit",
+    # 归母净利润 — 工业/银行/保险三种写法
     "归属于母公司所有者的净利润": "net_profit_attr_parent",
     "归属于母公司股东的净利润": "net_profit_attr_parent",
+    "归属于母公司的净利润": "net_profit_attr_parent",
+    # 少数股东 — 利润表(损益)和资产负债表(权益)两种
     "少数股东损益": "minority_interest",
+    "少数股东权益": "minority_interest",
     "基本每股收益": "eps",
     "稀释每股收益": "diluted_eps",
     "其他综合收益": "other_comprehensive_income",
@@ -72,8 +76,18 @@ METRIC_NAME_MAP: Dict[str, str] = {
     "非流动负债合计": "non_current_liabilities",
     "长期借款": "long_term_borrowings",
     "应付债券": "bonds_payable",
+    # 总权益 — 工业/银行/保险三种写法
     "所有者权益合计": "total_equity",
+    "所有者权益(或股东权益)合计": "total_equity",
+    "股东权益": "total_equity",
+    "所有者权益": "total_equity",
+    # 归母权益 — 工业/银行/保险/券商四种写法均不同
     "归属于母公司股东权益合计": "equity_attr_parent",
+    "归属于母公司股东的权益": "equity_attr_parent",
+    "归属于母公司的股东权益合计": "equity_attr_parent",
+    "归属于母公司所有者权益合计": "equity_attr_parent",
+    "归属于母公司的股东权益": "equity_attr_parent",
+    "归属于母公司权益": "equity_attr_parent",
     "实收资本（或股本）": "share_capital",
     "资本公积": "capital_reserve",
     "盈余公积": "surplus_reserve",
@@ -181,6 +195,11 @@ def query_financial_data(symbol: str, years: int = 5) -> List[Dict]:
                 raw_name = _clean_metric_name(str(col))
                 metric_key = METRIC_NAME_MAP.get(raw_name)
                 if metric_key is None:
+                    # V9.0: 对潜在重要字段（含财务关键词）的未映射列名发警告，避免静默丢弃
+                    _finance_keywords = ["净利", "权益", "归属", "股东", "损益", "收益",
+                                        "资产", "负债", "现金流", "分配", "利润"]
+                    if any(kw in raw_name for kw in _finance_keywords):
+                        logger.warning(f"  [未映射] {symbol} {report_type}: '{raw_name}' — 请加入 METRIC_NAME_MAP")
                     continue  # 不在关注的指标列表中
 
                 try:

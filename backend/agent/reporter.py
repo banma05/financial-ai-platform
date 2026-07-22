@@ -104,7 +104,7 @@ class Reporter:
         if calc_results:
             sections.append(self._build_dimension_analysis(data_values, calc_results, user_input))
 
-        # RAG 原文解读（如有）
+        # RAG 原文解读（如有）— 嵌入分维度分析而非单独成节
         if rag_insights or rag_quotations:
             sections.append(self._build_rag_section(rag_insights, rag_quotations))
 
@@ -116,10 +116,13 @@ class Reporter:
         if self._has_risk_data(calc_results):
             sections.append(self._build_risk_assessment(calc_results))
 
-        # 六、结论与建议（LLM，带数值校验）
+        # 六、结论与建议（LLM，带数值校验 + RAG 解读引用）
         insights = self._generate_insights(user_input, data_values, calc_results, rag_insights)
         if insights:
             sections.append(insights)
+
+        # 七、数据可靠度说明（V9.0: 让用户知道哪些数据可引用）
+        sections.append(self._build_confidence_section(results, data_values))
 
         return "\n\n".join(sections)
 
@@ -388,6 +391,62 @@ class Reporter:
             for q in quotations[:3]:
                 src = f"{q.get('source','')} 第{q.get('page','')}页"
                 lines.append(f"\n> {q['text'][:200]}...\n> — *{src}*")
+        return "\n".join(lines)
+
+    def _build_confidence_section(self, results: List, data_values: dict) -> str:
+        """V9.0: 构建数据可靠度说明 — 让用户知道哪些数字可引用、哪些是推算的"""
+        lines = ["## 七、数据可靠度说明", ""]
+
+        # 分析每个 TaskResult 的 source
+        has_fallback = False
+        has_computed = False
+        has_rag = False
+        total_confidence = 0.0
+        confidence_count = 0
+
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            source = r.get("source", "")
+            conf = r.get("confidence")
+
+            if isinstance(conf, (int, float)):
+                total_confidence += conf
+                confidence_count += 1
+
+            if "fallback" in str(source):
+                has_fallback = True
+            if "computed" in str(source) or "auto_fill" in str(source):
+                has_computed = True
+            if "rag" in str(source).lower():
+                has_rag = True
+
+        # 整体置信度
+        if confidence_count > 0:
+            avg_conf = total_confidence / confidence_count
+            if avg_conf >= 0.90:
+                conf_label = "高"
+            elif avg_conf >= 0.75:
+                conf_label = "中"
+            else:
+                conf_label = "低"
+            lines.append(f"**整体数据可靠度：{conf_label}**（置信度 {avg_conf:.0%}）")
+            lines.append("")
+
+        # 分类说明
+        lines.append("| 数据来源 | 说明 |")
+        lines.append("|:---|:---|")
+        lines.append("| SQL 直查 | 直接从财务数据库获取，准确度最高 |")
+        if has_fallback:
+            lines.append("| 字段回退 | 目标字段缺失，使用替代字段（如归母净利润←净利润），准确度较高 |")
+        if has_computed:
+            lines.append("| 公式推算 | 部分参数通过已有数据计算得出（如每股净资产由EPS反推），准确度中等 |")
+        if has_rag:
+            lines.append("| 年报解读 | 从年报原文检索提炼的定性分析，仅供参考 |")
+        lines.append("")
+        lines.append("> 提示：报告中标注 *(推算)* 的数值为间接计算得出，建议在引用前与原始年报核对。")
+        lines.append("> 所有数据基于已披露年报，不构成投资建议。")
+
         return "\n".join(lines)
 
     def _build_chart_section(self, chart_count: int) -> str:

@@ -255,21 +255,30 @@ class ToolRegistry:
                 elif not isinstance(v, (dict, list)):
                     flat_data[k] = v
 
-            # ── V8.3: 展开批量计算结果 ──
-            # 批量计算的 results 是 [{formula, display_name, result, unit}, ...]
-            # 其中 display_name（中文名，如"毛利率"）才是图表和后续任务需要的键
+            # ── V9.0: 展开计算结果 — 分离两路数据 ──
+            # 路1: display_name→result — 图表标签，不经过 ParamInjector
+            # 路2: 原始数据键 — 公式参数，经过 ParamInjector 中英映射
+            display_results = {}  # 路1: 图表用的中文标签值
             if extracted.get("is_batch") and isinstance(extracted.get("results"), list):
                 for item in extracted["results"]:
                     if item.get("success") and item.get("result") is not None:
                         name = item.get("display_name") or item.get("formula", "")
-                        flat_data[name] = item["result"]
+                        display_results[name] = item["result"]
+            elif extracted.get("result") is not None and not extracted.get("is_batch"):
+                name = extracted.get("display_name") or "计算结果"
+                display_results[name] = extracted["result"]
 
-            # 合并展平数据 + 顶层标量数据
+            # 合并展平数据 + 顶层标量数据（不含 display_results，避免污染 ParamInjector）
             all_extracted = {**flat_data, **{k: v for k, v in extracted.items()
                                               if not isinstance(v, (dict, list))}}
 
-            # 委托 ParamInjector 做三层回退注入（V3.0 升级）
+            # 委托 ParamInjector 做三层回退注入（路2: 原始数据键的中英映射）
             injector.inject(all_extracted, params)
+
+            # V9.0: 路1 直注 — display_name 直接作为图表标签注入，不被 ParamInjector 丢弃
+            for name, val in display_results.items():
+                if name not in params:
+                    params[name] = val
 
             # 特殊处理：dupont 公式需要 4 个参数
             if task.params.get("formula") == "dupont":

@@ -180,11 +180,46 @@ class ChartTool:
             data = {}
 
         # 合并 kwargs 中的数值参数到 data
-        numeric_extra = {k: v for k, v in {**kwargs, **data}.items()
-                        if isinstance(v, (int, float))}
+        # V9.0: 过滤技术键（英文指标名/元数据键），只保留可用于图表展示的标签
+        _SKIP_CHART_KEYS = {"result", "confidence", "success", "source", "found",
+                           "chart_type", "title", "x_label", "y_label"}
+        numeric_all = {k: v for k, v in {**kwargs, **data}.items()
+                      if isinstance(v, (int, float)) and k not in _SKIP_CHART_KEYS}
+        # 优先保留中文标签，过滤纯英文技术键（如 net_profit/gross_profit_margin）
+        numeric_extra = {}
+        for k, v in numeric_all.items():
+            has_cjk = any('一' <= c <= '鿿' for c in str(k))
+            is_eng_metric = str(k).replace('_', '').isascii() and str(k).islower()
+            if has_cjk or not is_eng_metric:
+                numeric_extra[k] = v
         if numeric_extra and not data.get("values") and not data.get("labels"):
-            data["labels"] = list(numeric_extra.keys())
-            data["values"] = list(numeric_extra.values())
+            # 去重：同一数值只保留第一个标签（通常是中文display_name）
+            seen_vals = set()
+            unique_labels, unique_values = [], []
+            for k, v in numeric_extra.items():
+                if v not in seen_vals:
+                    seen_vals.add(v)
+                    unique_labels.append(k)
+                    unique_values.append(v)
+            data["labels"] = unique_labels
+            data["values"] = unique_values
+
+        # ── V9.0: 零空白防线 — 数据不足时不生成空白图表 ──
+        if not data.get("labels") or not data.get("values"):
+            return {
+                "chart_option": None,
+                "chart_description": "数据不足，无法生成图表。请确认查询参数是否正确。",
+                "skip": True,
+                "skip_reason": "empty_data",
+            }
+        if len(data.get("labels", [])) <= 1 or len(data.get("values", [])) <= 1:
+            return {
+                "chart_option": None,
+                "chart_description": f"仅{len(data.get('values',[]))}个可用数据点，不足以生成有意义的图表，以下为数据表格形式展示。",
+                "skip": True,
+                "skip_reason": "insufficient_data",
+                "fallback_table": {"labels": data.get("labels", []), "values": data.get("values", [])},
+            }
 
         # ── 标签中文化（剥离年份后缀 + 去重）──
         self._ensure_chinese_labels(data)

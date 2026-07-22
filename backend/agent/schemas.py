@@ -37,6 +37,7 @@ class TaskResult(BaseModel):
     chart_description: Optional[str] = None    # V8.3: 图表人类可读解读
     error: Optional[str] = None                # 失败时的错误信息
     confidence: Optional[float] = None         # V6.0: 结论置信度 0.0-1.0
+    source: Optional[str] = None               # V9.0: 数据来源标注（sql/sql:fallback:XX/sql:computed:XX/calc:auto_fill:XX/rag/mcp）
 
 
 class AnalysisPlan(BaseModel):

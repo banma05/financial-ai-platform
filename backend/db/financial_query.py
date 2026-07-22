@@ -111,6 +111,14 @@ METRIC_ALIASES: Dict[str, dict] = {
     # ── V8.5: EBIT/息税前利润 → operating_profit 近似（DB 无 ebit 字段）──
     "EBIT": {"keys": ["operating_profit"], "formula": None},
     "息税前利润": {"keys": ["operating_profit"], "formula": None},
+    # V9.0 P0-2: EBITDA → operating_profit 近似（DB 无 depreciation，无法精确计算）
+    "EBITDA": {"keys": ["operating_profit"], "formula": None},
+    "息税折旧摊销前利润": {"keys": ["operating_profit"], "formula": None},
+    # V9.0 P0-2: EBITDA率 复合指标
+    "EBITDA率": {
+        "keys": ["operating_profit", "revenue"],
+        "formula": "operating_profit / revenue * 100",
+    },
     "利润总额": {"keys": ["total_profit"], "formula": None},
     "净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
     "归母净利润": {"keys": ["net_profit_attr_parent"], "formula": None},
@@ -194,6 +202,25 @@ METRIC_ALIASES: Dict[str, dict] = {
     },
 }
 
+# ── V9.0: 指标键回退映射 ──
+# 当目标 metric_key 不存在时，依次尝试 simple 回退和 computed 回退。
+# simple:   用一个替代键直接查找（如 net_profit_attr_parent → net_profit）
+# computed: 用多个源键查值后公式计算（如 total_assets - total_liabilities → equity）
+# 此机制对所有公司生效，新增数据也自动享有兜底。
+_KEY_FALLBACK: Dict[str, dict] = {
+    "net_profit_attr_parent": {
+        "simple": "net_profit",
+    },
+    "equity_attr_parent": {
+        "simple": "total_equity",
+        "computed": {
+            "keys": ["total_assets", "total_liabilities"],
+            "formula": "total_assets - total_liabilities",
+        },
+    },
+}
+
+
 # ── V9.0: 复合概念 → 多指标展开映射 ──
 # 用户常说"财务整体表现""盈利能力"等模糊词，这些不在标准 METRIC_ALIASES 中，
 # 但 SQL 层应能展开为具体指标集。映射值是 METRIC_ALIASES 中已存在的键名。
@@ -232,10 +259,21 @@ def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
         (symbols, years, metrics) — symbols为空表示无法识别公司
     """
     # 1. 公司识别（支持多公司）
-    symbols = []
-    for alias, sym in COMPANY_ALIASES.items():
+    # V9.0: 按别名长度降序匹配，过滤子串（"平安银行"先匹配→不因"平安"误加中国平安）
+    matched_aliases = []
+    for alias in sorted(COMPANY_ALIASES, key=len, reverse=True):
         if alias in query:
-            symbols.append(sym)
+            matched_aliases.append(alias)
+    # 去子串: "平安"是"平安银行"的子串→只保留"平安银行"
+    symbols = []
+    for alias in matched_aliases:
+        is_sub = False
+        for other in matched_aliases:
+            if other != alias and alias in other:
+                is_sub = True
+                break
+        if not is_sub:
+            symbols.append(COMPANY_ALIASES[alias])
     symbols = list(dict.fromkeys(symbols))  # 去重保序
 
     # 2. 年份提取
@@ -298,6 +336,7 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
     # 取公司简称用于键名前缀
     short_name = company.name.replace("贵州", "").replace("股份", "").replace("有限", "") if company.name else symbol
     data = {}
+    sources = {}  # V9.0: 每个数据键的来源标注
     found_any = False
 
     for metric_name in metrics:
@@ -326,7 +365,9 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
 
         for year in years:
             values = {}
+            key_sources = {}  # V9.0: 每个键的来源
             for key in keys:
+                key_source = "sql"  # 默认来源
                 query_base = db.query(FinancialData).filter(
                     FinancialData.symbol == symbol,
                     FinancialData.year == year,
@@ -337,8 +378,58 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                 else:
                     # 各年份都取各自最新季度，保持同季可比
                     record = query_base.order_by(FinancialData.quarter.desc()).first()
+
+                # V9.0 P0-1: 回退链 — 主键无数据时依次尝试 simple→computed
+                if not record and key in _KEY_FALLBACK:
+                    fb_def = _KEY_FALLBACK[key]
+
+                    # 第一级: simple 回退（直接替代键）
+                    if not record and "simple" in fb_def:
+                        fb_key = fb_def["simple"]
+                        fb_base = db.query(FinancialData).filter(
+                            FinancialData.symbol == symbol,
+                            FinancialData.year == year,
+                            FinancialData.metric_key == fb_key,
+                        )
+                        if target_quarter:
+                            record = fb_base.filter(FinancialData.quarter == target_quarter).first()
+                        else:
+                            record = fb_base.order_by(FinancialData.quarter.desc()).first()
+                        if record:
+                            key_source = f"sql:fallback:{fb_key}"
+
+                    # 第二级: computed 回退（多源键 → 公式计算）
+                    if not record and "computed" in fb_def:
+                        comp = fb_def["computed"]
+                        comp_values = {}
+                        for comp_key in comp["keys"]:
+                            comp_base = db.query(FinancialData).filter(
+                                FinancialData.symbol == symbol,
+                                FinancialData.year == year,
+                                FinancialData.metric_key == comp_key,
+                            )
+                            if target_quarter:
+                                comp_row = comp_base.filter(FinancialData.quarter == target_quarter).first()
+                            else:
+                                comp_row = comp_base.order_by(FinancialData.quarter.desc()).first()
+                            if comp_row:
+                                comp_values[comp_key] = comp_row.metric_value
+                        # 所有源键都找到才计算
+                        if len(comp_values) == len(comp["keys"]):
+                            try:
+                                result = _safe_eval(comp["formula"], comp_values)
+                                # 创建伪记录对象，让后续代码正常使用
+                                class _FallbackRecord:
+                                    pass
+                                record = _FallbackRecord()
+                                record.metric_value = result
+                                key_source = f"sql:computed:{comp['formula']}"
+                            except (ValueError, ZeroDivisionError, TypeError):
+                                pass
+
                 if record:
                     values[key] = record.metric_value
+                    key_sources[key] = key_source
                     found_any = True
 
             if not values:
@@ -352,7 +443,11 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                     safe_vars = {k: v for k, v in values.items() if k in keys}
                     # V8.1 D13: 用 AST 白名单求值器替换 eval，仅允许 + - * /
                     result = _safe_eval(formula, safe_vars)
-                    data[f"{key_prefix}{metric_name}{year_suffix}"] = round(result, 2)
+                    out_key = f"{key_prefix}{metric_name}{year_suffix}"
+                    data[out_key] = round(result, 2)
+                    # V9.0: 公式来源 — 所有键都是sql直查时标sql，否则标部分回退
+                    all_direct = all(key_sources.get(k, "") == "sql" for k in keys)
+                    sources[out_key] = "sql" if all_direct else "sql:formula:partial_fallback"
                 except (ValueError, ZeroDivisionError, TypeError) as e:
                     logger.debug(f"公式计算失败 [{formula}]: {e}")
                     continue
@@ -361,11 +456,13 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
             elif not formula:
                 for key, val in values.items():
                     if key in keys:
-                        data[f"{key_prefix}{metric_name}{year_suffix}"] = val
+                        out_key = f"{key_prefix}{metric_name}{year_suffix}"
+                        data[out_key] = val
+                        sources[out_key] = key_sources.get(key, "sql")
 
     if not found_any:
         return None
-    return {"company": company, "data": data, "found_any": found_any}
+    return {"company": company, "data": data, "sources": sources, "found_any": found_any}
 
 
 def try_query(query: str) -> Optional[dict]:
@@ -392,6 +489,7 @@ def try_query(query: str) -> Optional[dict]:
     db = SessionLocal()
     try:
         all_data = {}
+        all_sources = {}  # V9.0: 收集每个数据点的来源
         company_names = []
         any_found = False
 
@@ -399,6 +497,8 @@ def try_query(query: str) -> Optional[dict]:
             result = _query_one_company(db, sym, years, metrics, multi)
             if result:
                 all_data.update(result["data"])
+                if "sources" in result:
+                    all_sources.update(result["sources"])
                 company_names.append(result["company"].name or sym)
                 any_found = True
 
@@ -413,15 +513,35 @@ def try_query(query: str) -> Optional[dict]:
         else:
             summary = f"{company_names[0]} {years[0]}-{years[-1]}年"
 
-        # 动态置信度：基于实际查到的指标数 vs 预期指标数
-        total_expected = len(symbols) * len(years) * len(metrics)
-        total_found = len(all_data)
-        completeness = min(total_found / max(total_expected, 1), 1.0)
-        confidence = round(0.75 + 0.24 * completeness, 2)  # 0.75-0.99
+        # V9.0: 动态置信度 — 基于数据来源质量而非仅完整度
+        if all_sources:
+            source_scores = {
+                "sql": 0.99,
+                "sql:formula": 0.95,
+            }
+            total_score = 0.0
+            for src in all_sources.values():
+                if src == "sql":
+                    total_score += 0.99
+                elif src.startswith("sql:formula"):
+                    total_score += 0.90
+                elif src.startswith("sql:fallback"):
+                    total_score += 0.80
+                elif src.startswith("sql:computed"):
+                    total_score += 0.70
+                else:
+                    total_score += 0.85
+            confidence = round(total_score / len(all_sources), 2)
+        else:
+            total_expected = len(symbols) * len(years) * len(metrics)
+            total_found = len(all_data)
+            completeness = min(total_found / max(total_expected, 1), 1.0)
+            confidence = round(0.75 + 0.24 * completeness, 2)
 
         return {
             "found": True,
             "data": all_data,
+            "sources": all_sources,  # V9.0: 数据来源映射
             "summary": summary,
             "raw_chunks": [],
             "confidence": confidence,
