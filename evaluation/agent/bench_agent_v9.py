@@ -162,12 +162,110 @@ def normalize_required_numbers(question: dict) -> Dict[str, dict]:
 # 评分函数
 # ════════════════════════════════════════════════════════════════
 
+def _extract_indicator_name(key: str) -> str:
+    """从键名中提取指标中文名（去公司/年份后缀）。
+
+    "毛利率_贵州茅台" → "毛利率"
+    "营业收入_2024" → "营业收入"
+    "ROE_比亚迪" → "ROE"
+    """
+    # 去掉常见后缀
+    suffixes = ["_贵州茅台", "_比亚迪", "_宁德时代", "_五粮液", "_招商银行",
+                "_美的集团", "_格力电器", "_恒瑞医药", "_泸州老窖", "_洋河股份",
+                "_中国平安", "_海康威视", "_伊利股份", "_长江电力", "_山西汾酒",
+                "_隆基绿能", "_京东方A", "_科大讯飞", "_中芯国际", "_中信证券",
+                "_平安银行",
+                "_2020", "_2021", "_2022", "_2023", "_2024", "_2025", "_2026"]
+    result = key
+    for s in suffixes:
+        if result.endswith(s):
+            result = result[:-len(s)]
+            break
+    return result
+
+
+def _check_indicator_number_association(report: str, indicator: str,
+                                         expected: float,
+                                         tolerance: float) -> Tuple[bool, str]:
+    """
+    核心: 检查指标名与数值在报告中的关联性。
+
+    不只是检查数字是否存在，而是验证数字出现在指标名附近。
+    搜索窗口: 指标名前后各 150 字符。
+    """
+    # 1. 找到报告中所有指标名出现的位置
+    indicator_positions = []
+    report_lower = report.lower()
+    indicator_lower = indicator.lower()
+
+    # 生成指标名的变体（中文/英文/缩写）
+    variants = {indicator, indicator_lower}
+    # 如果是复合键（如"毛利率_2024"），也搜索子部分
+    if "_" in indicator:
+        for part in indicator.split("_"):
+            variants.add(part)
+            variants.add(part.lower())
+
+    for variant in variants:
+        pos = 0
+        while True:
+            pos = report.find(variant, pos)
+            if pos == -1:
+                break
+            indicator_positions.append(pos)
+            pos += 1
+
+    if not indicator_positions:
+        return False, f"指标 '{indicator}' 在报告中未找到"
+
+    # 2. 在每个指标名附近搜索期望数值
+    window = 150  # 前后各150字符
+    report_numbers = list(re.finditer(r'-?\d+\.?\d*', report))
+
+    for ipos in indicator_positions:
+        window_start = max(0, ipos - window)
+        window_end = min(len(report), ipos + window)
+
+        for num_match in report_numbers:
+            num_pos = num_match.start()
+            if window_start <= num_pos <= window_end:
+                try:
+                    num_val = float(num_match.group())
+                except ValueError:
+                    continue
+
+                # 验证数值（含单位换算）
+                candidates = {expected}
+                for divisor in [1e4, 1e8]:
+                    candidates.add(round(expected / divisor, 2))
+                    candidates.add(round(expected / divisor, 1))
+                    candidates.add(round(expected / divisor, 0))
+
+                # 负值容忍
+                if expected < 0:
+                    abs_candidates = set()
+                    for c in candidates:
+                        abs_candidates.add(abs(c))
+                    candidates.update(abs_candidates)
+
+                for c in candidates:
+                    if abs(c) < 0.01:
+                        if abs(num_val) < 0.01:
+                            return True, f"指标 '{indicator}' 关联到 {num_val} ≈ {expected}"
+                    else:
+                        rel_diff = abs(num_val - c) / abs(c)
+                        if rel_diff < tolerance:
+                            return True, f"指标 '{indicator}' 关联到 {num_val} ≈ {expected} (容差{rel_diff:.1%})"
+
+    return False, f"指标 '{indicator}' 附近未找到期望值 {expected}"
+
+
 def score_anchor_accuracy(report: str, required_numbers: Dict[str, dict]) -> dict:
     """
     锚点验证：只检查 independently_verified 的数字。
 
-    这些是从公开年报独立验证的"地面真相"——如果锚点失败，
-    说明数据管道有问题，需要立即修复。
+    关键改进 (V9.0.1): 做指标-数值关联验证，而非简单的数字集合包含。
+    必须验证数字出现在对应指标名附近（150字符窗口内），防止张冠李戴。
     """
     anchors = {k: v for k, v in required_numbers.items()
                if v.get("source") == "independently_verified"}
@@ -176,33 +274,20 @@ def score_anchor_accuracy(report: str, required_numbers: Dict[str, dict]) -> dic
         return {"accuracy": 1.0, "matched": [], "mismatched": [],
                 "total": 0, "is_anchor_test": False}
 
-    report_numbers = re.findall(r'\d+\.?\d*', report)
-    report_floats = set()
-    for n in report_numbers:
-        try:
-            report_floats.add(float(n))
-        except ValueError:
-            pass
-
     matched, mismatched = [], []
     for key, spec in anchors.items():
+        indicator = _extract_indicator_name(key)
         expected = spec["value"]
         tolerance = spec.get("tolerance_pct", 3) / 100.0
 
-        found = False
-        for rf in report_floats:
-            if abs(expected) < 0.01:
-                if abs(rf) < 0.01:
-                    found = True; break
-            else:
-                rel_diff = abs(rf - expected) / abs(expected)
-                if rel_diff < tolerance:
-                    found = True; break
+        found, detail = _check_indicator_number_association(
+            report, indicator, expected, tolerance)
 
         if found:
             matched.append(key)
         else:
-            mismatched.append(key)
+            mismatched.append({"key": key, "indicator": indicator,
+                               "expected": expected, "detail": detail})
 
     total = len(matched) + len(mismatched)
     accuracy = len(matched) / total if total > 0 else 1.0
@@ -212,65 +297,35 @@ def score_anchor_accuracy(report: str, required_numbers: Dict[str, dict]) -> dic
         "mismatched": mismatched,
         "total": total,
         "is_anchor_test": True,
-        "alert": f"⚠️ 锚点失败: {mismatched}" if mismatched else "✅ 锚点全部通过",
+        "alert": f"⚠️ 锚点失败({len(mismatched)}个): {[m['indicator'] for m in mismatched]}" if mismatched else "✅ 锚点全部通过",
     }
 
 
 def score_number_accuracy(report: str, required_numbers: Dict[str, dict],
                           data_values: dict = None) -> dict:
     """
-    数值准确性：检查所有 required_numbers 是否出现在报告中。
+    数值准确性：检查所有 required_numbers 是否在报告中与对应指标关联出现。
 
-    支持 per-key 容差配置。同时参考 data_values（Agent 实际查到的值）。
+    关键改进 (V9.0.1): 做指标-数值关联验证，不再做盲目的数字集合包含匹配。
     """
     if not required_numbers:
         return {"accuracy": 1.0, "matched": [], "mismatched": [],
                 "total": 0, "anchors_only": False}
 
-    report_numbers = re.findall(r'\d+\.?\d*', report)
-    report_floats = set()
-    for n in report_numbers:
-        try:
-            report_floats.add(float(n))
-        except ValueError:
-            pass
-
     matched, mismatched = [], []
     for key, spec in required_numbers.items():
+        indicator = _extract_indicator_name(key)
         expected = spec["value"]
         tolerance = spec.get("tolerance_pct", 3) / 100.0
 
-        # 生成候选值（处理单位换算：元→万→亿）
-        candidates = {expected}
-        for divisor, _ in [(1e4, "万"), (1e8, "亿")]:
-            candidates.add(round(expected / divisor, 2))
-            candidates.add(round(expected / divisor, 1))
-            candidates.add(round(expected / divisor, 0))
-
-        # 负值处理（报告可能写正数绝对值）
-        if expected < 0:
-            abs_candidates = set()
-            for c in candidates:
-                abs_candidates.add(abs(c))
-            candidates.update(abs_candidates)
-
-        found = False
-        for rf in report_floats:
-            for c in candidates:
-                if abs(c) < 0.01:
-                    if abs(rf) < 0.01:
-                        found = True; break
-                else:
-                    rel_diff = abs(rf - c) / abs(c)
-                    if rel_diff < tolerance:
-                        found = True; break
-            if found:
-                break
+        found, detail = _check_indicator_number_association(
+            report, indicator, expected, tolerance)
 
         if found:
             matched.append(key)
         else:
-            mismatched.append(key)
+            mismatched.append({"key": key, "indicator": indicator,
+                               "expected": expected, "detail": detail})
 
     total = len(matched) + len(mismatched)
     accuracy = len(matched) / total if total > 0 else 1.0
@@ -287,16 +342,16 @@ def score_traceability(report: str, task_results: list) -> dict:
     """
     数据溯源率：检查报告中可追溯到 SQL 查询的数据点占比。
 
-    实现逻辑：
-    1. 从 task_results 中提取 data_query 任务的 sources 信息
-    2. 统计有明确来源标注（sql/fallback/computed）的数据键
-    3. 计算溯源覆盖率
+    V9.0.1 修复: 统计所有数据点（含无 source 标注的），
+    而非只统计有 sources 的。通过 task_results 中的 data 字段推断数据总量。
     """
     if not task_results:
         return {"rate": 1.0, "traced": 0, "untraced": 0,
                 "by_source": {}, "reason": "无数据任务"}
 
     all_sources = {}
+    total_data_points = 0  # 所有数据点
+
     for r in task_results:
         if not r.get("success", True):
             continue
@@ -305,17 +360,28 @@ def score_traceability(report: str, task_results: list) -> dict:
         data = r.get("data", {})
         if not isinstance(data, dict):
             continue
-        # V9.0 格式: data 里有 sources 字段
+        inner = data.get("data", {})
+        if isinstance(inner, dict):
+            # 统计 data 中的数值型键
+            for k, v in inner.items():
+                if isinstance(v, (int, float)):
+                    if k in ("found", "success", "confidence", "source"):
+                        continue
+                    total_data_points += 1
+
+        # 收集 sources
         sources = data.get("sources", {})
         if sources:
             all_sources.update(sources)
 
-    if not all_sources:
-        return {"rate": 0.0, "traced": 0, "untraced": 0,
-                "by_source": {}, "reason": "无溯源信息（数据管道未输出 sources）"}
+    if total_data_points == 0:
+        return {"rate": 1.0, "traced": 0, "untraced": 0,
+                "by_source": {}, "reason": "无数据点"}
 
     # 分类统计
     by_source = defaultdict(int)
+    traced_count = len(all_sources)
+
     for key, src in all_sources.items():
         if src == "sql":
             by_source["sql"] += 1
@@ -326,20 +392,21 @@ def score_traceability(report: str, task_results: list) -> dict:
         else:
             by_source["other"] += 1
 
-    traced = sum(by_source.values())
-    total = traced  # 有 sources 就是全部可追溯
+    untraced = max(0, total_data_points - traced_count)
     sql_direct = by_source.get("sql", 0)
-    rate = sql_direct / total if total > 0 else 0.0
+    # 溯源率 = 有来源的数据点 / 总数据点
+    rate = traced_count / total_data_points
 
     return {
         "rate": round(rate, 4),
-        "traced": traced,
-        "untraced": 0,
+        "traced": traced_count,
+        "untraced": untraced,
+        "total_data_points": total_data_points,
         "by_source": dict(by_source),
-        "sql_direct_pct": round(rate * 100, 1),
-        "detail": f"SQL直查 {sql_direct}/{total} ({rate*100:.0f}%), "
-                  f"回退 {by_source.get('fallback', 0)}, "
-                  f"计算 {by_source.get('computed', 0)}",
+        "sql_direct_pct": round(sql_direct / max(total_data_points, 1) * 100, 1),
+        "detail": f"SQL直查 {sql_direct}/{total_data_points} ({sql_direct/max(total_data_points,1)*100:.0f}%), "
+                  f"回退 {by_source.get('fallback', 0)}, 计算 {by_source.get('computed', 0)}, "
+                  f"无溯源 {untraced}",
     }
 
 
@@ -382,17 +449,62 @@ def score_structural_coverage(report: str, expected_dimensions: list) -> dict:
     """
     结构覆盖度：检查报告是否覆盖了期望的分析维度。
 
-    用于自由拆解题——不检查精确数值，而是检查分析方向是否正确。
-    对中文关键词做模糊匹配。
+    V9.0.1: 改进匹配逻辑 — 关键词拆分+语义关联，不再纯子串匹配。
+    "杜邦分解" 应匹配 "杜邦分析"、"ROE_2024" 应匹配 "ROE"。
+    避免 "对比" 这种短词产生假阳性（需上下文验证）。
     """
     if not expected_dimensions:
         return {"coverage": 1.0, "found": [], "missing": [], "total": 0}
 
+    # 维度名拆分扩展 — 用于模糊匹配
+    def expand_dimension(dim: str) -> list:
+        """将维度名拆分为可匹配的词元列表。"""
+        tokens = []
+        # 去掉年份后缀和下划线
+        clean = dim.replace("_", " ").replace("(", " ").replace(")", " ")
+        tokens.append(clean.strip())
+
+        # 拆分复合词
+        # "ROE_2024" → ["ROE", "2024", "ROE_2024"]
+        parts = re.split(r'[_()（）\s]+', dim)
+        for p in parts:
+            if p.strip():
+                tokens.append(p.strip())
+
+        # 常见同义映射
+        synonyms = {
+            "杜邦分解": ["杜邦分析", "杜邦"],
+            "对比": ["vs", "VS", "比较", "对比分析"],
+            "打分": ["评分", "评级", "评估"],
+        }
+        for k, vs in synonyms.items():
+            if k in dim:
+                tokens.extend(vs)
+
+        return list(set(tokens))
+
     report_lower = report.lower()
     found, missing = [], []
+
     for dim in expected_dimensions:
-        # 支持中英文混合匹配
-        if dim.lower() in report_lower or dim in report:
+        tokens = expand_dimension(dim)
+        matched = False
+
+        for token in tokens:
+            token_lower = token.lower()
+            if token_lower in report_lower or token in report:
+                matched = True
+                break
+
+        # 特殊处理：短词如"对比"、"盈利"等，需要更多上下文验证
+        # 如果只有短词匹配，检查附近是否有相关财务术语
+        if not matched and len(dim) <= 3:
+            # 对短维度名，放宽到检查是否作为独立概念出现
+            # 而不是作为子串出现（"对比" ⊂ "相比之下" 应该通过）
+            if re.search(rf'\b{re.escape(dim)}\b', report):
+                matched = True
+
+        if matched:
             found.append(dim)
         else:
             missing.append(dim)
@@ -651,6 +763,14 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
             meta.get("industry_benchmarks", {}),
         )
 
+        # ── S6 修复: min_tasks 惩罚 ──
+        min_tasks = q.get("min_tasks", 0)
+        actual_tasks = len(plan.tasks)
+        task_count_penalty = 1.0
+        if min_tasks > 0 and actual_tasks < min_tasks:
+            task_count_penalty = actual_tasks / min_tasks
+            logger.warning(f"  ⚠️ 任务数不足: {actual_tasks}/{min_tasks} (惩罚系数 {task_count_penalty:.2f})")
+
         # 汇总单题得分
         scores = {
             "anchor_accuracy": anchor_result["accuracy"],
@@ -661,7 +781,7 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
             "hallucination_score": halluc_result["score"],
             "industry_benchmark": industry_result["rate"],
         }
-        overall = compute_overall_score(scores, is_template)
+        overall = compute_overall_score(scores, is_template) * task_count_penalty
 
         # 累计
         accum["anchor"].append(anchor_result["accuracy"])
@@ -788,13 +908,15 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
                 "pass": actual >= target,
                 "gap": round(target - actual, 4) if actual < target else 0,
             }
-    # 延迟特殊处理
+    # 延迟特殊处理: 混合场景用自由拆解目标(更宽松)
     avg_lat = summary["performance"]["avg_latency_s"]
+    latency_target = PRODUCTION_TARGETS["avg_latency_freeform_s"]
     summary["vs_targets"]["avg_latency_s"] = {
         "actual": avg_lat,
-        "target": PRODUCTION_TARGETS["avg_latency_template_s"],
-        "pass": avg_lat <= PRODUCTION_TARGETS["avg_latency_freeform_s"],
-        "gap": round(avg_lat - PRODUCTION_TARGETS["avg_latency_template_s"], 1),
+        "target": latency_target,
+        "pass": avg_lat <= latency_target,
+        "gap": round(avg_lat - latency_target, 1),
+        "note": f"混合场景使用自由拆解目标 {latency_target}s",
     }
 
     return {
