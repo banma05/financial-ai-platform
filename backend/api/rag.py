@@ -160,8 +160,16 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
         os.remove(file_path)
         raise HTTPException(status_code=400, detail="文档内容为空，无法处理")
 
-    # 6. 存入向量数据库
-    chunk_count = add_documents(chunks)
+    # 6. 存入向量数据库（安全包装：ChromaDB故障时清理文件+友好报错）
+    try:
+        chunk_count = add_documents(chunks)
+    except Exception as e:
+        os.remove(file_path)
+        logger.error(f"向量数据库写入失败（已清理文件）: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"知识库索引失败: {str(e)[:200]}。请稍后重试或联系管理员。",
+        )
 
     # 7. 写入业务数据库（文档元数据）— V8.1 D6: db 由 Depends(get_db) 注入
     try:
