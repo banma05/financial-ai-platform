@@ -431,23 +431,24 @@ class Planner:
                         t.params["chart_type"] = "auto"
             return plan
 
-        data_tasks = [t for t in tasks if t.task_type == "data_query"]
-        if not data_tasks:
+        # P2-9 根因修复: chart 依赖 calculate 任务（产生中文display_name），
+        # 不依赖 data_query（原始数据经 ParamInjector→英文键名→被 chart 过滤掉）
+        calc_tasks = [t for t in tasks if t.task_type == "calculate"]
+        if not calc_tasks:
             return plan
 
-        # 估算数据维度
-        dims = self._estimate_dimensions(data_tasks)
-        if dims >= 3:
-            data_ids = [t.task_id for t in data_tasks]
+        dims = len(calc_tasks)  # 每个calculate可能批处理多个公式，这里用任务数做下界估计
+        if dims >= 1:
+            calc_ids = [t.task_id for t in calc_tasks]
             chart_task = AnalysisTask(
                 task_id=str(len(tasks) + 1),
                 task_type="chart",
                 description="自动生成数据可视化图表",
                 params={"chart_type": "auto"},
-                depends_on=data_ids,
+                depends_on=calc_ids,
             )
             tasks.append(chart_task)
-            logger.info(f"[Planner] 智能注入图表 (维度={dims}), chart_type=auto")
+            logger.info(f"[Planner] 智能注入图表 (依赖{len(calc_ids)}个calculate任务)")
 
         return plan
 
