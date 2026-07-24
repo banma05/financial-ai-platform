@@ -276,8 +276,15 @@ class ToolRegistry:
             injector.inject(all_extracted, params)
 
             # V9.0: 路1 直注 — display_name 直接作为图表标签注入，不被 ParamInjector 丢弃
+            # P1-5 修复: 跨公司对比时多个 calculate 任务可能产生同名键（如"毛利率"），
+            # 检测到冲突时自动加 dep_id 前缀区分（如 "task3_毛利率" vs "task4_毛利率"）
             for name, val in display_results.items():
-                if name not in params:
+                if name in params:
+                    # 键名冲突 — 来自不同公司的同名指标，用依赖任务ID区分
+                    disambiguated = f"{dep_id}_{name}"
+                    params[disambiguated] = val
+                    logger.debug(f"[注入] 键名冲突: '{name}' → '{disambiguated}' (dep={dep_id})")
+                else:
                     params[name] = val
 
             # 特殊处理：dupont 公式需要 4 个参数
