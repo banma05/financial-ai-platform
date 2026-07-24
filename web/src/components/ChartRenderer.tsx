@@ -2,19 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 
 /**
- * ECharts 图表渲染组件 — V9.0 重构
+ * ECharts 图表渲染组件 — V9.0 专业版
  *
- * 改进：
- * - 移除 !option.series 守卫 → 允许展示后端错误信息图表
- * - ResizeObserver 替代 window.resize → 容器大小变化时自适应
- * - 动态高度：雷达图/多维度自动加高
- * - try/catch 渲染兜底 + 错误状态 UI
- * - 加载骨架屏
+ * 专业财务特性（后端注入的 ECharts option）:
+ * - toolbox: 保存图片 + 数据视图
+ * - dataZoom: 时间序列底部缩放滑块
+ * - 十字准线 + 精确 tooltip
+ * - 图例点击切换
+ *
+ * 前端增强:
+ * - ResizeObserver 自适应容器
+ * - 动态高度: 柱图360/雷达图500/饼图400
+ * - 加载骨架屏 + 错误兜底
  */
 export default function ChartRenderer({
   option,
   className = '',
-  height = 360,
+  height: propHeight,
 }: {
   option: Record<string, unknown> | null;
   className?: string;
@@ -23,20 +27,33 @@ export default function ChartRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
+
+  // 动态高度: 雷达图需要更多空间
+  const dynamicHeight = (() => {
+    if (propHeight) return propHeight;
+    if (!option) return 360;
+    // 雷达图: 500px (多维度需要大图)
+    const series = option.series;
+    if (Array.isArray(series) && series[0] && typeof series[0] === 'object' && (series[0] as Record<string,unknown>).type === 'radar') {
+      return 500;
+    }
+    // 饼图: 400px
+    if (Array.isArray(series) && series[0] && typeof series[0] === 'object' && (series[0] as Record<string,unknown>).type === 'pie') {
+      return 400;
+    }
+    // 默认: 360px
+    return 360;
+  })();
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // 无数据 → 保持 loading 态
     if (!option) {
-      setLoading(true);
+      setReady(false);
       setError(null);
       return;
     }
-
-    // 无 series 但有 title → 可能是错误信息图表，仍尝试渲染
-    // V9.0: 移除了旧的 !option.series 守卫
 
     // 销毁旧实例
     if (chartRef.current) {
@@ -46,12 +63,25 @@ export default function ChartRenderer({
 
     try {
       const chart = echarts.init(containerRef.current, null, { renderer: 'canvas' });
-      chart.setOption(option, true);
+
+      // 触屏设备增大 toolbox 图标
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+      chart.setOption(
+        {
+          ...(option as Record<string, unknown>),
+          toolbox: {
+            ...(option.toolbox as Record<string, unknown> || {}),
+            iconStyle: isTouchDevice ? { borderWidth: 2 } : {},
+          },
+        },
+        true,
+      );
+
       chartRef.current = chart;
-      setLoading(false);
+      setReady(true);
       setError(null);
 
-      // V9.0: ResizeObserver 替代 window.resize
       const ro = new ResizeObserver(() => chart.resize());
       ro.observe(containerRef.current);
 
@@ -61,7 +91,7 @@ export default function ChartRenderer({
         chartRef.current = null;
       };
     } catch (e) {
-      setLoading(false);
+      setReady(false);
       setError(e instanceof Error ? e.message : '图表渲染失败');
       return undefined;
     }
@@ -71,8 +101,8 @@ export default function ChartRenderer({
   if (error) {
     return (
       <div
-        className={`w-full flex items-center justify-center border border-red-200 rounded-lg bg-red-50 ${className}`}
-        style={{ height }}
+        className={`w-full flex items-center justify-center border border-red-200 rounded-xl bg-red-50/50 ${className}`}
+        style={{ height: dynamicHeight }}
       >
         <div className="text-center px-4">
           <div className="text-red-500 text-sm font-medium mb-1">图表渲染失败</div>
@@ -83,15 +113,15 @@ export default function ChartRenderer({
   }
 
   // 加载骨架屏
-  if (loading) {
+  if (!ready) {
     return (
       <div
-        className={`w-full flex items-center justify-center border border-gray-200 rounded-lg bg-gray-50 ${className}`}
-        style={{ height }}
+        className={`w-full flex items-center justify-center border border-slate-200 rounded-xl bg-gradient-to-b from-slate-50 to-white ${className}`}
+        style={{ height: dynamicHeight }}
       >
-        <div className="flex flex-col items-center gap-2">
-          <div className="w-8 h-8 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" />
-          <div className="text-gray-400 text-xs">图表加载中...</div>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" />
+          <div className="text-slate-400 text-xs font-medium">图表加载中...</div>
         </div>
       </div>
     );
@@ -101,7 +131,7 @@ export default function ChartRenderer({
     <div
       ref={containerRef}
       className={`w-full ${className}`}
-      style={{ height }}
+      style={{ height: dynamicHeight }}
     />
   );
 }

@@ -285,6 +285,35 @@ class ChartTool:
             labels = data.get("labels", [])
             values = data.get("values", [])
             description = _build_chart_description(labels, values)
+
+            # ── P2-9: 专业财务图表增强 ──
+            # 工具箱: 另存为图片 + 数据视图
+            option["toolbox"] = {
+                "show": True,
+                "right": 10, "top": 10,
+                "feature": {
+                    "saveAsImage": {"title": "保存图片", "pixelRatio": 2},
+                    "dataView": {"title": "数据视图", "readOnly": True, "lang": ["数据视图", "关闭", "刷新"]},
+                },
+            }
+            # 十字准线 + 精确 tooltip
+            option["tooltip"] = {**option.get("tooltip", {}),
+                "trigger": "axis",
+                "axisPointer": {"type": "cross", "crossStyle": {"color": "#999"}},
+                "valueFormatter": "(value) => typeof value === 'number' ? value.toLocaleString('zh-CN', {maximumFractionDigits: 2}) : value",
+            }
+            # 时间序列图表加底部缩放滑块
+            if option.get("xAxis") and isinstance(option["xAxis"], dict):
+                option["dataZoom"] = [{
+                    "type": "slider", "start": 0, "end": 100, "height": 20, "bottom": 6,
+                    "borderColor": "#e2e8f0", "fillerColor": "rgba(99,102,241,0.1)",
+                    "handleStyle": {"color": "#6366f1"},
+                }]
+            # 图例可点击切换
+            if option.get("legend") and isinstance(option["legend"], dict):
+                option["legend"]["selectedMode"] = "multiple"
+                option["legend"]["inactiveColor"] = "#cbd5e1"
+
             return {"chart_option": option, "chart_description": description}
         except Exception as e:
             logger.error(f"图表生成失败 [{config.chart_type}]: {e}")
