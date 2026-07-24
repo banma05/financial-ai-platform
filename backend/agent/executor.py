@@ -281,7 +281,8 @@ class ToolRegistry:
             for name, val in display_results.items():
                 if name in params:
                     # 键名冲突 — 来自不同公司的同名指标，用依赖任务ID区分
-                    disambiguated = f"{dep_id}_{name}"
+                    # 使用 "taskN_" 前缀与 chart._ensure_chinese_labels 的 regex ^task\d+_ 对齐
+                    disambiguated = f"task{dep_id}_{name}"
                     params[disambiguated] = val
                     logger.debug(f"[注入] 键名冲突: '{name}' → '{disambiguated}' (dep={dep_id})")
                 else:

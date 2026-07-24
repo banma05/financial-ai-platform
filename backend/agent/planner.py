@@ -526,6 +526,19 @@ class Planner:
                     v = v.replace("{company_a}", company_a).replace("{company_b}", company_b)
                     v = v.replace("{year}", year).replace("{year_range}", year_range).replace("{last_year}", last_year)
                 params[k] = v
+            # P1-5 S2修复: 估值模板的 mcp_stock_price 自动填充股票代码
+            if t["task_type"] == "mcp_stock_price" and not params.get("symbol", "").strip():
+                target_company = company_a if company_a != company_b else company
+                # 从 COMPANY_ALIASES 查找股票代码
+                from db.financial_query import COMPANY_ALIASES
+                symbol = ""
+                for alias in sorted(COMPANY_ALIASES, key=len, reverse=True):
+                    if alias in target_company or target_company in alias:
+                        symbol = COMPANY_ALIASES[alias]
+                        break
+                params["symbol"] = symbol
+                if not symbol:
+                    logger.warning(f"[模板] 估值分析无法找到 {target_company} 的股票代码")
             tasks.append(AnalysisTask(
                 task_id=t["task_id"],
                 task_type=t["task_type"],
