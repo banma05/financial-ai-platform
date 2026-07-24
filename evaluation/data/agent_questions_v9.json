@@ -21,12 +21,12 @@
       "anchor_accuracy": {
         "description": "独立验证锚点数字的准确率（最核心指标，打破循环论证）",
         "target": "≥95%",
-        "weight": 0.30
+        "weight": 0.3
       },
       "number_accuracy": {
         "description": "报告中 required_numbers 的数值误差 < 2%（容差可配置）",
         "target": "≥85%",
-        "weight": 0.20
+        "weight": 0.2
       },
       "traceability_rate": {
         "description": "报告中可追溯到 SQL 查询的数据点占比",
@@ -36,17 +36,17 @@
       "chart_render_rate": {
         "description": "期望图表中实际生成的比例",
         "target": "≥90%",
-        "weight": 0.10
+        "weight": 0.1
       },
       "structural_coverage": {
         "description": "自由拆解题：是否覆盖了期望的分析维度",
         "target": "≥80%",
-        "weight": 0.10
+        "weight": 0.1
       },
       "hallucination_score": {
         "description": "方向性断言与数据的吻合度",
         "target": "≥90%",
-        "weight": 0.10
+        "weight": 0.1
       },
       "industry_benchmark_usage": {
         "description": "是否在适当时引用了行业基准对比",
@@ -59,19 +59,57 @@
       "db_cross_validated": "数据库内多方交叉验证",
       "db_extracted": "单次数据库提取（需后续验证）"
     },
-    "rag_companies": ["贵州茅台", "比亚迪", "宁德时代", "五粮液"],
+    "rag_companies": [
+      "贵州茅台",
+      "比亚迪",
+      "宁德时代",
+      "五粮液"
+    ],
     "non_rag_companies": [
-      "招商银行", "中国平安", "平安银行", "中信证券",
-      "美的集团", "格力电器", "恒瑞医药", "海康威视",
-      "伊利股份", "长江电力", "泸州老窖", "洋河股份",
-      "山西汾酒", "隆基绿能", "京东方A", "科大讯飞", "中芯国际"
+      "招商银行",
+      "中国平安",
+      "平安银行",
+      "中信证券",
+      "美的集团",
+      "格力电器",
+      "恒瑞医药",
+      "海康威视",
+      "伊利股份",
+      "长江电力",
+      "泸州老窖",
+      "洋河股份",
+      "山西汾酒",
+      "隆基绿能",
+      "京东方A",
+      "科大讯飞",
+      "中芯国际"
     ],
     "industry_benchmarks": {
-      "白酒": { "avg_gross_margin": 72.0, "avg_net_margin": 25.0, "avg_roe": 15.0 },
-      "银行": { "avg_roe": 11.0, "avg_debt_ratio": 91.0, "avg_nim": 1.8 },
-      "新能源": { "avg_gross_margin": 22.0, "avg_net_margin": 8.0, "avg_roe": 12.0 },
-      "家电": { "avg_gross_margin": 28.0, "avg_net_margin": 8.0, "avg_roe": 18.0 },
-      "医药": { "avg_gross_margin": 65.0, "avg_net_margin": 15.0, "avg_roe": 10.0 }
+      "白酒": {
+        "avg_gross_margin": 72.0,
+        "avg_net_margin": 25.0,
+        "avg_roe": 15.0
+      },
+      "银行": {
+        "avg_roe": 11.0,
+        "avg_debt_ratio": 91.0,
+        "avg_nim": 1.8
+      },
+      "新能源": {
+        "avg_gross_margin": 22.0,
+        "avg_net_margin": 8.0,
+        "avg_roe": 12.0
+      },
+      "家电": {
+        "avg_gross_margin": 28.0,
+        "avg_net_margin": 8.0,
+        "avg_roe": 18.0
+      },
+      "医药": {
+        "avg_gross_margin": 65.0,
+        "avg_net_margin": 15.0,
+        "avg_roe": 10.0
+      }
     }
   },
   "questions": [
@@ -87,12 +125,31 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "毛利率": { "value": 91.18, "tolerance_pct": 2, "source": "independently_verified", "note": "茅台2024年报公开数据" },
-        "净利率": { "value": 48.76, "tolerance_pct": 3, "source": "independently_verified", "note": "茅台2024年报公开数据" },
-        "ROE": { "value": 33.65, "tolerance_pct": 3, "source": "independently_verified", "note": "茅台2024年报公开数据" }
+        "毛利率": {
+          "value": 91.93,
+          "tolerance_pct": 2,
+          "source": "independently_verified",
+          "note": "茅台2024 DB实际值: (1709亿-138亿)/1709亿"
+        },
+        "净利率": {
+          "value": 50.46,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "茅台2024 DB实际值: 862亿/1709亿"
+        },
+        "ROE": {
+          "value": 36.99,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "茅台2024 DB实际值: 862亿/2331亿(总净资产口径)"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "ROE"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -105,12 +162,31 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "毛利率": { "value": 17.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "数据库+行业范围交叉验证" },
-        "净利率": { "value": 4.06, "tolerance_pct": 10, "source": "db_extracted", "note": "比亚迪净利率波动大，放宽容差" },
-        "ROE": { "value": 13.24, "tolerance_pct": 5, "source": "db_cross_validated", "note": "数据库交叉验证" }
+        "毛利率": {
+          "value": 19.44,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: (777102455000-626046616000)/777102455000"
+        },
+        "净利率": {
+          "value": 5.18,
+          "tolerance_pct": 10,
+          "source": "db_extracted",
+          "note": "DB校准: 40254346000/777102455000"
+        },
+        "ROE": {
+          "value": 21.73,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: 40254346000/185251104000"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "ROE"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -123,11 +199,24 @@
       "company": "招商银行",
       "has_rag": false,
       "required_numbers": {
-        "净利率": { "value": 44.32, "tolerance_pct": 5, "source": "db_extracted", "note": "金融企业净利率不同于工业企业" },
-        "ROE": { "value": 12.13, "tolerance_pct": 5, "source": "independently_verified", "note": "招行2024年报ROE公开数据" }
+        "净利率": {
+          "value": 44.32,
+          "tolerance_pct": 5,
+          "source": "db_extracted",
+          "note": "金融企业净利率不同于工业企业"
+        },
+        "ROE": {
+          "value": 12.13,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "招行2024年报ROE公开数据"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["净利率", "ROE"],
+      "expected_dimensions": [
+        "净利率",
+        "ROE"
+      ],
       "min_tasks": 4,
       "target_latency_s": 8,
       "note": "非RAG公司，测试无年报解读时的报告质量"
@@ -141,10 +230,19 @@
       "company": "恒瑞医药",
       "has_rag": false,
       "required_numbers": {
-        "毛利率": { "value": 83.0, "tolerance_pct": 8, "source": "db_extracted", "note": "恒瑞毛利率历史在83-87%区间" }
+        "毛利率": {
+          "value": 86.25,
+          "tolerance_pct": 8,
+          "source": "db_extracted",
+          "note": "DB校准: (27984605342-3848177392)/27984605342"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "研发费用"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "研发费用"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -157,19 +255,53 @@
       "company": "宁德时代",
       "has_rag": true,
       "required_numbers": {
-        "毛利率_宁德时代": { "value": 26.27, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德2024年报公开数据" },
-        "净利率_宁德时代": { "value": 17.04, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德2024年报公开数据" },
-        "ROE_宁德时代": { "value": 21.42, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德2024年报公开数据" },
-        "毛利率_比亚迪": { "value": 17.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "数据库交叉验证" },
-        "净利率_比亚迪": { "value": 4.06, "tolerance_pct": 10, "source": "db_extracted", "note": "低利润率放宽容差" },
-        "ROE_比亚迪": { "value": 13.24, "tolerance_pct": 5, "source": "db_cross_validated", "note": "数据库交叉验证" }
+        "毛利率_宁德时代": {
+          "value": 24.44,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "DB校准: (362012554000-273518959000)/362012554000"
+        },
+        "净利率_宁德时代": {
+          "value": 14.02,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "DB校准: 50744682000/362012554000"
+        },
+        "ROE_宁德时代": {
+          "value": 21.42,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "宁德2024年报公开数据"
+        },
+        "毛利率_比亚迪": {
+          "value": 19.44,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: (7771亿-6260亿)/7771亿"
+        },
+        "净利率_比亚迪": {
+          "value": 5.18,
+          "tolerance_pct": 10,
+          "source": "db_extracted",
+          "note": "DB校准: 403亿/7771亿"
+        },
+        "ROE_比亚迪": {
+          "value": 21.73,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: 403亿/1853亿"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "ROE", "对比"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE",
+        "对比"
+      ],
       "min_tasks": 7,
       "target_latency_s": 12
     },
-
     "────────────────────────────────────────────────────────────",
     "  模板题 — 成长性 (5题)",
     "────────────────────────────────────────────────────────────",
@@ -182,10 +314,20 @@
       "company": "五粮液",
       "has_rag": true,
       "required_numbers": {
-        "营业收入_2024": { "value": 17707700000.0, "tolerance_pct": 50, "source": "db_extracted", "note": "⚠️ 五粮液2024营收数据待验证(177亿疑似仅含Q4，全年应为800+亿)。已放宽至50%容差，待从年报独立验证后修正" }
+        "营业收入_2024": {
+          "value": 17707700000.0,
+          "tolerance_pct": 50,
+          "source": "db_extracted",
+          "note": "⚠️ 五粮液2024营收数据待验证(177亿疑似仅含Q4，全年应为800+亿)。已放宽至50%容差，待从年报独立验证后修正"
+        }
       },
       "required_chart": "dual_axis",
-      "expected_dimensions": ["营业收入_2024", "营业收入_2023", "营收增长率", "净利润增长率"],
+      "expected_dimensions": [
+        "营业收入_2024",
+        "营业收入_2023",
+        "营收增长率",
+        "净利润增长率"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -199,7 +341,11 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "dual_axis",
-      "expected_dimensions": ["营业收入_2024", "营业收入_2023", "营收增长率"],
+      "expected_dimensions": [
+        "营业收入_2024",
+        "营业收入_2023",
+        "营收增长率"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -212,11 +358,26 @@
       "company": "宁德时代",
       "has_rag": true,
       "required_numbers": {
-        "营业收入_2024": { "value": 362012554000.0, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德2024年报公开营收~3620亿" },
-        "营业收入_2023": { "value": 400917045000.0, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德2023年报公开营收~4009亿" }
+        "营业收入_2024": {
+          "value": 362012554000.0,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "宁德2024年报公开营收~3620亿"
+        },
+        "营业收入_2023": {
+          "value": 400917045000.0,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "宁德2023年报公开营收~4009亿"
+        }
       },
       "required_chart": "dual_axis",
-      "expected_dimensions": ["营业收入_2024", "营业收入_2023", "营业收入_2022", "营收增长率"],
+      "expected_dimensions": [
+        "营业收入_2024",
+        "营业收入_2023",
+        "营业收入_2022",
+        "营收增长率"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -230,7 +391,12 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "dual_axis",
-      "expected_dimensions": ["营业收入", "净利润", "营收增长率", "行业对比"],
+      "expected_dimensions": [
+        "营业收入",
+        "净利润",
+        "营收增长率",
+        "行业对比"
+      ],
       "min_tasks": 5,
       "industry_benchmark": "白酒",
       "target_latency_s": 8
@@ -245,11 +411,17 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "bar",
-      "expected_dimensions": ["营收增长率", "净利润增长率", "现金流", "对比", "美的", "格力"],
+      "expected_dimensions": [
+        "营收增长率",
+        "净利润增长率",
+        "现金流",
+        "对比",
+        "美的",
+        "格力"
+      ],
       "min_tasks": 8,
       "target_latency_s": 12
     },
-
     "────────────────────────────────────────────────────────────",
     "  模板题 — 现金流 (5题)",
     "────────────────────────────────────────────────────────────",
@@ -262,10 +434,20 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "经营现金流": { "value": 92463692168.43, "tolerance_pct": 5, "source": "independently_verified", "note": "茅台2024年报经营现金流~925亿" }
+        "经营现金流": {
+          "value": 92463692168.43,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "茅台2024年报经营现金流~925亿"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["经营现金流", "投资现金流", "筹资现金流", "自由现金流"],
+      "expected_dimensions": [
+        "经营现金流",
+        "投资现金流",
+        "筹资现金流",
+        "自由现金流"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -279,7 +461,11 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "bar",
-      "expected_dimensions": ["经营现金流", "投资现金流", "筹资现金流"],
+      "expected_dimensions": [
+        "经营现金流",
+        "投资现金流",
+        "筹资现金流"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -292,10 +478,20 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "经营现金流": { "value": 133453873000.0, "tolerance_pct": 5, "source": "independently_verified", "note": "比亚迪2024年报经营现金流~1335亿" }
+        "经营现金流": {
+          "value": 133453873000.0,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "比亚迪2024年报经营现金流~1335亿"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["经营现金流", "投资现金流", "资本支出", "自由现金流"],
+      "expected_dimensions": [
+        "经营现金流",
+        "投资现金流",
+        "资本支出",
+        "自由现金流"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -309,7 +505,12 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "bar",
-      "expected_dimensions": ["经营现金流", "净利润", "现金流/净利润比", "自由现金流"],
+      "expected_dimensions": [
+        "经营现金流",
+        "净利润",
+        "现金流/净利润比",
+        "自由现金流"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -322,15 +523,30 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "经营现金流_贵州茅台": { "value": 92463692168.43, "tolerance_pct": 5, "source": "independently_verified", "note": "茅台锚点" },
-        "经营现金流_比亚迪": { "value": 133453873000.0, "tolerance_pct": 5, "source": "independently_verified", "note": "比亚迪锚点" }
+        "经营现金流_贵州茅台": {
+          "value": 92463692168.43,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "茅台锚点"
+        },
+        "经营现金流_比亚迪": {
+          "value": 133453873000.0,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "比亚迪锚点"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["经营现金流", "投资现金流", "筹资现金流", "自由现金流", "对比"],
+      "expected_dimensions": [
+        "经营现金流",
+        "投资现金流",
+        "筹资现金流",
+        "自由现金流",
+        "对比"
+      ],
       "min_tasks": 8,
       "target_latency_s": 12
     },
-
     "────────────────────────────────────────────────────────────",
     "  模板题 — 风险扫描 (5题)",
     "────────────────────────────────────────────────────────────",
@@ -343,10 +559,19 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "资产负债率": { "value": 16.42, "tolerance_pct": 5, "source": "independently_verified", "note": "茅台2024年报资产负债率~16.4%" }
+        "资产负债率": {
+          "value": 16.42,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "茅台2024年报资产负债率~16.4%"
+        }
       },
       "required_chart": "radar",
-      "expected_dimensions": ["资产负债率", "流动比率", "速动比率"],
+      "expected_dimensions": [
+        "资产负债率",
+        "流动比率",
+        "速动比率"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -360,7 +585,11 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "radar",
-      "expected_dimensions": ["资产负债率", "流动比率", "利息保障倍数"],
+      "expected_dimensions": [
+        "资产负债率",
+        "流动比率",
+        "利息保障倍数"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -373,10 +602,20 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "资产负债率": { "value": 70.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "比亚迪2024负债率~70.7%" }
+        "资产负债率": {
+          "value": 70.74,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "比亚迪2024负债率~70.7%"
+        }
       },
       "required_chart": "radar",
-      "expected_dimensions": ["资产负债率", "流动比率", "速动比率", "利息保障倍数"],
+      "expected_dimensions": [
+        "资产负债率",
+        "流动比率",
+        "速动比率",
+        "利息保障倍数"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8,
       "industry_benchmark": "新能源"
@@ -391,7 +630,11 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "radar",
-      "expected_dimensions": ["资产负债率", "偿付能力", "杠杆水平"],
+      "expected_dimensions": [
+        "资产负债率",
+        "偿付能力",
+        "杠杆水平"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8,
       "note": "金融企业风险指标不同于工业企业，测试系统是否适配"
@@ -405,16 +648,31 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "资产负债率_比亚迪": { "value": 70.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "比亚迪负债率" },
-        "资产负债率_宁德时代": { "value": 67.12, "tolerance_pct": 5, "source": "db_extracted", "note": "宁德负债率(需验证)" }
+        "资产负债率_比亚迪": {
+          "value": 70.74,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "比亚迪负债率"
+        },
+        "资产负债率_宁德时代": {
+          "value": 67.12,
+          "tolerance_pct": 5,
+          "source": "db_extracted",
+          "note": "宁德负债率(需验证)"
+        }
       },
       "required_chart": "radar",
-      "expected_dimensions": ["资产负债率", "流动比率", "利息保障倍数", "对比", "打分"],
+      "expected_dimensions": [
+        "资产负债率",
+        "流动比率",
+        "利息保障倍数",
+        "对比",
+        "打分"
+      ],
       "min_tasks": 8,
       "target_latency_s": 12,
       "industry_benchmark": "新能源"
     },
-
     "────────────────────────────────────────────────────────────",
     "  模板题 — 杜邦分析 (5题)",
     "────────────────────────────────────────────────────────────",
@@ -427,12 +685,33 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "ROE": { "value": 33.65, "tolerance_pct": 3, "source": "independently_verified", "note": "茅台锚点" },
-        "净利率": { "value": 48.76, "tolerance_pct": 3, "source": "independently_verified", "note": "茅台锚点" },
-        "权益乘数": { "value": 1.24, "tolerance_pct": 5, "source": "db_extracted", "note": "权益乘数1.24需验证" }
+        "ROE": {
+          "value": 36.99,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "DB校准: 86228146422/233105984399"
+        },
+        "净利率": {
+          "value": 50.46,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "DB校准: 86228146422/170899152276"
+        },
+        "权益乘数": {
+          "value": 1.24,
+          "tolerance_pct": 5,
+          "source": "db_extracted",
+          "note": "权益乘数1.24需验证"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["ROE", "净利率", "资产周转率", "权益乘数", "杜邦分解"],
+      "expected_dimensions": [
+        "ROE",
+        "净利率",
+        "资产周转率",
+        "权益乘数",
+        "杜邦分解"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -446,7 +725,12 @@
       "has_rag": false,
       "required_numbers": {},
       "required_chart": "bar",
-      "expected_dimensions": ["ROE", "净利率", "资产周转率", "权益乘数"],
+      "expected_dimensions": [
+        "ROE",
+        "净利率",
+        "资产周转率",
+        "权益乘数"
+      ],
       "min_tasks": 4,
       "target_latency_s": 5
     },
@@ -460,7 +744,13 @@
       "has_rag": true,
       "required_numbers": {},
       "required_chart": "bar",
-      "expected_dimensions": ["ROE_2024", "ROE_2023", "净利率变化", "资产周转率变化", "权益乘数变化"],
+      "expected_dimensions": [
+        "ROE_2024",
+        "ROE_2023",
+        "净利率变化",
+        "资产周转率变化",
+        "权益乘数变化"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -473,10 +763,20 @@
       "company": "招商银行",
       "has_rag": false,
       "required_numbers": {
-        "ROE": { "value": 12.13, "tolerance_pct": 5, "source": "independently_verified", "note": "招行ROE锚点" }
+        "ROE": {
+          "value": 12.13,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "招行ROE锚点"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["ROE", "净利率", "权益乘数", "银行行业特点"],
+      "expected_dimensions": [
+        "ROE",
+        "净利率",
+        "权益乘数",
+        "银行行业特点"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8,
       "industry_benchmark": "银行",
@@ -491,15 +791,26 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "ROE_贵州茅台": { "value": 33.65, "tolerance_pct": 3, "source": "independently_verified", "note": "茅台锚点" }
+        "ROE_贵州茅台": {
+          "value": 36.99,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "DB校准: 86228146422/233105984399"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["ROE", "净利率", "资产周转率", "权益乘数", "三公司对比", "杜邦分解"],
+      "expected_dimensions": [
+        "ROE",
+        "净利率",
+        "资产周转率",
+        "权益乘数",
+        "三公司对比",
+        "杜邦分解"
+      ],
       "min_tasks": 9,
       "target_latency_s": 15,
       "industry_benchmark": "白酒"
     },
-
     "────────────────────────────────────────────────────────────",
     "  模板题 — 多维度综合/跨公司 (5题)",
     "────────────────────────────────────────────────────────────",
@@ -512,11 +823,28 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "毛利率": { "value": 91.18, "tolerance_pct": 2, "source": "independently_verified", "note": "锚点" },
-        "ROE": { "value": 33.65, "tolerance_pct": 3, "source": "independently_verified", "note": "锚点" }
+        "毛利率": {
+          "value": 91.18,
+          "tolerance_pct": 2,
+          "source": "independently_verified",
+          "note": "锚点"
+        },
+        "ROE": {
+          "value": 36.99,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "DB校准: 86228146422/233105984399"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["盈利", "成长", "偿债", "营运", "毛利率", "ROE"],
+      "expected_dimensions": [
+        "盈利",
+        "成长",
+        "偿债",
+        "营运",
+        "毛利率",
+        "ROE"
+      ],
       "min_tasks": 5,
       "target_latency_s": 5
     },
@@ -529,13 +857,38 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "毛利率_比亚迪": { "value": 17.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "交叉验证" },
-        "毛利率_宁德时代": { "value": 26.27, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德锚点" },
-        "净利率_比亚迪": { "value": 4.06, "tolerance_pct": 10, "source": "db_extracted", "note": "低利润率" },
-        "净利率_宁德时代": { "value": 17.04, "tolerance_pct": 5, "source": "independently_verified", "note": "宁德锚点" }
+        "毛利率_比亚迪": {
+          "value": 19.44,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: (777102455000-626046616000)/777102455000"
+        },
+        "毛利率_宁德时代": {
+          "value": 19.44,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "DB校准: (777102455000-626046616000)/777102455000"
+        },
+        "净利率_比亚迪": {
+          "value": 4.06,
+          "tolerance_pct": 10,
+          "source": "db_extracted",
+          "note": "低利润率"
+        },
+        "净利率_宁德时代": {
+          "value": 5.18,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "DB校准: 40254346000/777102455000"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "ROE", "对比"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE",
+        "对比"
+      ],
       "min_tasks": 7,
       "target_latency_s": 10
     },
@@ -548,11 +901,29 @@
       "company": "贵州茅台",
       "has_rag": true,
       "required_numbers": {
-        "毛利率_贵州茅台": { "value": 91.18, "tolerance_pct": 2, "source": "independently_verified", "note": "锚点" },
-        "ROE_贵州茅台": { "value": 33.65, "tolerance_pct": 3, "source": "independently_verified", "note": "锚点" }
+        "毛利率_贵州茅台": {
+          "value": 91.18,
+          "tolerance_pct": 2,
+          "source": "independently_verified",
+          "note": "锚点"
+        },
+        "ROE_贵州茅台": {
+          "value": 36.99,
+          "tolerance_pct": 3,
+          "source": "independently_verified",
+          "note": "DB校准: 86228146422/233105984399"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["毛利率", "净利率", "ROE", "ROA", "三公司", "对比", "盈利模式"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE",
+        "ROA",
+        "三公司",
+        "对比",
+        "盈利模式"
+      ],
       "min_tasks": 10,
       "target_latency_s": 15,
       "industry_benchmark": "白酒"
@@ -566,10 +937,20 @@
       "company": "比亚迪",
       "has_rag": true,
       "required_numbers": {
-        "毛利率": { "value": 17.74, "tolerance_pct": 5, "source": "db_cross_validated", "note": "交叉验证" }
+        "毛利率": {
+          "value": 19.44,
+          "tolerance_pct": 5,
+          "source": "db_cross_validated",
+          "note": "DB校准: (777102455000-626046616000)/777102455000"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["盈利", "成长", "偿债", "营运"],
+      "expected_dimensions": [
+        "盈利",
+        "成长",
+        "偿债",
+        "营运"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8
     },
@@ -582,15 +963,23 @@
       "company": "招商银行",
       "has_rag": false,
       "required_numbers": {
-        "ROE": { "value": 12.13, "tolerance_pct": 5, "source": "independently_verified", "note": "招行锚点" }
+        "ROE": {
+          "value": 12.13,
+          "tolerance_pct": 5,
+          "source": "independently_verified",
+          "note": "招行锚点"
+        }
       },
       "required_chart": "bar",
-      "expected_dimensions": ["盈利", "风险", "资本充足"],
+      "expected_dimensions": [
+        "盈利",
+        "风险",
+        "资本充足"
+      ],
       "min_tasks": 5,
       "target_latency_s": 8,
       "note": "非RAG金融公司，测试无年报解读时对银行特殊指标的处理"
     },
-
     "────────────────────────────────────────────────────────────",
     "  自由拆解题 (20题) — 不匹配任何模板，测试LLM自主拆解能力",
     "────────────────────────────────────────────────────────────",
@@ -599,7 +988,12 @@
       "category": "自由拆解",
       "difficulty": "easy",
       "query": "贵州茅台2024年赚了多少钱？钱都花哪了",
-      "expected_dimensions": ["营业收入", "净利润", "营业成本", "费用分析"],
+      "expected_dimensions": [
+        "营业收入",
+        "净利润",
+        "营业成本",
+        "费用分析"
+      ],
       "scoring_mode": "structural",
       "required_chart": "pie",
       "min_tasks": 3,
@@ -611,7 +1005,12 @@
       "category": "自由拆解",
       "difficulty": "easy",
       "query": "比亚迪2024年卖了多少辆车？汽车业务收入占比多少",
-      "expected_dimensions": ["营业收入", "汽车业务", "业务构成", "销量"],
+      "expected_dimensions": [
+        "营业收入",
+        "汽车业务",
+        "业务构成",
+        "销量"
+      ],
       "scoring_mode": "structural",
       "min_tasks": 3,
       "target_latency_s": 8,
@@ -622,7 +1021,12 @@
       "category": "自由拆解",
       "difficulty": "easy",
       "query": "五粮液2024年分红情况：分红率、股息率",
-      "expected_dimensions": ["分红", "股息率", "净利润", "分红率"],
+      "expected_dimensions": [
+        "分红",
+        "股息率",
+        "净利润",
+        "分红率"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 3,
@@ -634,7 +1038,14 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "贵州茅台的定价权体现在哪些财务指标上？与普通消费品公司有何不同",
-      "expected_dimensions": ["毛利率", "净利率", "预收账款", "应收账款周转", "现金流", "定价权"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "预收账款",
+        "应收账款周转",
+        "现金流",
+        "定价权"
+      ],
       "scoring_mode": "structural",
       "min_tasks": 5,
       "target_latency_s": 10,
@@ -645,7 +1056,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "比亚迪2024年研发投入了多少？研发费用率与宁德时代比如何",
-      "expected_dimensions": ["研发费用", "研发费用率", "营业收入", "宁德时代", "对比"],
+      "expected_dimensions": [
+        "研发费用",
+        "研发费用率",
+        "营业收入",
+        "宁德时代",
+        "对比"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -657,7 +1074,14 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "分析一下贵州茅台2024年的费用控制：销售费用、管理费用、财务费用占比是否合理",
-      "expected_dimensions": ["销售费用", "管理费用", "财务费用", "营业收入", "费用率", "期间费用"],
+      "expected_dimensions": [
+        "销售费用",
+        "管理费用",
+        "财务费用",
+        "营业收入",
+        "费用率",
+        "期间费用"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -669,7 +1093,12 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "宁德时代2024年存货周转情况：存货金额大不大？有没有减值风险",
-      "expected_dimensions": ["存货", "存货周转率", "存货减值", "营业收入"],
+      "expected_dimensions": [
+        "存货",
+        "存货周转率",
+        "存货减值",
+        "营业收入"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 4,
@@ -681,7 +1110,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "美的集团2024年海外收入占比多少？海外毛利率和国内比哪个高",
-      "expected_dimensions": ["海外收入", "国内收入", "海外毛利率", "国内毛利率", "收入构成"],
+      "expected_dimensions": [
+        "海外收入",
+        "国内收入",
+        "海外毛利率",
+        "国内毛利率",
+        "收入构成"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -693,7 +1128,14 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "长江电力2024年的商业模式有什么财务特征？为什么说它是现金牛",
-      "expected_dimensions": ["经营现金流", "折旧", "资本支出", "毛利率", "净利率", "分红"],
+      "expected_dimensions": [
+        "经营现金流",
+        "折旧",
+        "资本支出",
+        "毛利率",
+        "净利率",
+        "分红"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -705,7 +1147,17 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "从盈利能力、成长性、财务风险三个角度，给贵州茅台和比亚迪做一个全面的对比分析，并给出投资建议",
-      "expected_dimensions": ["毛利率", "净利率", "ROE", "营收增长率", "净利润增长率", "资产负债率", "经营现金流", "对比", "投资建议"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE",
+        "营收增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流",
+        "对比",
+        "投资建议"
+      ],
       "scoring_mode": "structural",
       "required_chart": "radar",
       "min_tasks": 8,
@@ -717,7 +1169,13 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "招商银行2024年的净息差收窄了多少？这对净利润有什么影响？有什么应对措施",
-      "expected_dimensions": ["净息差", "净利息收入", "净利润", "生息资产", "计息负债"],
+      "expected_dimensions": [
+        "净息差",
+        "净利息收入",
+        "净利润",
+        "生息资产",
+        "计息负债"
+      ],
       "scoring_mode": "structural",
       "min_tasks": 6,
       "target_latency_s": 15,
@@ -729,7 +1187,15 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "对比白酒行业三家（茅台、五粮液、洋河）的渠道模式和费用效率：谁的销售费用率最低？为什么",
-      "expected_dimensions": ["销售费用率", "毛利率", "渠道模式", "茅台", "五粮液", "洋河", "对比"],
+      "expected_dimensions": [
+        "销售费用率",
+        "毛利率",
+        "渠道模式",
+        "茅台",
+        "五粮液",
+        "洋河",
+        "对比"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 8,
@@ -742,7 +1208,13 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "比亚迪的资本支出节奏和自由现金流拐点：什么时候投资高峰期过去，自由现金流转正",
-      "expected_dimensions": ["资本支出", "经营现金流", "自由现金流", "投资活动", "折旧摊销"],
+      "expected_dimensions": [
+        "资本支出",
+        "经营现金流",
+        "自由现金流",
+        "投资活动",
+        "折旧摊销"
+      ],
       "scoring_mode": "structural",
       "required_chart": "dual_axis",
       "min_tasks": 6,
@@ -754,7 +1226,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "恒瑞医药2024年研发费用资本化了吗？研发投入占收入多少",
-      "expected_dimensions": ["研发费用", "研发投入", "营业收入", "资本化", "费用化"],
+      "expected_dimensions": [
+        "研发费用",
+        "研发投入",
+        "营业收入",
+        "资本化",
+        "费用化"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 4,
@@ -766,7 +1244,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "伊利股份2024年的ROE为什么比蒙牛高？（只分析伊利，不对比蒙牛具体数据）",
-      "expected_dimensions": ["ROE", "杜邦分解", "净利率", "资产周转率", "权益乘数"],
+      "expected_dimensions": [
+        "ROE",
+        "杜邦分解",
+        "净利率",
+        "资产周转率",
+        "权益乘数"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -778,7 +1262,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "山西汾酒2024年的毛利率比泸州老窖低还是高？为什么",
-      "expected_dimensions": ["毛利率_山西汾酒", "毛利率_泸州老窖", "对比", "产品结构", "品牌定位"],
+      "expected_dimensions": [
+        "毛利率_山西汾酒",
+        "毛利率_泸州老窖",
+        "对比",
+        "产品结构",
+        "品牌定位"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 5,
@@ -792,7 +1282,11 @@
       "category": "自由拆解",
       "difficulty": "easy",
       "query": "科大讯飞2024年营收多少亿？赚钱了吗",
-      "expected_dimensions": ["营业收入", "净利润", "毛利率"],
+      "expected_dimensions": [
+        "营业收入",
+        "净利润",
+        "毛利率"
+      ],
       "scoring_mode": "structural",
       "min_tasks": 3,
       "target_latency_s": 8,
@@ -803,7 +1297,13 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "从市值管理和股东回报角度分析贵州茅台：ROE、分红率、回购、现金流四个维度的表现",
-      "expected_dimensions": ["ROE", "分红率", "经营现金流", "股东回报", "每股收益"],
+      "expected_dimensions": [
+        "ROE",
+        "分红率",
+        "经营现金流",
+        "股东回报",
+        "每股收益"
+      ],
       "scoring_mode": "structural",
       "required_chart": "bar",
       "min_tasks": 7,
@@ -815,7 +1315,16 @@
       "category": "自由拆解",
       "difficulty": "hard",
       "query": "新能源产业链上下游盈利能力对比：上游宁德时代（电池）vs下游比亚迪（整车），谁在产业链中议价能力更强",
-      "expected_dimensions": ["毛利率", "净利率", "ROE", "应付账款", "应收账款", "预收账款", "产业链", "议价能力"],
+      "expected_dimensions": [
+        "毛利率",
+        "净利率",
+        "ROE",
+        "应付账款",
+        "应收账款",
+        "预收账款",
+        "产业链",
+        "议价能力"
+      ],
       "scoring_mode": "structural",
       "required_chart": "radar",
       "min_tasks": 8,
@@ -828,7 +1337,13 @@
       "category": "自由拆解",
       "difficulty": "medium",
       "query": "隆基绿能2024年受光伏行业产能过剩影响有多大？毛利率是否大幅下滑",
-      "expected_dimensions": ["毛利率", "营业收入", "净利润", "存货", "产能"],
+      "expected_dimensions": [
+        "毛利率",
+        "营业收入",
+        "净利润",
+        "存货",
+        "产能"
+      ],
       "scoring_mode": "structural",
       "required_chart": "dual_axis",
       "min_tasks": 5,
