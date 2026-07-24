@@ -112,9 +112,10 @@ class Reporter:
         if chart_count > 0:
             sections.append(self._build_chart_interpretation(data_values, calc_results, chart_count))
 
-        # 五、风险评估（纯规则，阈值判断）
+        # 五、风险评估（纯规则，行业感知阈值判断）
         if self._has_risk_data(calc_results):
-            sections.append(self._build_risk_assessment(calc_results))
+            industry = self._detect_industry(user_input)
+            sections.append(self._build_risk_assessment(calc_results, industry))
 
         # 六、结论与建议（LLM，带数值校验 + RAG 解读引用）
         insights = self._generate_insights(user_input, data_values, calc_results, rag_insights)
@@ -225,13 +226,65 @@ class Reporter:
         lines.append(f"\n> 📊 共 {chart_count} 张图表，请在报告下方查看交互式可视化。")
         return "\n".join(lines)
 
-    def _build_risk_assessment(self, calc_results: List[dict]) -> str:
-        """V8.4: 风险评估 — 纯规则阈值判断，零 LLM"""
+    @staticmethod
+    def _detect_industry(user_input: str) -> str:
+        """从用户输入中检测公司所属行业，用于选择行业阈值。"""
+        industry_map = {
+            "银行": ["招商银行", "平安银行", "银行"],
+            "保险": ["中国平安", "保险"],
+            "证券": ["中信证券", "证券"],
+            "白酒": ["茅台", "五粮液", "泸州老窖", "洋河", "汾酒", "白酒", "酒"],
+            "新能源": ["比亚迪", "宁德时代", "隆基", "新能源", "电池"],
+            "家电": ["美的", "格力", "家电"],
+            "医药": ["恒瑞", "医药", "药"],
+            "电力": ["长江电力", "电力"],
+            "半导体": ["中芯国际", "海康", "科大讯飞", "京东方", "半导体", "芯片"],
+            "消费": ["伊利", "消费", "食品"],
+        }
+        for industry, keywords in industry_map.items():
+            for kw in keywords:
+                if kw in user_input:
+                    return industry
+        return ""
+
+    # ── V9.0 P1-6: 行业感知阈值表 ──
+    # 不同行业的财务结构差异巨大，一刀切的阈值会导致误判
+    INDUSTRY_THRESHOLDS = {
+        "银行": {"debt_high": 93, "debt_mid": 90, "current_low": 0.5, "current_mid": 0.8},
+        "保险": {"debt_high": 90, "debt_mid": 85, "current_low": 0.5, "current_mid": 0.8},
+        "证券": {"debt_high": 85, "debt_mid": 75, "current_low": 1.0, "current_mid": 1.5},
+        "白酒": {"debt_high": 50, "debt_mid": 35, "current_low": 1.5, "current_mid": 2.5},
+        "新能源": {"debt_high": 75, "debt_mid": 60, "current_low": 0.8, "current_mid": 1.2},
+        "家电": {"debt_high": 70, "debt_mid": 55, "current_low": 1.0, "current_mid": 1.5},
+        "医药": {"debt_high": 55, "debt_mid": 40, "current_low": 1.2, "current_mid": 2.0},
+        "电力": {"debt_high": 75, "debt_mid": 60, "current_low": 0.5, "current_mid": 0.8},
+        "半导体": {"debt_high": 55, "debt_mid": 40, "current_low": 1.5, "current_mid": 2.5},
+        "消费": {"debt_high": 60, "debt_mid": 45, "current_low": 1.0, "current_mid": 1.5},
+    }
+    # 通用阈值（无法判断行业时使用）
+    GENERIC_THRESHOLDS = {"debt_high": 70, "debt_mid": 60,
+                          "current_low": 1.0, "current_mid": 2.0,
+                          "quick_low": 0.5, "quick_mid": 1.0}
+
+    def _build_risk_assessment(self, calc_results: List[dict], company_industry: str = "") -> str:
+        """V9.0: 行业感知风险评估 — 根据行业调整阈值，零 LLM"""
         lines = ["## 五、风险评估", ""]
+
+        # 选择行业阈值
+        thresholds = self.GENERIC_THRESHOLDS
+        for industry_key, t in self.INDUSTRY_THRESHOLDS.items():
+            if industry_key in (company_industry or ""):
+                thresholds = t
+                lines.append(f"> 📌 使用 **{industry_key}** 行业基准阈值")
+                break
+        if thresholds is self.GENERIC_THRESHOLDS:
+            lines.append(f"> 📌 使用通用基准阈值（未识别行业）")
+        lines.append("")
+
         risks = []
         all_items = []
 
-        # 收集所有指标值（V8.4: 杜邦分析已在 financial_calc 展开为标量，此处正常收集即可）
+        # 收集所有指标值
         for cr in calc_results:
             if cr.get("is_batch") and cr.get("results"):
                 for item in cr["results"]:
@@ -242,33 +295,36 @@ class Reporter:
         for item in all_items:
             name = item.get("display_name", "")
             val = item.get("result")
-            if val is None:
-                continue
-            # 跳过非数值结果（如杜邦分析返回的 dict）
-            if not isinstance(val, (int, float)):
+            if val is None or not isinstance(val, (int, float)):
                 continue
 
             if "资产负债率" in name:
-                if val > 70:
-                    risks.append(f"🔴 **{name} {val}%** — 高杠杆 (>70%)，需关注偿债压力")
-                elif val > 60:
-                    risks.append(f"🟡 **{name} {val}%** — 中等杠杆 (60-70%)")
+                debt_high = thresholds.get("debt_high", 70)
+                debt_mid = thresholds.get("debt_mid", 60)
+                if val > debt_high:
+                    risks.append(f"🔴 **{name} {val}%** — 高杠杆 (>{debt_high}%)，需关注偿债压力")
+                elif val > debt_mid:
+                    risks.append(f"🟡 **{name} {val}%** — 中等杠杆 ({debt_mid}-{debt_high}%)")
                 else:
-                    risks.append(f"🟢 **{name} {val}%** — 低杠杆 (<60%)，财务保守")
+                    risks.append(f"🟢 **{name} {val}%** — 低杠杆 (<{debt_mid}%)，财务保守")
 
             elif "流动比率" in name:
-                if val < 1.0:
-                    risks.append(f"🔴 **{name} {val}倍** — 短期偿债压力大 (<1.0)")
-                elif val < 2.0:
-                    risks.append(f"🟡 **{name} {val}倍** — 正常范围 (1.0-2.0)")
+                current_low = thresholds.get("current_low", 1.0)
+                current_mid = thresholds.get("current_mid", 2.0)
+                if val < current_low:
+                    risks.append(f"🔴 **{name} {val}倍** — 短期偿债压力大 (<{current_low})")
+                elif val < current_mid:
+                    risks.append(f"🟡 **{name} {val}倍** — 正常范围 ({current_low}-{current_mid})")
                 else:
-                    risks.append(f"🟢 **{name} {val}倍** — 流动性充裕 (>2.0)")
+                    risks.append(f"🟢 **{name} {val}倍** — 流动性充裕 (>{current_mid})")
 
             elif "速动比率" in name:
-                if val < 0.5:
-                    risks.append(f"🔴 **{name} {val}倍** — 严重流动性风险 (<0.5)")
-                elif val < 1.0:
-                    risks.append(f"🟡 **{name} {val}倍** — 流动性偏紧 (0.5-1.0)")
+                quick_low = thresholds.get("quick_low", 0.5)
+                quick_mid = thresholds.get("quick_mid", 1.0)
+                if val < quick_low:
+                    risks.append(f"🔴 **{name} {val}倍** — 严重流动性风险 (<{quick_low})")
+                elif val < quick_mid:
+                    risks.append(f"🟡 **{name} {val}倍** — 流动性偏紧 ({quick_low}-{quick_mid})")
 
             elif "现金流" in name and "净利润" in name:
                 if val < 50:
@@ -279,12 +335,10 @@ class Reporter:
                     risks.append(f"🟢 **{name} {val}%** — 利润质量优秀 (>100%)")
 
         if not risks:
-            lines.append("> 基于当前数据，未发现明显财务风险。")
+            lines.append("> 基于当前数据和行业阈值，未发现明显财务风险。")
         else:
             for r in risks:
                 lines.append(f"- {r}")
-
-            # 判断综合风险等级
             red_count = sum(1 for r in risks if "🔴" in r)
             if red_count >= 2:
                 lines.append(f"\n**综合风险等级：🔴 高风险** — 存在 {red_count} 项高危指标，建议重点关注。")
