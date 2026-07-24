@@ -353,18 +353,38 @@ class ChartTool:
 
     @staticmethod
     def _ensure_chinese_labels(data: dict):
-        """V8.4: 确保图表标签为中文（剥离年份后缀 + 去重），同步去重 values"""
+        """V8.4: 确保图表标签为中文（剥离年份后缀+task前缀 + 去重），同步去重 values。
+
+        P1-5: 跨公司对比时会产生 "task3_毛利率" / "task4_毛利率" 格式的标签，
+        剥离 taskX_ 前缀后转换为 "毛利率(公司A)" / "毛利率(公司B)"。
+        """
         import re
         labels = data.get("labels", [])
         values = data.get("values", [])
         if not labels:
             return
-        # 剥离年份后缀 + 去重保持顺序，同时同步 values
+
+        # P1-5: 检测是否有跨公司标签（taskN_ 前缀）
+        has_multi_company = any(re.match(r'^task\d+_', str(l)) for l in labels)
+        company_labels = {}  # task_id → 公司字母映射
+
         seen = set()
         clean_labels = []
         clean_values = []
         for i, l in enumerate(labels):
-            base = re.sub(r'_\d{4}$', '', str(l))
+            base = str(l)
+            # P1-5: 剥离 task_id 前缀
+            task_match = re.match(r'^(task\d+)_(.*)', base)
+            if task_match:
+                tid, metric = task_match.group(1), task_match.group(2)
+                if tid not in company_labels:
+                    # 用 A/B/C 命名公司
+                    company_labels[tid] = chr(65 + len(company_labels))  # A, B, C...
+                company = company_labels[tid]
+                base = metric  # 取指标名部分
+
+            # 剥离年份后缀
+            base = re.sub(r'_\d{4}$', '', base)
             # 英→中映射兜底
             base = ChartTool._CN_LABEL_FALLBACK.get(base, base)
             # 清理英文缩写：ROE（净资产收益率）→ 净资产收益率
@@ -374,6 +394,11 @@ class ChartTool:
                     break
             # 清理残留括号
             base = base.lstrip("（(").rstrip("）)")
+
+            # P1-5: 多公司模式 — 即使净化后同名也保留（加公司后缀区分）
+            if has_multi_company and task_match:
+                base = f"{base}(公司{company})"
+
             if base not in seen:
                 seen.add(base)
                 clean_labels.append(base)
