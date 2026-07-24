@@ -36,7 +36,7 @@ describe('E2E: 分析→返回→再来一次', () => {
     }, { timeout: 10000 });
 
     // 返回 → 按钮重现
-    await user.click(screen.getByText(/返回重新分析/));
+    await user.click(screen.getByText(/返回/));
     expect(screen.getByRole('button', { name: /开始/ })).toBeInTheDocument();
 
     // 可以换公司再分析
