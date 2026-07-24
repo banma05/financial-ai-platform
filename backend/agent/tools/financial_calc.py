@@ -732,6 +732,21 @@ class FinancialCalcTool:
                 params["ebitda"] = ebitda_fb
                 fill_sources["ebitda"] = "auto_fill:ebitda_approx"
 
+        # ── 策略7 (P1-4 S3修复): revenue_per_share — 从 revenue + 总股本推算 ──
+        if formula == "ps_ratio" and "revenue_per_share" not in params:
+            revenue = (params.get("revenue") or params.get("营业收入")
+                       or params.get("revenue_attr_parent"))
+            total_shares = (params.get("total_shares") or params.get("总股本") or params.get("shares"))
+            if not total_shares:
+                net_profit = (params.get("net_profit") or params.get("net_profit_attr_parent")
+                              or params.get("净利润"))
+                eps = params.get("eps") or params.get("每股收益")
+                if net_profit and eps and eps != 0:
+                    total_shares = net_profit / eps
+            if revenue and total_shares and total_shares != 0:
+                params["revenue_per_share"] = round(revenue / total_shares, 2)
+                fill_sources["revenue_per_share"] = "auto_fill:revenue_div_shares"
+
         return params, fill_sources
 
     @staticmethod
