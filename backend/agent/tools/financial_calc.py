@@ -181,6 +181,24 @@ def calc_pb_ratio(stock_price: float, bvps: float) -> float:
     return round(stock_price / bvps, 2)
 
 
+def calc_ps_ratio(stock_price: float, revenue_per_share: float) -> float:
+    """
+    市销率 PS = 股价 / 每股营收
+    """
+    if revenue_per_share == 0:
+        return float("inf")
+    return round(stock_price / revenue_per_share, 2)
+
+
+def calc_expense_ratio(expense: float, revenue: float) -> float:
+    """
+    费用率 = 费用 / 营业收入 × 100%
+    """
+    if revenue == 0:
+        return 0.0
+    return round(expense / revenue * 100, 2)
+
+
 # ==================== 现金流分析 ====================
 
 def calc_free_cash_flow(operating_cf: float, capital_expenditure: float) -> float:
@@ -398,6 +416,48 @@ FORMULA_REGISTRY: Dict[str, dict] = {
         "display_name": "杜邦分析",
         "formula_text": "ROE = 净利率 × 资产周转率 × 权益乘数",
         "unit": "复合",
+    },
+    # ── V9.0 P1-4: 估值指标 ──
+    "ps_ratio": {
+        "func": calc_ps_ratio,
+        "params": ["stock_price", "revenue_per_share"],
+        "category": "估值指标",
+        "display_name": "市销率 PS",
+        "formula_text": "PS = 股价 / 每股营收",
+        "unit": "倍",
+    },
+    # ── V9.0 P1-4: 费用结构 ──
+    "sales_expense_ratio": {
+        "func": calc_expense_ratio,
+        "params": ["sales_expense", "revenue"],
+        "category": "费用结构",
+        "display_name": "销售费用率",
+        "formula_text": "销售费用率 = 销售费用 / 营业收入 × 100%",
+        "unit": "%",
+    },
+    "admin_expense_ratio": {
+        "func": calc_expense_ratio,
+        "params": ["admin_expense", "revenue"],
+        "category": "费用结构",
+        "display_name": "管理费用率",
+        "formula_text": "管理费用率 = 管理费用 / 营业收入 × 100%",
+        "unit": "%",
+    },
+    "rd_expense_ratio": {
+        "func": calc_expense_ratio,
+        "params": ["rd_expense", "revenue"],
+        "category": "费用结构",
+        "display_name": "研发费用率",
+        "formula_text": "研发费用率 = 研发费用 / 营业收入 × 100%",
+        "unit": "%",
+    },
+    "finance_expense_ratio": {
+        "func": calc_expense_ratio,
+        "params": ["finance_expense", "revenue"],
+        "category": "费用结构",
+        "display_name": "财务费用率",
+        "formula_text": "财务费用率 = 财务费用 / 营业收入 × 100%",
+        "unit": "%",
     },
 }
 
