@@ -592,13 +592,18 @@ class FinancialCalcTool:
             }
 
     @staticmethod
-    def _sanity_check(formula: str, result: float, params: dict) -> dict:
+    def _sanity_check(formula: str, result, params: dict) -> dict:
         """
         V8.3: 计算结果合理性校验。
 
         财务分析宁缺毋滥——数值超出合理范围说明输入数据有问题，
         不应输出给用户。
+
+        P2修复: 处理 None/dict 类型, 避免崩溃。
         """
+        # 非数值结果跳过校验（dict=杜邦分析, None=数据缺失）
+        if result is None or not isinstance(result, (int, float)):
+            return {"ok": True}
         checks = {
             "roe": (0, 200, "ROE 超出合理范围 (0-200%)，可能净资产数据有误"),
             "roa": (0, 100, "ROA 超出合理范围 (0-100%)，可能总资产数据有误"),
@@ -614,8 +619,10 @@ class FinancialCalcTool:
             lo, hi, reason = checks[formula]
             # V8.5: FCF 自定义校验 — 资本支出不应使 FCF 与实际经营现金流严重背离
             if formula == "free_cash_flow":
-                operating_cf = params.get("operating_cf", 0)
-                capex = params.get("capital_expenditure", 0)
+                operating_cf = params.get("operating_cf") or 0
+                capex = params.get("capital_expenditure") or 0
+                if not isinstance(operating_cf, (int, float)) or not isinstance(capex, (int, float)):
+                    return {"ok": True}  # 参数不可用, 跳过校验
                 # 如果资本支出绝对值 > 经营现金流绝对值的 10 倍，数据可疑
                 if operating_cf != 0 and abs(capex) > abs(operating_cf) * 10:
                     return {"ok": False,
