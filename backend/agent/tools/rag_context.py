@@ -19,28 +19,34 @@ class RAGContextTool:
         """
         检索知识库中的相关文字，LLM 提炼关键信息。
 
-        参数:
-            query: 自然语言问题（如"茅台毛利率变化原因"）
-            top_k: 返回的检索结果数
-
-        返回:
-            {
-                "found": True/False,
-                "insights": ["要点1", "要点2"],    # LLM提炼的关键信息
-                "quotations": [{"text": "...", "source": "xxx.pdf", "page": 9}, ...],
-                "raw_chunks": [...],               # 完整检索结果
-                "confidence": 0.0-1.0,
-            }
+        P2-7: 全方法级安全保护 — 任何异常（ChromaDB损坏/检索超时/LLM故障）
+        都不会阻断 Agent 流水线，优雅降级为空结果。
         """
-        logger.info(f"RAGContext 工具调用: {query}")
+        logger.info(f"RAGContext 工具调用: {query[:80]}")
 
-        # Step 1: Query 处理
-        from rag.query_processor import process_query
-        processed = process_query(query)
+        try:
+            # Step 1: Query 处理
+            from rag.query_processor import process_query
+            processed = process_query(query)
 
-        # Step 2: 混合检索
-        from rag.hybrid_search import hybrid_search
-        sources = hybrid_search(processed, top_k=top_k)
+            # Step 2: 混合检索（安全包装，单点故障不影响流水线）
+            from rag.hybrid_search import hybrid_search
+            sources = []
+            try:
+                sources = hybrid_search(processed, top_k=top_k)
+            except Exception as e:
+                logger.warning(f"[RAG] 混合检索异常（降级为空结果）: {e}")
+                sources = []
+        except Exception as e:
+            logger.warning(f"[RAG] 整体检索失败（降级为空结果）: {e}")
+            return {
+                "found": False,
+                "insights": [],
+                "quotations": [],
+                "raw_chunks": [],
+                "summary": f"知识库检索暂时不可用: {str(e)[:100]}",
+                "confidence": 0.0,
+            }
 
         if not sources:
             return {
@@ -48,7 +54,7 @@ class RAGContextTool:
                 "insights": [],
                 "quotations": [],
                 "raw_chunks": [],
-                "summary": f"未在知识库中找到与「{query}」相关的内容",
+                "summary": f"未在知识库中找到与「{query[:50]}」相关的内容",
                 "confidence": 0.0,
             }
 
@@ -102,11 +108,11 @@ class RAGContextTool:
             from rag.model_router import chat, TaskType
             from utils.text import parse_llm_json
             messages = [{"role": "user", "content": prompt}]
-            response = chat(messages, query=query, task_type=TaskType.SIMPLE)
+            response = chat(messages, query=query[:100], task_type=TaskType.SIMPLE)
             result = parse_llm_json(response)
             if isinstance(result, list):
                 return result[:3]
         except Exception as e:
-            logger.warning(f"RAG 提炼失败: {e}")
+            logger.warning(f"RAG LLM提炼失败（降级为空，不影响分析）: {e}")
 
         return []
