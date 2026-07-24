@@ -12,8 +12,9 @@ describe('页面路由', () => {
       </MemoryRouter>,
     );
 
-    // 页面主标题为"预设分析"
-    expect(screen.getByRole('heading', { name: '预设分析' })).toBeInTheDocument();
+    // 页面主标题
+    const headings = screen.getAllByRole('heading', { name: '智能财务分析' });
+    expect(headings.length).toBeGreaterThan(0);
   });
 
   it('点击"文档问答"导航切换到文档页面', async () => {
@@ -48,6 +49,7 @@ describe('页面路由', () => {
 
     // 文档页 → 首页
     await user.click(screen.getByRole('link', { name: /分析工作台/ }));
-    expect(screen.getByRole('heading', { name: '预设分析' })).toBeInTheDocument();
+    const headings2 = screen.getAllByRole('heading', { name: '智能财务分析' });
+    expect(headings2.length).toBeGreaterThan(0);
   });
 });

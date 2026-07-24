@@ -39,7 +39,7 @@ describe('分析结果展示', () => {
     expect(screen.getByText(/导出MD/)).toBeInTheDocument();
 
     // 验证返回按钮存在
-    expect(screen.getByText(/返回重新分析/)).toBeInTheDocument();
+    expect(screen.getByText(/返回/)).toBeInTheDocument();
   });
 
   it('返回后结果消失，可重新分析', async () => {
@@ -61,7 +61,7 @@ describe('分析结果展示', () => {
     });
 
     // 返回
-    await user.click(screen.getByText(/返回重新分析/));
+    await user.click(screen.getByText(/返回/));
 
     // 按钮重新出现
     expect(screen.getByRole('button', { name: /开始/ })).toBeInTheDocument();
