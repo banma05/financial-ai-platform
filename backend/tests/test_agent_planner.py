@@ -38,7 +38,7 @@ class TestPlannerTemplates:
         assert len(plan.tasks) == 7
         # 验证有双轴图表
         chart_task = next(t for t in plan.tasks if t.task_type == "chart")
-        assert chart_task.params.get("chart_type") == "dual_axis"
+        assert chart_task.params.get("chart_type") == "auto"  # P2: 数据驱动选型
 
     def test_template_company_injection(self):
         """验证 {company} 占位符在 params.query 中被正确替换"""
@@ -90,7 +90,7 @@ class TestPlannerTemplates:
         assert "interest_coverage" in formulas
         # 验证图表（V8.3: 雷达→柱状）
         chart_task = next(t for t in plan.tasks if t.task_type == "chart")
-        assert chart_task.params.get("chart_type") == "bar"
+        assert chart_task.params.get("chart_type") == "auto"  # P2: 数据驱动选型
 
     def test_unknown_template(self):
         """未注册的模板名应该由 plan() 走 LLM 模式（此处只测不会崩溃）"""

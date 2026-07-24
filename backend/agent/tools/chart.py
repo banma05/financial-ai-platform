@@ -234,7 +234,7 @@ class ChartTool:
         import re
         if not _skip_multi:
             dim_count = len(set(re.sub(r'_\d{4}$', '', str(l)) for l in data.get("labels", [])))
-            if dim_count > 5:
+            if dim_count > 3:  # P2: 5→3, 复杂问题自动多图互补
                 multi = self.generate_multi(data, title)
                 if len(multi) > 1:
                     return {
@@ -456,11 +456,26 @@ class ChartTool:
         "pe_ratio": "市盈率", "pb_ratio": "市净率",
         "cf_to_net_profit": "经营现金流/净利润比率",
         "asset_turnover": "资产周转率", "equity_multiplier": "权益乘数",
+        # P1-4 新增公式
+        "ps_ratio": "市销率", "ebitda_margin": "EBITDA率",
+        "ebitda": "EBITDA", "interest_coverage": "利息保障倍数",
+        # 费用结构
+        "sales_expense_ratio": "销售费用率", "admin_expense_ratio": "管理费用率",
+        "rd_expense_ratio": "研发费用率", "finance_expense_ratio": "财务费用率",
+        "sales_expense": "销售费用", "admin_expense": "管理费用",
+        "rd_expense": "研发费用", "finance_expense": "财务费用",
+        # 现金流/估值/其他
+        "investing_cf": "投资现金流", "financing_cf": "筹资现金流",
+        "capital_expenditure": "资本支出", "interest_expense": "利息费用",
+        "inventory": "存货", "receivables": "应收账款",
+        "eps": "每股收益", "bvps": "每股净资产", "stock_price": "股价",
+        "revenue_per_share": "每股营收", "total_shares": "总股本",
     }
 
     # ── 标签中的英文缩写清理 ──
     _LABEL_CLEANUP = [
         ("ROE（", ""), ("ROA（", ""), ("PE（", ""), ("PB（", ""),
+        ("PS（", ""), ("FCF（", ""), ("EBITDA（", ""), ("EPS（", ""),
         ("EBITDA（", ""), ("FCF（", ""), ("EPS（", ""),
     ]
 
@@ -478,13 +493,13 @@ class ChartTool:
         main_result["chart_description"] = f"主图 · {main_result.get('chart_description', '')}"
         results.append(main_result)
 
-        # 补充图: 数据维度>5 → 加分组柱状图展示细节（_skip_multi=True 防止递归）
-        numeric_keys = [k for k, v in data.items() if isinstance(v, (int, float))]
+        # 补充图: 数据维度>3 → 加分组柱状图展示细节（_skip_multi=True 防止递归）
+        # P2修复: 用 labels 计数(而非 data.items, 因 kwargs 在 run() 合并后未传入)
         base_metrics = set()
-        for k in numeric_keys:
-            base_metrics.add(re.sub(r'_\d{4}$', '', str(k)))
+        for l in data.get("labels", []):
+            base_metrics.add(re.sub(r'_\d{4}$', '', str(l)))
 
-        if len(base_metrics) > 5:
+        if len(base_metrics) > 3:  # P2: 5→3, 多维自动多图互补
             detail = self.run(chart_type="bar", title=f"{title}（明细）", data=data, _skip_multi=True)
             detail["chart_description"] = "补充 · 各维度详细数值对比"
             results.append(detail)
