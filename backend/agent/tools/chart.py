@@ -185,13 +185,19 @@ class ChartTool:
                            "chart_type", "title", "x_label", "y_label"}
         numeric_all = {k: v for k, v in {**kwargs, **data}.items()
                       if isinstance(v, (int, float)) and k not in _SKIP_CHART_KEYS}
-        # 优先保留中文标签，过滤纯英文技术键（如 net_profit/gross_profit_margin）
+        # P2修复: 接受英文键名, 通过 _CN_LABEL_FALLBACK 转中文
         numeric_extra = {}
         for k, v in numeric_all.items():
             has_cjk = any('一' <= c <= '鿿' for c in str(k))
             is_eng_metric = str(k).replace('_', '').isascii() and str(k).islower()
             if has_cjk or not is_eng_metric:
                 numeric_extra[k] = v
+            elif is_eng_metric:
+                # 英文键名(如 revenue_2024) → 查 _CN_LABEL_FALLBACK 转中文
+                base = str(k).rsplit('_', 1)[0]  # 去年份后缀
+                cn = ChartTool._CN_LABEL_FALLBACK.get(base, '')
+                if cn:
+                    numeric_extra[cn] = v
         if numeric_extra and not data.get("values") and not data.get("labels"):
             # 去重：同一数值只保留第一个标签（通常是中文display_name）
             seen_vals = set()
