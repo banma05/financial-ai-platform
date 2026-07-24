@@ -364,17 +364,16 @@ class Executor:
             task.status = "running"
 
             # 执行
-            import time as _time
-            _t0 = _time.time()
             result = self.tools.execute_task(task, dep_results)
-            _elapsed = (_time.time() - _t0) * 1000
             task.status = "completed" if result.success else "failed"
             results.append(result)
 
-            # P2-7: 耗时追踪
+            # V8.3: 通知回调（用于 SSE 实时推送）
+            if on_task_complete:
+                on_task_complete(task, result, len(results), len(sorted_tasks))
+
             logger.info(
-                f"  ⏱ [{task.task_type}:{task.task_id}] {_elapsed:.0f}ms | "
-                f"{'✅' if result.success else '❌'} {task.description[:50]}"
+                f"任务 [{task.task_id}/{len(sorted_tasks)}] {task.status}: {task.description}"
             )
 
         return results
