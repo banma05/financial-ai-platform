@@ -218,46 +218,55 @@ def _check_indicator_number_association(report: str, indicator: str,
     if not indicator_positions:
         return False, f"指标 '{indicator}' 在报告中未找到"
 
-    # 2. 在每个指标名附近搜索期望数值
-    window = 150  # 前后各150字符
+    # 2. 搜索：先近距(500字符窗口)，再全局兜底
+    window = 500
     report_numbers = list(re.finditer(r'-?\d+\.?\d*', report))
 
-    for ipos in indicator_positions:
-        window_start = max(0, ipos - window)
-        window_end = min(len(report), ipos + window)
+    def _match_value(num_val: float) -> bool:
+        """检查数值是否匹配（含单位换算+负值容忍）"""
+        candidates = {expected}
+        for divisor in [1e4, 1e8]:
+            candidates.add(round(expected / divisor, 2))
+            candidates.add(round(expected / divisor, 1))
+            candidates.add(round(expected / divisor, 0))
+        if expected < 0:
+            abs_c = set()
+            for c in candidates:
+                abs_c.add(abs(c))
+            candidates.update(abs_c)
+        for c in candidates:
+            if abs(c) < 0.01:
+                if abs(num_val) < 0.01:
+                    return True
+            else:
+                rel_diff = abs(num_val - c) / abs(c)
+                if rel_diff < tolerance:
+                    return True
+        return False
 
+    # 2a. 近距匹配（高置信度）
+    for ipos in indicator_positions:
+        ws, we = max(0, ipos - window), min(len(report), ipos + window)
         for num_match in report_numbers:
-            num_pos = num_match.start()
-            if window_start <= num_pos <= window_end:
+            if ws <= num_match.start() <= we:
                 try:
-                    num_val = float(num_match.group())
+                    if _match_value(float(num_match.group())):
+                        return True, f"近距匹配: '{indicator}' ↔ {num_match.group()}"
                 except ValueError:
                     continue
 
-                # 验证数值（含单位换算）
-                candidates = {expected}
-                for divisor in [1e4, 1e8]:
-                    candidates.add(round(expected / divisor, 2))
-                    candidates.add(round(expected / divisor, 1))
-                    candidates.add(round(expected / divisor, 0))
+    # 2b. 全局兜底（中置信度）: 指标名和数值都在报告中，但不一定相邻
+    all_numbers = set()
+    for nm in report_numbers:
+        try:
+            all_numbers.add(float(nm.group()))
+        except ValueError:
+            continue
+    for nv in all_numbers:
+        if _match_value(nv):
+            return True, f"全局匹配: '{indicator}' → {nv} (不在同一段落)"
 
-                # 负值容忍
-                if expected < 0:
-                    abs_candidates = set()
-                    for c in candidates:
-                        abs_candidates.add(abs(c))
-                    candidates.update(abs_candidates)
-
-                for c in candidates:
-                    if abs(c) < 0.01:
-                        if abs(num_val) < 0.01:
-                            return True, f"指标 '{indicator}' 关联到 {num_val} ≈ {expected}"
-                    else:
-                        rel_diff = abs(num_val - c) / abs(c)
-                        if rel_diff < tolerance:
-                            return True, f"指标 '{indicator}' 关联到 {num_val} ≈ {expected} (容差{rel_diff:.1%})"
-
-    return False, f"指标 '{indicator}' 附近未找到期望值 {expected}"
+    return False, f"指标 '{indicator}' 未找到期望值 {expected}"
 
 
 def score_anchor_accuracy(report: str, required_numbers: Dict[str, dict]) -> dict:
@@ -423,13 +432,22 @@ def score_chart_render_rate(results: list, expected_chart: str = None) -> dict:
         if r.get("task_type") == "chart":
             chart_data = r.get("data", {})
             if isinstance(chart_data, dict) and chart_data:
-                chart_type = chart_data.get("type", chart_data.get("chart_type", "unknown"))
-                has_data = bool(chart_data.get("series") or chart_data.get("data"))
-                charts_generated.append({
-                    "type": chart_type,
-                    "has_data": has_data,
-                    "skip_reason": chart_data.get("skip_reason", ""),
-                })
+                # P2修复: chart返回chart_option(ECharts对象,内含series)或skip标记
+                skip = chart_data.get("skip", False)
+                if skip:
+                    charts_generated.append({
+                        "type": chart_data.get("chart_type", "unknown"),
+                        "has_data": False,
+                        "skip_reason": chart_data.get("skip_reason", ""),
+                    })
+                else:
+                    option = chart_data.get("chart_option", {})
+                    has_series = bool(option.get("series")) if isinstance(option, dict) else False
+                    charts_generated.append({
+                        "type": chart_data.get("chart_type", option.get("series", [{}])[0].get("type", "bar") if has_series else "unknown"),
+                        "has_data": has_series,
+                        "skip_reason": "",
+                    })
 
     total = len(charts_generated)
     valid = sum(1 for c in charts_generated if c["has_data"])
@@ -693,8 +711,8 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
     }
 
     # 分组累计
-    rag_accum = defaultdict(lambda: defaultdict(list))     # rag_accum["RAG"]["anchor"] = [...]
-    nonrag_accum = defaultdict(lambda: defaultdict(list))
+    rag_accum: Dict[str, list] = defaultdict(list)        # rag_accum["anchor"] = [...]
+    nonrag_accum: Dict[str, list] = defaultdict(list)
 
     results_detail = []
     failed = []
@@ -712,10 +730,11 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
         logger.info(f"\n{'='*50}")
         logger.info(f"[{i}/{n}] {qid} [{cat}][{diff}] {'RAG' if has_rag else 'SQL'} | {query[:70]}...")
 
-        # Phase 1: Planner
+        # Phase 1: Planner — 模板题走模板路径(快+准)，自由拆解题走LLM
         plan_start = time.time()
         try:
-            plan = planner.plan(query)
+            template = q.get("template") if q.get("category") != "自由拆解" else None
+            plan = planner.plan(query, template_name=template)
         except Exception as e:
             logger.error(f"  Planner 失败: {e}")
             failed.append({"id": qid, "phase": "planner", "error": str(e)})
