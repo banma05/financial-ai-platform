@@ -1,0 +1,133 @@
+# 智能财务分析平台 — 架构文档
+
+> V9.1 | 2026-07-25 | 面试演示版
+
+---
+
+## 一、整体架构
+
+```
+用户 (React SPA)
+    │  SSE 流式
+    ▼
+FastAPI (:8001)
+    │
+    ├─ /api/v1/agent/*     ─── Agent 分析引擎（核心）
+    ├─ /api/v1/rag/*       ─── RAG 知识库检索
+    └─ /api/v1/admin/*     ─── 管理/监控
+    │
+    ├─ Redis (会话+限流)
+    ├─ SQLite (财务数据库, 20家公司)
+    └─ ChromaDB (向量库, ~5000 chunks)
+```
+
+**Agent 核心流水线：**
+
+```
+Planner(LLM) ──→ Executor(线性) ──→ Reporter(LLM)
+    │                  │                   │
+    │           ┌──────┼──────┐            │
+    │           ▼      ▼      ▼            │
+    │        SQL查   RAG辅助  公式计算     │
+    │       (毫秒级) (语义)  (零LLM)      │
+    │           │      │      │            │
+    └───────────┴──────┴──────┴────────────┘
+              结构化数据 + 语义解读 → 报告+图表
+```
+
+---
+
+## 二、四个核心设计决策
+
+### 1. 为什么 LangGraph 而不是自研 DAG？
+
+**V7.0 踩过的坑**：自研了一个 DAG 执行引擎，支持并行任务 + 依赖管理。但遇到三个致命问题：
+- 条件路由（追问 vs 执行）需要大量 if-else
+- 流式输出需要手动管理 generator 生命周期
+- 错误恢复和重试需要自己实现状态机
+
+**换 LangGraph 后**：三节点 StateGraph（Planner → Executor → Reporter），
+50 行代码替代 350 行自研 DAG。状态管理、流式、错误恢复全部内置。
+
+### 2. 为什么 SQL 优先而不是 RAG 优先？
+
+财务分析的核心需求是**精确数值**（毛利率=91.93%，不是"约92%"）。
+
+- **SQL 路径**：毫秒级，精确到小数点后两位，零 LLM 调用
+- **RAG 路径**：秒级，文字解读和原因分析（"为什么毛利率下降？"），补充 SQL 无法回答的定性问题
+
+两条路径互补：SQL 保证数据精度，RAG 提供语义深度。整体延迟控制在合理范围。
+
+### 3. 为什么自己写 DI 容器？
+
+项目有 ~15 个应用级单例（Embedding 模型、ChromaDB、CrossEncoder 等），
+需要线程安全的惰性初始化 + 测试 mock 替换。
+
+60 行 `threading.RLock` + 惰性工厂 = 解决全部需求。
+引入 3000 行的 `dependency-injector` 是过度设计。
+
+**面试台词**："FastAPI Depends 是请求级 DI，我这个 Container 是应用级 DI。
+两者互补而不是替代。"
+
+### 4. 为什么 ChromaDB 而不是 Pinecone/Weaviate？
+
+- **免费** — Pinecone 最低 $70/月，ChromaDB 零成本
+- **本地部署** — 财务数据不出本地，合规友好
+- **嵌入式** — 不需要独立服务进程，一键启动
+- **HNSW 索引** — 对 ~10K chunks 规模，性能足够（毫秒级查询）
+
+---
+
+## 三、V9.1 重构：对抗式审查驱动的架构修复
+
+### 审查方法
+
+用 5 个独立 Agent 从安全、正确性、性能、架构四个维度并行审查代码库，
+发现 **75 个问题**（12 CRITICAL / 17 HIGH / 31 MEDIUM / 15 LOW）。
+
+### 根本原因：四个缺失的架构约束
+
+经过第一性原理分析，75 个问题的根因不是某个文件写错了，
+而是四个架构约束从未被强制执行：
+
+| 约束 | 后果 | V9.1 修复 |
+|:---|:---|:---|
+| 信任边界缺失 | Prompt 注入 ×3、错误泄露 ×8 | `InputSanitizer` + XML 硬隔离 |
+| 依赖方向未强制 | 10 处 SessionLocal() 散落 | `Repository` 层 + DI Container |
+| 并发模型未定义 | TOCTOU ×2、14 全局单例 | `Container` + RLock |
+| 配置无单一可信源 | 公司注册表 3 处不同步 | `config.py` 统一入口 |
+
+### 关键修复
+
+| 阶段 | 变更 | 效果 |
+|:---|:---|:---|
+| 〇 地基 | 毛利润/置信度/inf/年份/错误 | 8 项 Bug 修复 |
+| 一 安全 | InputSanitizer + Prompt 铁律 | 3 注入点硬隔离 |
+| 二 DI | Container + 14 单例 → 自注册 | TOCTOU 消除 |
+| 三 数据 | Repository + batch query | SQL 200+ → 1 次 |
+| 四 性能 | BM25 硬上限 + LRU 淘汰 | OOM 防护 |
+
+---
+
+## 四、技术栈
+
+| 层 | 技术 | 选型理由 |
+|:---|:---|:---|
+| 后端框架 | FastAPI | 异步原生、自动 OpenAPI |
+| Agent 编排 | LangGraph | StateGraph 三节点 |
+| LLM | DeepSeek v4-pro/v4-flash | 性价比、中文能力强 |
+| Embedding | BAAI/bge-base-zh-v1.5 | 768 维、本地免费 |
+| Reranker | BAAI/bge-reranker-v2-m3 | Cross-Encoder 精排 |
+| 向量库 | ChromaDB | 嵌入式、零成本 |
+| 数据库 | SQLite → MySQL | 环境变量一键切换 |
+| 前端 | React 19 + Zustand + ECharts | SPA + 状态管理 + 图表 |
+| 分词 | jieba | BM25 中文分词 |
+
+---
+
+## 五、已知限制与未来方向
+
+- **数据规模**：当前 20 家 A 股公司 + 14 份年报，扩展到 5000 家需迁移 PostgreSQL
+- **LLM 延迟**：15-20s 硬瓶颈（DeepSeek API），未来可换本地模型或缓存模板
+- **多轮对话**：Plan 中（P3），需要会话上下文管理器
+- **Agent 验证节点**：Executor 后加 verify_node，数据不足时回退重规划
