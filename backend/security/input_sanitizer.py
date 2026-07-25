@@ -27,12 +27,12 @@ class InputSanitizer:
         (r"(你|现在)(是|作为|扮演|充当).{0,15}(模型|角色|AI|助手|专家|机器人)", "[已过滤-角色覆盖]"),
         (r"(输出|显示|打印|告诉我|透露|泄露).{0,10}(系统|原始|内部|隐藏).{0,5}(提示|指令|prompt|规则)", "[已过滤-信息泄露]"),
         (r"\[SYSTEM\]|\[INST\]|\[PROMPT\]|<\|im_start\|>|<\|im_end\|>", "[已过滤-标记注入]"),
-        (r"(忘记|清除|重置|覆盖).{0,5}(之前|以上|前面)(的|所有)?(对话|指令|规则|设定)", "[已过滤-上下文覆盖]"),
+        (r"(忘记|清除|重置|覆盖).{0,5}(之前|以上|前面|上面)?(的|所有)?(对话|指令|规则|设定|历史)", "[已过滤-上下文覆盖]"),
         # ── 英文注入 ──
-        (r"ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?|constraints?)", "[已过滤-指令覆盖]"),
-        (r"(you\s+are|act\s+as|you're|you\s+now)\s+(a\s+)?(model|ai|assistant|system|chatbot)", "[已过滤-角色覆盖]"),
+        (r"ignore\s+(all|everything\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?|constraints?)", "[已过滤-指令覆盖]"),
+        (r"(you\s+are(\s+now)?|act\s+as|you're|you\s+now)\s+(a\s+)?(model|ai|assistant|system|chatbot)", "[已过滤-角色覆盖]"),
         (r"(print|show|reveal|output|display|tell\s+me)\s+(your\s+)?(system\s+)?(prompt|instructions?|rules?)", "[已过滤-信息泄露]"),
-        (r"(forget|ignore|disregard|override|clear)\s+(all\s+)?(previous|earlier|above|prior)", "[已过滤-上下文覆盖]"),
+        (r"(forget|ignore|disregard|override|clear)\s+(all\s+|everything\s+)?(previous|earlier|above|prior)", "[已过滤-上下文覆盖]"),
         (r"(do\s+not|don't|never|stop)\s+(follow|obey|comply)", "[已过滤-规则否定]"),
     ]
 

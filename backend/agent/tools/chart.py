@@ -218,13 +218,13 @@ class ChartTool:
                 "skip": True,
                 "skip_reason": "empty_data",
             }
-        if len(data.get("labels", [])) <= 1 or len(data.get("values", [])) <= 1:
+        # V9.1: 降为 0 — 单数据点也可生成图表（柱状图/仪表盘展示）
+        if len(data.get("labels", [])) == 0 or len(data.get("values", [])) == 0:
             return {
                 "chart_option": None,
-                "chart_description": f"仅{len(data.get('values',[]))}个可用数据点，不足以生成有意义的图表，以下为数据表格形式展示。",
+                "chart_description": "数据不足，无法生成图表。请确认查询参数是否正确。",
                 "skip": True,
-                "skip_reason": "insufficient_data",
-                "fallback_table": {"labels": data.get("labels", []), "values": data.get("values", [])},
+                "skip_reason": "empty_data",
             }
 
         # ── 标签中文化（剥离年份后缀 + 去重）──
