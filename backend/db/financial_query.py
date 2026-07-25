@@ -335,109 +335,80 @@ def parse_query(query: str) -> Tuple[List[str], List[int], List[str]]:
 
 def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                        multi_company: bool) -> Optional[dict]:
-    """查询一家公司的指标数据。multi_company=True 时键名加公司前缀。"""
-    from db import SessionLocal, FinancialData, Company
+    """
+    查询一家公司的指标数据（V9.1: 批量查询替代 N+1）。
+
+    原来：三重循环逐条 SQL（50-300次请求）。
+    现在：一次 batch query + 内存回退链（1次SQL）。
+    """
+    from db import Company
+    from db.repository import FinancialRepository
 
     company = db.query(Company).filter(Company.symbol == symbol).first()
     if not company:
         return None
 
-    # 取公司简称用于键名前缀
     short_name = company.name.replace("贵州", "").replace("股份", "").replace("有限", "") if company.name else symbol
     data = {}
-    sources = {}  # V9.0: 每个数据键的来源标注
+    sources = {}
     found_any = False
 
+    # ── V9.1: 收集所有需要查询的 metric_keys（包括回退链的键）──
+    all_keys: set[str] = set()
+    for metric_name in metrics:
+        metric_def = METRIC_ALIASES[metric_name]
+        all_keys.update(metric_def["keys"])
+        # 预加载回退链键
+        for key in metric_def["keys"]:
+            if key in _KEY_FALLBACK:
+                fb = _KEY_FALLBACK[key]
+                if "simple" in fb:
+                    all_keys.add(fb["simple"])
+                if "computed" in fb:
+                    all_keys.update(fb["computed"]["keys"])
+
+    # ── V9.1: 一次 SQL 批量查询所有数据 ──
+    repo = FinancialRepository()
+    raw_cache = repo.query_batch(symbol, years, list(all_keys), db=db)
+    # raw_cache: {year: {metric_key: value}}
+
+    # ── 内存回退链 ──
     for metric_name in metrics:
         metric_def = METRIC_ALIASES[metric_name]
         keys = metric_def["keys"]
         formula = metric_def["formula"]
 
-        # V8.3: 同比对比时统一季度口径。先检查所有年份 Q4 是否都存在
-        all_have_q4 = True
         for year in years:
-            for key in keys:
-                q4 = db.query(FinancialData).filter(
-                    FinancialData.symbol == symbol,
-                    FinancialData.year == year,
-                    FinancialData.quarter == "Q4",
-                    FinancialData.metric_key == key,
-                ).first()
-                if not q4:
-                    all_have_q4 = False
-                    break
-            if not all_have_q4:
-                break
-
-        # 统一取每个年份的最新可用季度（确保年份间可对比）
-        target_quarter = "Q4" if all_have_q4 else None
-
-        for year in years:
+            year_cache = raw_cache.get(year, {})
             values = {}
-            key_sources = {}  # V9.0: 每个键的来源
-            for key in keys:
-                key_source = "sql"  # 默认来源
-                query_base = db.query(FinancialData).filter(
-                    FinancialData.symbol == symbol,
-                    FinancialData.year == year,
-                    FinancialData.metric_key == key,
-                )
-                if target_quarter:
-                    record = query_base.filter(FinancialData.quarter == target_quarter).first()
-                else:
-                    # 各年份都取各自最新季度，保持同季可比
-                    record = query_base.order_by(FinancialData.quarter.desc()).first()
+            key_sources = {}
 
-                # V9.0 P0-1: 回退链 — 主键无数据时依次尝试 simple→computed
-                if not record and key in _KEY_FALLBACK:
+            for key in keys:
+                key_source = "sql"
+                val = year_cache.get(key)
+
+                # 回退链：simple → computed（在内存中计算，不再发 SQL）
+                if val is None and key in _KEY_FALLBACK:
                     fb_def = _KEY_FALLBACK[key]
 
-                    # 第一级: simple 回退（直接替代键）
-                    if not record and "simple" in fb_def:
-                        fb_key = fb_def["simple"]
-                        fb_base = db.query(FinancialData).filter(
-                            FinancialData.symbol == symbol,
-                            FinancialData.year == year,
-                            FinancialData.metric_key == fb_key,
-                        )
-                        if target_quarter:
-                            record = fb_base.filter(FinancialData.quarter == target_quarter).first()
-                        else:
-                            record = fb_base.order_by(FinancialData.quarter.desc()).first()
-                        if record:
-                            key_source = f"sql:fallback:{fb_key}"
+                    if "simple" in fb_def:
+                        fb_val = year_cache.get(fb_def["simple"])
+                        if fb_val is not None:
+                            val = fb_val
+                            key_source = f"sql:fallback:{fb_def['simple']}"
 
-                    # 第二级: computed 回退（多源键 → 公式计算）
-                    if not record and "computed" in fb_def:
+                    if val is None and "computed" in fb_def:
                         comp = fb_def["computed"]
-                        comp_values = {}
-                        for comp_key in comp["keys"]:
-                            comp_base = db.query(FinancialData).filter(
-                                FinancialData.symbol == symbol,
-                                FinancialData.year == year,
-                                FinancialData.metric_key == comp_key,
-                            )
-                            if target_quarter:
-                                comp_row = comp_base.filter(FinancialData.quarter == target_quarter).first()
-                            else:
-                                comp_row = comp_base.order_by(FinancialData.quarter.desc()).first()
-                            if comp_row:
-                                comp_values[comp_key] = comp_row.metric_value
-                        # 所有源键都找到才计算
-                        if len(comp_values) == len(comp["keys"]):
+                        comp_vals = {ck: year_cache.get(ck) for ck in comp["keys"]}
+                        if all(v is not None for v in comp_vals.values()):
                             try:
-                                result = _safe_eval(comp["formula"], comp_values)
-                                # 创建伪记录对象，让后续代码正常使用
-                                class _FallbackRecord:
-                                    pass
-                                record = _FallbackRecord()
-                                record.metric_value = result
+                                val = _safe_eval(comp["formula"], comp_vals)
                                 key_source = f"sql:computed:{comp['formula']}"
                             except (ValueError, ZeroDivisionError, TypeError):
                                 pass
 
-                if record:
-                    values[key] = record.metric_value
+                if val is not None:
+                    values[key] = val
                     key_sources[key] = key_source
                     found_any = True
 
@@ -445,16 +416,14 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                 continue
 
             key_prefix = f"{short_name}_" if multi_company else ""
-            year_suffix = f"_{year}"  # V8.3: 始终带年份，确保增长公式能区分当期/上期
+            year_suffix = f"_{year}"
 
             if formula and len(keys) >= 2 and all(k in values for k in keys):
                 try:
                     safe_vars = {k: v for k, v in values.items() if k in keys}
-                    # V8.1 D13: 用 AST 白名单求值器替换 eval，仅允许 + - * /
                     result = _safe_eval(formula, safe_vars)
                     out_key = f"{key_prefix}{metric_name}{year_suffix}"
                     data[out_key] = round(result, 2)
-                    # V9.0: 公式来源 — 所有键都是sql直查时标sql，否则标部分回退
                     all_direct = all(key_sources.get(k, "") == "sql" for k in keys)
                     sources[out_key] = "sql" if all_direct else "sql:formula:partial_fallback"
                 except (ValueError, ZeroDivisionError, TypeError) as e:
