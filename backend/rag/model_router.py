@@ -8,6 +8,8 @@
 
 V6.0: contextvar 追踪 Token 用量（chat/chat_stream 无侵入捕获）
 """
+
+import time
 import contextvars
 from enum import Enum
 from typing import Optional
@@ -174,7 +176,7 @@ def chat_stream(
     if _llm_circuit_breaker.state == _llm_circuit_breaker.OPEN:
         raise CircuitBreakerOpenError(
             f"[熔断器:llm_api] 电路断开中，"
-            f"{_llm_circuit_breaker.cooldown_seconds - (__import__('time').time() - _llm_circuit_breaker._opened_at):.0f}s 后恢复"
+            f"{_llm_circuit_breaker.cooldown_seconds - (time.time() - _llm_circuit_breaker._opened_at):.0f}s 后恢复"
         )
 
     if query is None:

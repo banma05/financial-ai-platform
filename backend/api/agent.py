@@ -14,6 +14,7 @@ import json
 
 from models.schemas import AgentRequest, AgentResponse, TemplateInfo
 from agent import run_agent_stream, run_agent_sync, BUILTIN_TEMPLATES, FORMULA_REGISTRY
+from utils.safe_error import safe_error_detail
 
 router = APIRouter(prefix="/api/v1/agent", tags=["数据分析 Agent"])
 
@@ -41,7 +42,7 @@ async def analyze(request: AgentRequest):
         )
     except Exception as e:
         logger.error(f"Agent 分析失败: {e}")
-        raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"分析失败: {safe_error_detail(e)}")
 
 
 @router.post("/analyze/stream")
@@ -76,7 +77,7 @@ async def analyze_stream(req: AgentRequest, request: Request):
                     break
         except Exception as e:
             logger.error(f"Agent SSE 流异常: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': f'分析服务异常: {str(e)}'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': f'分析服务异常: {safe_error_detail(e)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

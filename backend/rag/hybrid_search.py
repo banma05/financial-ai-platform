@@ -393,7 +393,8 @@ def hybrid_search(
         [{"content": "...", "source": "...", "page": 1, "score": 0.95}, ...]
     """
     # ── 轻量评测模式：完全跳过 CrossEncoder 重排，省 2-3GB 内存 ──
-    _light_mode = os.environ.get("EVAL_LIGHT", "").lower() in ("1", "true", "yes")
+    from config import EVAL_LIGHT
+    _light_mode = EVAL_LIGHT  # V9.1: 统一从 config 读取
     if _light_mode:
         force_rerank = False
 

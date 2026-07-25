@@ -80,7 +80,7 @@ class TestSolvency:
     def test_current_ratio_zero_liabilities(self):
         """流动比率 — 零流动负债"""
         result = calc_current_ratio(1000, 0)
-        assert result == float("inf")
+        assert result is None  # V9.1: 分母为零返回 None，不返回 inf
 
     def test_quick_ratio_normal(self):
         """速动比率 — 正常值"""
@@ -95,7 +95,7 @@ class TestSolvency:
     def test_interest_coverage_zero_interest(self):
         """利息保障倍数 — 零利息费用"""
         result = calc_interest_coverage(500, 0)
-        assert result == float("inf")
+        assert result is None  # V9.1: 分母为零返回 None，不返回 inf
 
 
 class TestOperations:
@@ -167,7 +167,7 @@ class TestValuation:
     def test_pe_ratio_zero_eps(self):
         """市盈率 — 零 EPS（亏损）"""
         result = calc_pe_ratio(150, 0)
-        assert result == float("inf")
+        assert result is None  # V9.1: 分母为零返回 None，不返回 inf
 
     def test_pb_ratio_normal(self):
         """市净率 — 正常值"""

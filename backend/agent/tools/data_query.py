@@ -218,7 +218,7 @@ class DataQueryTool:
                     pass
 
         # 尝试提取年份区分的数据
-        years = re.findall(r'(202[0-4])年.*?(\d+\.?\d*)', combined)
+        years = re.findall(r'(20\d{2})年.*?(\d+\.?\d*)', combined)  # V9.1: 支持 2025+ 年份
         year_data = {}
         for yr, num_str in years:
             try:

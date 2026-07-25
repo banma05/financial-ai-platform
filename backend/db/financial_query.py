@@ -171,6 +171,15 @@ METRIC_ALIASES: Dict[str, dict] = {
         "keys": ["revenue", "cost_of_revenue"],
         "formula": "(revenue - cost_of_revenue) / revenue * 100",
     },
+    # V9.1: 毛利润 = 绝对金额，区别于毛利率（百分比）
+    "毛利润": {
+        "keys": ["revenue", "cost_of_revenue"],
+        "formula": "revenue - cost_of_revenue",
+    },
+    "营业毛利": {
+        "keys": ["revenue", "cost_of_revenue"],
+        "formula": "revenue - cost_of_revenue",
+    },
     "净利率": {
         "keys": ["net_profit_attr_parent", "revenue"],
         "formula": "net_profit_attr_parent / revenue * 100",
