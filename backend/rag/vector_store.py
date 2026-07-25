@@ -64,6 +64,10 @@ def _create_chroma_store() -> Chroma:
     )
 
 
+# V9.1: 模块自注册
+Container.register("chroma_store", _create_chroma_store)
+
+
 def wait_for_compaction(timeout: float = 300.0) -> bool:
     """
     批量写入后确认 HNSW 索引完整落盘，再退出进程。

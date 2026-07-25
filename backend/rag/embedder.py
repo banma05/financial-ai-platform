@@ -11,13 +11,6 @@ from config import EMBEDDING_MODEL, LOCAL_MODEL_PATH, HF_HOME
 from di.container import Container
 
 
-def get_embedding_model() -> HuggingFaceEmbeddings:
-    """
-    获取 Embedding 模型（V9.1: 委托给 Container）。
-    """
-    return Container.resolve("embedding_model")
-
-
 def _create_embedding_model() -> HuggingFaceEmbeddings:
     """
     工厂函数 — 供 Container 惰性初始化调用。
@@ -38,3 +31,14 @@ def _create_embedding_model() -> HuggingFaceEmbeddings:
         model_kwargs={"device": device},
         encode_kwargs={"normalize_embeddings": True},
     )
+
+
+# V9.1: 模块自注册 — 能被 import 就能被 Container 解析
+Container.register("embedding_model", _create_embedding_model)
+
+
+def get_embedding_model() -> HuggingFaceEmbeddings:
+    """
+    获取 Embedding 模型（V9.1: 委托给 Container）。
+    """
+    return Container.resolve("embedding_model")

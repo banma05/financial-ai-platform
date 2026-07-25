@@ -190,3 +190,9 @@ def _create_rate_limiter() -> "RateLimiter":
 
 def _create_session_store() -> "SessionStore":
     return SessionStore()
+
+
+# V9.1: 模块自注册
+Container.register("redis_client", _create_redis_client)
+Container.register("rate_limiter", _create_rate_limiter)
+Container.register("session_store", _create_session_store)
