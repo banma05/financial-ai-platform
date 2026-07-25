@@ -7,6 +7,7 @@
 - 策略路由分流：简单问题直接向量检索，复杂问题才重排序
 """
 import os
+import time
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 防止 tokenizers 多线程与 CUDA 冲突
 
 # CrossEncoder 提前导入（_get_lambda_mart 中自动检测 GPU 可用性）
@@ -70,26 +71,40 @@ def route_query(query: str) -> str:
 
 # ============ BM25 关键词检索 ============
 
-# BM25 索引缓存（V8.1 D14: 只缓存 ID+元数据+分词索引，不复制全部文档文本）
+# BM25 索引缓存（V8.1 D14: ID+元数据+分词索引，不复制全部文档文本）
 _bm25_cache: dict = {"bm25": None, "ids": [], "metas": [], "doc_count": -1}
-_BM25_MEMORY_WARN_THRESHOLD = 5000  # 超过 5000 chunk 时发出内存警告
+_BM25_MEMORY_WARN_THRESHOLD = 5000   # 超过此值发出内存警告
+_BM25_HARD_LIMIT = 10000             # V9.1: 超过此值降级为纯向量检索
+_BM25_REBUILD_COOLDOWN = 5.0         # V9.1: 两次重建最小间隔（秒）
+_bm25_dirty = False
+_bm25_last_rebuild = 0.0
 
 
 def _get_bm25_index():
-    """获取 BM25 索引（线程安全缓存，仅在文档数变化时重建）
-
-    V8.1 D14: 缓存 ID+元数据（轻量）+ BM25 分词索引，文档正文按需从 ChromaDB 查询。
-    避免万级 chunk 时在 Python 进程中重复存储全部文档文本。
-    """
+    """获取 BM25 索引（V9.1: 硬上限保护 + 冷却期防重建风暴）"""
     chroma = _get_chroma()
     data = chroma.get()
     current_count = len(data.get("documents") or [])
 
+    # ── V9.1: 硬上限保护 ──
+    if current_count > _BM25_HARD_LIMIT:
+        logger.warning(
+            f"BM25 文档数 ({current_count}) 超过硬上限 ({_BM25_HARD_LIMIT})，"
+            f"降级为纯向量检索。升级路径：Redis 分片 BM25 索引。"
+        )
+        return None, [], []
+
     if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
         return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
+    # ── V9.1: 冷却期（防批量导入时重复重建）──
+    global _bm25_dirty, _bm25_last_rebuild
+    if _bm25_dirty:
+        elapsed = time.time() - _bm25_last_rebuild
+        if elapsed < _BM25_REBUILD_COOLDOWN and _bm25_cache["bm25"] is not None:
+            return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
+
     with _bm25_lock:
-        # 双重检查：可能在等锁期间已被其他线程构建
         if _bm25_cache["doc_count"] == current_count and _bm25_cache["bm25"] is not None:
             return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
@@ -100,7 +115,6 @@ def _get_bm25_index():
             _bm25_cache["metas"] = []
             return None, [], []
 
-        # V8.1 D14: 内存压力警告
         if current_count > _BM25_MEMORY_WARN_THRESHOLD:
             logger.warning(
                 f"BM25 索引文档数 ({current_count}) 超过 {_BM25_MEMORY_WARN_THRESHOLD}，"
@@ -113,15 +127,17 @@ def _get_bm25_index():
         _bm25_cache["ids"] = data.get("ids", [])
         _bm25_cache["metas"] = data.get("metadatas", [])
         _bm25_cache["doc_count"] = current_count
+        _bm25_dirty = False
+        _bm25_last_rebuild = time.time()
         logger.info(f"BM25 索引已缓存: {current_count} 文档 (仅 ID+元数据模式)")
 
     return _bm25_cache["bm25"], _bm25_cache["ids"], _bm25_cache["metas"]
 
 
 def _invalidate_bm25_cache():
-    """使 BM25 缓存失效（文档变更后调用）"""
-    _bm25_cache["doc_count"] = -1
-    _bm25_cache["bm25"] = None
+    """V9.1: 标记 BM25 缓存为脏（延迟合并，冷却期后才真正重建）"""
+    global _bm25_dirty
+    _bm25_dirty = True
     _bm25_cache["ids"] = []
     _bm25_cache["metas"] = []
 

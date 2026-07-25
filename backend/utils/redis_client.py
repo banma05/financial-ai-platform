@@ -56,6 +56,8 @@ class RateLimiter:
         allowed, retry_after = limiter.is_allowed(ip, "chat", limit=10)
     """
 
+    _MAX_MEMORY_KEYS = 10000  # V9.1: 内存 key 上限，超过触发 LRU 淘汰
+
     def __init__(self, window_seconds: int = 60):
         self._window = window_seconds
         self._memory_store: Dict[str, List[float]] = defaultdict(list)
@@ -96,12 +98,28 @@ class RateLimiter:
         return True, 0
 
     def _memory_check(self, key: str, limit: int) -> tuple:
-        """内存滑动窗口（回退用）"""
+        """内存滑动窗口（V9.1: LRU 淘汰防 OOM）"""
         with self._lock:
             now = time.time()
             cutoff = now - self._window
             # 清理过期
             self._memory_store[key] = [t for t in self._memory_store[key] if t > cutoff]
+
+            # V9.1: LRU 淘汰 — 超过上限时删除最旧 key
+            if len(self._memory_store) > self._MAX_MEMORY_KEYS:
+                # 清空空列表的 key
+                empty_keys = [k for k, v in self._memory_store.items() if not v]
+                for k in empty_keys:
+                    del self._memory_store[k]
+                # 如果还是太多，删除最早创建的 10%
+                if len(self._memory_store) > self._MAX_MEMORY_KEYS:
+                    excess = len(self._memory_store) - int(self._MAX_MEMORY_KEYS * 0.9)
+                    oldest_keys = sorted(
+                        self._memory_store.keys(),
+                        key=lambda k: min(self._memory_store[k]) if self._memory_store[k] else 0
+                    )[:excess]
+                    for k in oldest_keys:
+                        del self._memory_store[k]
 
             if len(self._memory_store[key]) >= limit:
                 oldest = min(self._memory_store[key])
