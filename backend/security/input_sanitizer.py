@@ -57,12 +57,19 @@ class InputSanitizer:
     @classmethod
     def wrap(cls, user_input: str) -> str:
         """
-        清洗并用 XML 标签硬隔离用户输入。
+        清洗并用 XML 标签硬隔离用户输入（幂等：已包裹的不重复包裹）。
 
         XML 标签在 LLM 训练数据中天然具有结构化语义，
         相比自然语言分隔符（如 "---用户输入---"），
         更难以通过自然语言注入绕过。
+
+        V9.1 修复: 防止 Planner→DataQuery→RAG 链路上的三重包裹，
+        避免 XML 标签污染 BM25/向量检索关键词。
         """
+        # 幂等性：已包裹的不重复包裹
+        if user_input.strip().startswith("<user_query>") and "</user_query>" in user_input:
+            return user_input
+
         cleaned, detected = cls.sanitize(user_input)
         if detected:
             logger.warning(f"[安全] 输入已净化，原始: {user_input[:100]}...")
