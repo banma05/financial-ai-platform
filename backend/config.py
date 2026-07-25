@@ -104,3 +104,13 @@ AGENT_TOTAL_TIMEOUT = float(os.getenv("AGENT_TOTAL_TIMEOUT", "45.0"))
 CHART_OUTPUT_DIR = os.getenv("CHART_OUTPUT_DIR", str(ROOT_DIR / "data" / "charts"))
 # 图表输出目录（base64 模式不落盘，留作后续 PDF 导出用）
 Path(CHART_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
+# ============ 服务器配置 ============
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8001"))
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000,http://localhost:5173")
+
+# ============ Redis 配置 ============
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# ============ 评测配置 ============
+EVAL_LIGHT = os.getenv("EVAL_LIGHT", "").lower() in ("1", "true", "yes")

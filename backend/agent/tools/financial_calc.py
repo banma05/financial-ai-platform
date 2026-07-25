@@ -85,7 +85,7 @@ def calc_current_ratio(current_assets: float, current_liabilities: float) -> flo
     流动比率 = 流动资产 / 流动负债
     """
     if current_liabilities == 0:
-        return float("inf")
+        return None  # V9.1: 分母为零返回 None，不返回 inf
     return round(current_assets / current_liabilities, 2)
 
 
@@ -96,7 +96,7 @@ def calc_quick_ratio(
     速动比率 = (流动资产 - 存货) / 流动负债
     """
     if current_liabilities == 0:
-        return float("inf")
+        return None  # V9.1: 分母为零返回 None，不返回 inf
     return round((current_assets - inventory) / current_liabilities, 2)
 
 
@@ -105,7 +105,7 @@ def calc_interest_coverage(ebit: float, interest_expense: float) -> float:
     利息保障倍数 = EBIT / 利息费用
     """
     if interest_expense == 0:
-        return float("inf")
+        return None  # V9.1: 分母为零返回 None
     return round(ebit / interest_expense, 2)
 
 
@@ -167,8 +167,8 @@ def calc_pe_ratio(stock_price: float, eps: float) -> float:
     """
     市盈率 PE = 股价 / 每股收益
     """
-    if eps == 0:
-        return float("inf")
+    if eps == 0 or eps is None:
+        return None  # V9.1: 分母为零或缺失返回 None
     return round(stock_price / eps, 2)
 
 
@@ -176,8 +176,8 @@ def calc_pb_ratio(stock_price: float, bvps: float) -> float:
     """
     市净率 PB = 股价 / 每股净资产
     """
-    if bvps == 0:
-        return float("inf")
+    if bvps == 0 or bvps is None:
+        return None  # V9.1: 分母为零或缺失返回 None
     return round(stock_price / bvps, 2)
 
 
@@ -185,8 +185,8 @@ def calc_ps_ratio(stock_price: float, revenue_per_share: float) -> float:
     """
     市销率 PS = 股价 / 每股营收
     """
-    if revenue_per_share == 0:
-        return float("inf")
+    if revenue_per_share == 0 or revenue_per_share is None:
+        return None  # V9.1: 分母为零或缺失返回 None
     return round(stock_price / revenue_per_share, 2)
 
 
@@ -614,6 +614,13 @@ class FinancialCalcTool:
             "net_profit_growth": (-500, 500, "净利润增长率超出合理范围 (-500%~500%)，可能年份数据错配"),
             # V8.5: FCF 合理性 — 如果资本支出 >> 经营现金流的 5 倍，说明数据源有问题
             "free_cash_flow": (None, None, None),  # 占位，FCF 的校验在下面用自定义逻辑
+            # V9.1: 比率类公式合理性检查（防止 inf/异常值进入报告）
+            "current_ratio": (0, 100, "流动比率超出合理范围 (0-100)"),
+            "quick_ratio": (0, 100, "速动比率超出合理范围 (0-100)"),
+            "interest_coverage": (-1000, 1000, "利息保障倍数超出合理范围"),
+            "pe_ratio": (0, 1000, "市盈率超出合理范围 (0-1000)"),
+            "pb_ratio": (0, 100, "市净率超出合理范围 (0-100)"),
+            "ps_ratio": (0, 100, "市销率超出合理范围 (0-100)"),
         }
         if formula in checks:
             lo, hi, reason = checks[formula]
@@ -784,7 +791,6 @@ class FinancialCalcTool:
             r = self._single_calculate(name, params)
             r["formula"] = name
             if r["success"]:
-                success_count += 1
                 # 杜邦分析返回 dict → 展开为独立子指标
                 if isinstance(r.get("result"), dict):
                     dupont_dict = r["result"]
@@ -803,10 +809,11 @@ class FinancialCalcTool:
                                 "_from_dupont": True,
                             }
                             results.append(sub_entry)
-                            success_count += 1
+                            # V9.1: 子项不增加 success_count，避免重复计数
+                            # success_count 只计算原始 formula_names 中的公式
                     # 保留原始条目（含 breakdown 文本，供报告展示用）
-                    # 但把 result 设为 None，避免 dict 污染下游
                     r["result"] = None
+                success_count += 1  # V9.1: 父公式成功只计一次
                 results.append(r)
             else:
                 results.append(r)

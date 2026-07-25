@@ -11,6 +11,8 @@ import time
 from typing import TypedDict, List, Optional, Generator, Dict, Any
 from loguru import logger
 
+from utils.safe_error import safe_error_detail
+
 from langgraph.graph import StateGraph, END
 
 from .schemas import AnalysisTask, TaskResult, AnalysisPlan
@@ -217,7 +219,7 @@ def reporter_node(state: AgentState) -> dict:
             return {"final_report": report}
         except Exception as e:
             logger.error(f"[Reporter] 生成失败: {e}")
-            return {"final_report": f"## 分析报告生成失败\n\n错误: {e}"}
+            return {"final_report": f"## 分析报告生成失败\n\n{safe_error_detail(e)}"}
 
 
 # ==================== 条件路由 ====================
@@ -539,7 +541,7 @@ def run_agent_sync(
         logger.error(f"[Agent] 同步执行失败: {e}")
         processing_time = round(time.time() - start_time, 1)
         result = {
-            "report": f"## 分析异常\n\n错误: {e}",
+            "report": f"## 分析异常\n\n{safe_error_detail(e)}",
             "charts": [],
             "task_count": 0,
             "processing_time": processing_time,

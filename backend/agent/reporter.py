@@ -488,7 +488,10 @@ class Reporter:
         confidence_count = 0
 
         for r in results:
-            if not isinstance(r, dict):
+            # V9.1: 兼容 Pydantic BaseModel 和 dict 两种输入
+            if hasattr(r, 'model_dump'):
+                r = r.model_dump()
+            elif not isinstance(r, dict):
                 continue
             source = r.get("source", "")
             conf = r.get("confidence")

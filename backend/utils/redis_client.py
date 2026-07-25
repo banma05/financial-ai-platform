@@ -18,7 +18,7 @@ from collections import defaultdict
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
-REDIS_URL = os.getenv("REDIS_URL", "")
+from config import REDIS_URL  # V9.1: 统一配置入口
 
 _redis_client = None
 _redis_available = False

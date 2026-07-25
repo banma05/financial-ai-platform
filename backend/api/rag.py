@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from utils.safe_error import safe_error_detail
 
 from config import UPLOAD_DIR, MAX_FILE_SIZE_MB
 from models.schemas import (
@@ -151,7 +152,7 @@ async def upload_document(file: UploadFile = File(...), background_tasks: Backgr
         pages = load_document(str(file_path))
     except Exception as e:
         os.remove(file_path)
-        raise HTTPException(status_code=500, detail=f"文档解析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"文档解析失败: {safe_error_detail(e)}")
 
     # 5. 文本分块
     # 语义动态切分（每页内做语义边界检测，保留页码溯源）
@@ -356,7 +357,7 @@ async def chat_stream_endpoint(request: ChatRequest, db=Depends(get_db)):  # V8.
 
         except Exception as e:
             logger.error(f"流式输出失败: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': safe_error_detail(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -441,7 +442,7 @@ async def run_evaluation(request: EvalRequest = None):
             verbose=True,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"评测失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"评测失败: {safe_error_detail(e)}")
 
     # 构建响应
     summary = EvalSummary(

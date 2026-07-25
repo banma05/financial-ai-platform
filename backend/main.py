@@ -31,15 +31,13 @@ app = FastAPI(
 )
 
 # CORS 配置（前端跨域访问）
-# 生产环境应通过 CORS_ORIGINS 环境变量指定具体域名（如 "http://localhost:8501,https://app.example.com"）
-# 开发环境默认允许本地 Streamlit（8501）和 localhost
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000,http://localhost:5173").split(",")
+_cors_origins = config.CORS_ORIGINS.split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],       # V9.1: 收紧为实际使用的方法
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],  # V9.1: 白名单必要的头
 )
 
 # 请求追踪中间件（可观测性）
@@ -189,6 +187,6 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("BACKEND_PORT", "8001"))
+    port = config.BACKEND_PORT
     logger.info(f"启动智能财务分析平台 (0.0.0.0:{port})...")
     uvicorn.run(app, host="0.0.0.0", port=port)
