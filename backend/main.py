@@ -24,6 +24,10 @@ import db.financial_models  # noqa: F401
 # 初始化业务数据库（SQLite → 生产切 MySQL）
 init_db()
 
+# ── V9.1: DI 容器 — 注册所有应用级单例（线程安全 + 消除 TOCTOU）──
+from di import register_all, Container
+register_all()
+
 app = FastAPI(
     title="智能财务分析平台",
     description="智能财务分析平台 — 三模块架构：知识库 + Agent + MCP",
@@ -69,6 +73,20 @@ app.include_router(agent_router)
 # 安装安全中间件（鉴权 + 限流）
 from middleware.auth import setup_auth_middleware
 setup_auth_middleware(app)
+
+
+# ── V9.1: 启动时预热重资源（Embedding/CrossEncoder 模型异步加载）──
+import asyncio
+
+
+@app.on_event("startup")
+async def warmup():
+    """在事件循环外同步加载大模型，避免首次请求冷启动延迟"""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: Container.warmup([
+        "embedding_model", "chroma_store", "reranker", "llm_client"
+    ]))
+    logger.info("V9.1 Container 预热完成")
 
 
 @app.get("/")

@@ -94,8 +94,6 @@ COMPLEX_KEYWORDS = [
     "同比", "环比", "财务", "审计", "合规",
 ]
 
-_client = None
-
 # ── V8.2: LLM 调用熔断器（5次连续失败→熔断，30s冷却）──
 _llm_circuit_breaker = CircuitBreaker(
     name="llm_api",
@@ -105,14 +103,18 @@ _llm_circuit_breaker = CircuitBreaker(
 
 
 def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
-            timeout=60.0,  # V8.1: 连接+读取总超时 60 秒，防止 LLM 无响应时永久阻塞 worker
-        )
-    return _client
+    """获取 OpenAI 客户端（V9.1: 委托给 Container）"""
+    from di.container import Container
+    return Container.resolve("llm_client")
+
+
+def _create_llm_client() -> OpenAI:
+    """工厂函数 — 供 Container 惰性初始化调用"""
+    return OpenAI(
+        api_key=DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
+        timeout=60.0,
+    )
 
 
 def classify(query: str) -> TaskType:
@@ -223,8 +225,7 @@ def _capture_usage(response_or_chunk, model: str):
 
 
 # ============ LangChain ChatOpenAI 包装器（模块二 Agent 使用）============
-
-_langchain_llm = None
+# V9.1: 非单例（不同调用方可能需不同模型），保持工厂方法模式
 
 
 def get_langchain_llm(model: str = None) -> "ChatOpenAI":
