@@ -107,3 +107,13 @@ def test_mixed_language():
     """中英文混合正常查询不应误杀"""
     result = InputSanitizer.wrap("请分析茅台2024 PE Ratio 和 EPS growth")
     assert "PE Ratio" in result
+
+
+def test_wrap_idempotent():
+    """V9.1: 重复包裹幂等 — 防止 Planner→DataQuery→RAG 三重包裹"""
+    q = "分析贵州茅台2024年盈利能力"
+    once = InputSanitizer.wrap(q)
+    twice = InputSanitizer.wrap(once)
+    thrice = InputSanitizer.wrap(twice)
+    assert once == twice == thrice
+    assert once.count("<user_query>") == 1
