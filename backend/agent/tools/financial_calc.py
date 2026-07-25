@@ -545,6 +545,32 @@ class FinancialCalcTool:
 
             result = func(*args)
 
+            # V9.1: 杜邦分析返回 dict → 展开为批量结果（与 _batch_calculate 行为一致）
+            if isinstance(result, dict):
+                sub_results = []
+                for sub_key, sub_val in result.items():
+                    if isinstance(sub_val, (int, float)):
+                        sub_results.append({
+                            "formula": f"dupont_{sub_key}",
+                            "success": True,
+                            "result": sub_val,
+                            "display_name": f"杜邦-{sub_key}",
+                            "category": "杜邦分析",
+                            "expression": f"杜邦分析子项: {sub_key} = {sub_val}",
+                            "unit": "",
+                        })
+                return {
+                    "success": True,
+                    "result": None,
+                    "display_name": entry["display_name"],
+                    "category": entry["category"],
+                    "expression": f"杜邦分析: {len(sub_results)}个子指标",
+                    "unit": "",
+                    "is_batch": True,
+                    "results": sub_results,
+                    "summary": f"杜邦分解: {len(sub_results)}个子指标",
+                }
+
             # ── V8.3: 合理性校验 — 财务数据宁缺毋滥 ──
             sanity = FinancialCalcTool._sanity_check(formula, result, params)
             if not sanity["ok"]:
