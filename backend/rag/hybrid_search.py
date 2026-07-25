@@ -303,6 +303,29 @@ def _get_lambda_mart():
     return _reranker
 
 
+def _create_reranker():
+    """工厂函数 — 供 Container 惰性初始化（V9.1: 从 _get_lambda_mart 提取创建逻辑）"""
+    try:
+        from config import ROOT_DIR
+        local_path = str(ROOT_DIR / "data" / "models" / "BAAI" / "bge-reranker-v2-m3")
+    except ImportError:
+        local_path = os.path.join("data", "models", "BAAI", "bge-reranker-v2-m3")
+    model_name = local_path if os.path.exists(local_path) else "BAAI/bge-reranker-v2-m3"
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        device = "cpu"
+    reranker = _CrossEncoder(model_name, device=device)
+    logger.info(f"CrossEncoder 重排器已加载: {model_name} (device={device})")
+    return reranker
+
+
+# V9.1: 保留 _get_lambda_mart 作为兼容层（处理熔断器状态）
+# 新增 _create_reranker 供 Container 直接加载模型，不处理熔断逻辑
+# TODO: 阶段四将熔断逻辑移到 hybrid_search 调用侧，统一使用 Container
+
+
 def _reset_circuit_breaker():
     """手动重置熔断器（用于运维/热重载）"""
     global _reranker_circuit_open, _reranker_failure_count

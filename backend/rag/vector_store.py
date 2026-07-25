@@ -1,7 +1,8 @@
 """
 向量数据库模块 - ChromaDB 管理
+
+V9.1: 委托给 di.Container 管理 ChromaDB 实例生命周期。
 """
-import threading
 from pathlib import Path
 from typing import List, Optional
 from loguru import logger
@@ -9,15 +10,13 @@ from langchain_chroma import Chroma
 
 from config import CHROMA_PERSIST_DIR
 from .embedder import get_embedding_model
+from di.container import Container
 
 
 COLLECTION_NAME = "financial_docs"
 
 # HNSW segment 完整落盘时应有的数据文件（缺任一即为残缺）
 _HNSW_BIN_FILES = ("data_level0.bin", "header.bin", "length.bin", "link_lists.bin")
-
-_chroma_store: Optional[Chroma] = None
-_chroma_lock = threading.Lock()
 
 
 def _find_corrupt_segments() -> List[Path]:
@@ -51,18 +50,18 @@ def _heal_corrupt_segments() -> None:
 
 
 def _get_chroma() -> Chroma:
-    """获取 Chroma 实例（线程安全懒加载，初始化前先自愈残缺索引）"""
-    global _chroma_store
-    if _chroma_store is None:
-        with _chroma_lock:
-            if _chroma_store is None:
-                _heal_corrupt_segments()
-                _chroma_store = Chroma(
-                    collection_name=COLLECTION_NAME,
-                    embedding_function=get_embedding_model(),
-                    persist_directory=CHROMA_PERSIST_DIR,
-                )
-    return _chroma_store
+    """获取 Chroma 实例（V9.1: 委托给 Container）"""
+    return Container.resolve("chroma_store")
+
+
+def _create_chroma_store() -> Chroma:
+    """工厂函数 — 供 Container 惰性初始化调用（含残缺索引自愈）"""
+    _heal_corrupt_segments()
+    return Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=get_embedding_model(),
+        persist_directory=CHROMA_PERSIST_DIR,
+    )
 
 
 def wait_for_compaction(timeout: float = 300.0) -> bool:
@@ -188,15 +187,15 @@ def delete_document(source: str) -> bool:
 
 def reset_database():
     """清空向量数据库（开发调试用）"""
-    global _chroma_store
     import shutil
 
-    if _chroma_store is not None:
+    if Container.is_ready("chroma_store"):
+        store = Container.resolve("chroma_store")
         try:
-            _chroma_store._client.delete_collection(COLLECTION_NAME)
+            store._client.delete_collection(COLLECTION_NAME)
         except Exception:
             pass
-        _chroma_store = None
+        Container.override("chroma_store", None)
 
     persist_dir = Path(CHROMA_PERSIST_DIR)
     if persist_dir.exists():

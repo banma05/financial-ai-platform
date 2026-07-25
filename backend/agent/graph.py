@@ -46,44 +46,60 @@ class AgentState(TypedDict, total=False):
     error: Optional[str]
 
 
-# ==================== 全局单例 ====================
+# ==================== 组件解析（V9.1: Container 管理，消除 TOCTOU） ====================
 
-_tool_registry: Optional[ToolRegistry] = None
-_planner: Optional[Planner] = None
-_executor: Optional[Executor] = None
-_reporter: Optional[Reporter] = None
+from di.container import Container
 
 
-def _init_components():
-    """初始化 Agent 组件（懒加载）"""
-    global _tool_registry, _planner, _executor, _reporter
-    if _tool_registry is None:
-        _tool_registry = ToolRegistry()
-        _tool_registry.register(DataQueryTool())
-        _tool_registry.register(RAGContextTool())
-        _tool_registry.register(FinancialCalcTool())
-        _tool_registry.register(ChartTool())
-        # ── MCP 工具 ──
-        from mcp import (
-            StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
-            IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,
-        )
-        _tool_registry.register(StockPriceTool())
-        _tool_registry.register(FinancialStatementsTool())
-        _tool_registry.register(CalculateRatioTool())
-        _tool_registry.register(IndustryComparisonTool())
-        _tool_registry.register(MarketIndexTool())
-        _tool_registry.register(FinancialCalendarTool())
-        _planner = Planner()
-        _executor = Executor(_tool_registry)
-        _reporter = Reporter()
+def _create_tool_registry() -> ToolRegistry:
+    """工厂函数 — 创建并注册所有工具"""
+    registry = ToolRegistry()
+    registry.register(DataQueryTool())
+    registry.register(RAGContextTool())
+    registry.register(FinancialCalcTool())
+    registry.register(ChartTool())
+    # ── MCP 工具 ──
+    from mcp import (
+        StockPriceTool, FinancialStatementsTool, CalculateRatioTool,
+        IndustryComparisonTool, MarketIndexTool, FinancialCalendarTool,
+    )
+    registry.register(StockPriceTool())
+    registry.register(FinancialStatementsTool())
+    registry.register(CalculateRatioTool())
+    registry.register(IndustryComparisonTool())
+    registry.register(MarketIndexTool())
+    registry.register(FinancialCalendarTool())
+    return registry
+
+
+def _create_planner() -> Planner:
+    return Planner()
+
+
+def _create_executor() -> Executor:
+    return Executor(Container.resolve("tool_registry"))
+
+
+def _create_reporter() -> Reporter:
+    return Reporter()
+
+
+def _get_planner() -> Planner:
+    return Container.resolve("planner")
+
+
+def _get_executor() -> Executor:
+    return Container.resolve("executor")
+
+
+def _get_reporter() -> Reporter:
+    return Container.resolve("reporter")
 
 
 # ==================== 节点函数 ====================
 
 def planner_node(state: AgentState) -> dict:
-    """Planner 节点：分析需求 → 任务列表"""
-    _init_components()
+    """Planner 节点：分析需求 → 任务列表（V9.1: Container 管理组件）"""
     user_input = state["user_input"]
     template = state.get("template_name")
 
@@ -91,7 +107,7 @@ def planner_node(state: AgentState) -> dict:
 
     with TraceTimer("planner"):
         try:
-            plan: AnalysisPlan = _planner.plan(user_input, template)
+            plan: AnalysisPlan = _get_planner().plan(user_input, template)
         except Exception as e:
             logger.error(f"[Planner] 拆解失败: {e}")
             return {
@@ -132,7 +148,7 @@ def executor_node(state: AgentState) -> dict:
     以及 GPU 模型双重加载导致 CUDA OOM 的问题。
     层内并行收益有限（多数模板只有 1-2 个无依赖任务），不值得为它引入线程复杂度。
     """
-    _init_components()
+    # V9.1: 移除了 _init_components() 调用，组件由 Container 按需懒加载
     tasks_dict = state.get("tasks", [])
     all_results = state.get("task_results", [])
 
@@ -179,7 +195,7 @@ def executor_node(state: AgentState) -> dict:
                     # - 不再使用 ThreadPoolExecutor(max_workers=1) 嵌套线程：
                     #   V6.1 已发现 DAG 并行+线程嵌套导致 GPU 双重加载→OOM，
                     #   ThreadPoolExecutor 嵌套同样有线程调度开销+锁竞争风险→系统不稳定
-                    result = _executor.tools.execute_task(task, dep_results)
+                    result = _get_executor().tools.execute_task(task, dep_results)
                     result_map[task.task_id] = result.model_dump()
                 except Exception as e:
                     logger.error(f"[Executor] 任务 {task.task_id} 异常: {e}")
@@ -196,7 +212,7 @@ def executor_node(state: AgentState) -> dict:
 
 def reporter_node(state: AgentState) -> dict:
     """Reporter 节点：生成最终分析报告"""
-    _init_components()
+    # V9.1: 移除了 _init_components() 调用，组件由 Container 按需懒加载
 
     if state.get("clarification"):
         return {
@@ -215,7 +231,7 @@ def reporter_node(state: AgentState) -> dict:
 
     with TraceTimer("reporter"):
         try:
-            report = _reporter.generate(user_input, tasks, results, chart_count)
+            report = _get_reporter().generate(user_input, tasks, results, chart_count)
             return {"final_report": report}
         except Exception as e:
             logger.error(f"[Reporter] 生成失败: {e}")
@@ -252,15 +268,15 @@ def _build_agent_graph() -> StateGraph:
     return builder.compile()
 
 
-# 全局 Graph 实例（懒编译）
-_agent_graph = None
+# V9.1: Agent Graph 通过 Container 管理
+
+def _create_agent_graph():
+    """工厂函数 — 构建 LangGraph 图"""
+    return _build_agent_graph()
 
 
 def _get_agent_graph():
-    global _agent_graph
-    if _agent_graph is None:
-        _agent_graph = _build_agent_graph()
-    return _agent_graph
+    return Container.resolve("agent_graph")
 
 
 # ==================== 分析历史持久化 ====================
@@ -325,7 +341,7 @@ def run_agent_stream(
     新架构 Planner 走 graph 拿计划，任务在 generator 中逐个执行，
     每完成一个立即 yield SSE——工作与推送真正并步。
     """
-    _init_components()
+    # V9.1: 移除了 _init_components() 调用，组件由 Container 按需懒加载
     start_time = time.time()
     tid = set_trace_id()
     init_usage()
@@ -401,7 +417,7 @@ def run_agent_stream(
                     for dep_id in task.depends_on if dep_id in result_map
                 ]
                 try:
-                    result = _executor.tools.execute_task(task, dep_results)
+                    result = _get_executor().tools.execute_task(task, dep_results)
                 except Exception as e:
                     logger.error(f"[Executor] 任务 {task.task_id} 异常: {e}")
                     result = TaskResult(
@@ -441,7 +457,7 @@ def run_agent_stream(
         result_objects = [TaskResult(**r) for r in task_results_list]
 
         with TraceTimer("reporter"):
-            report = _reporter.generate(user_input, task_objects, result_objects, chart_count)
+            report = _get_reporter().generate(user_input, task_objects, result_objects, chart_count)
 
         processing_time = round(time.time() - start_time, 1)
         # V9.0: 收集所有图表（单图 chart_option + 多图 chart_options）
@@ -489,7 +505,7 @@ def run_agent_sync(
     参数:
         plan: 可选，预生成的 AnalysisPlan。传入后跳过 Planner 步骤。
     """
-    _init_components()
+    # V9.1: 移除了 _init_components() 调用，组件由 Container 按需懒加载
     start_time = time.time()
     tid = set_trace_id()
 
@@ -507,9 +523,9 @@ def run_agent_sync(
                               task_count=0, report=result["report"],
                               processing_time=result["processing_time"], status="clarification")
             return result
-        results = _executor.execute(plan.tasks)
+        results = _get_executor().execute(plan.tasks)
         chart_count = sum(1 for r in results if r.chart_option or r.chart_base64)
-        report = _reporter.generate(user_input, plan.tasks, results, chart_count)
+        report = _get_reporter().generate(user_input, plan.tasks, results, chart_count)
         processing_time = round(time.time() - start_time, 1)
         result = {
             "report": report,

@@ -489,20 +489,21 @@ def _parse_level3_response(response: str, expected_keys: List[str]) -> Dict[str,
 
 
 # ==================== 模块级便捷函数 ====================
+# V9.1: 委托给 Container 管理单例（线程安全 + 消除 TOCTOU 竞态）
 
-# 全局注入器实例（供 executor 使用，保持状态一致）
-_default_injector: Optional[ParamInjector] = None
+from di.container import Container
 
 
 def get_injector() -> ParamInjector:
-    """获取全局注入器实例（懒初始化）"""
-    global _default_injector
-    if _default_injector is None:
-        _default_injector = ParamInjector()
-    return _default_injector
+    """获取全局注入器实例（V9.1: Container 管理，线程安全）"""
+    return Container.resolve("param_injector")
+
+
+def _create_param_injector() -> ParamInjector:
+    """工厂函数 — 供 Container 调用"""
+    return ParamInjector()
 
 
 def reset_injector():
     """重置全局注入器（测试用）"""
-    global _default_injector
-    _default_injector = ParamInjector()
+    Container.override("param_injector", ParamInjector())

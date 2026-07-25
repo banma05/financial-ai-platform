@@ -19,28 +19,30 @@ from typing import Optional, List, Dict, Any
 from loguru import logger
 
 from config import REDIS_URL  # V9.1: 统一配置入口
-
-_redis_client = None
-_redis_available = False
+from di.container import Container
 
 
 def get_redis():
-    """获取 Redis 客户端（不可用时返回 None）"""
-    global _redis_client, _redis_available
-    if _redis_client is None and REDIS_URL:
-        try:
-            import redis
-            _redis_client = redis.Redis.from_url(
-                REDIS_URL, socket_connect_timeout=3, socket_timeout=3, decode_responses=True
-            )
-            _redis_client.ping()
-            _redis_available = True
-            logger.info(f"[Redis] 已连接: {REDIS_URL}")
-        except Exception as e:
-            logger.warning(f"[Redis] 不可用({e})，回退内存实现")
-            _redis_client = None
-            _redis_available = False
-    return _redis_client if _redis_available else None
+    """获取 Redis 客户端（V9.1: 委托给 Container，不可用时返回 None）"""
+    client = Container.resolve("redis_client")
+    return client if client is not None else None
+
+
+def _create_redis_client():
+    """工厂函数 — 供 Container 惰性初始化调用"""
+    if not REDIS_URL:
+        return None
+    try:
+        import redis
+        client = redis.Redis.from_url(
+            REDIS_URL, socket_connect_timeout=3, socket_timeout=3, decode_responses=True
+        )
+        client.ping()
+        logger.info(f"[Redis] 已连接: {REDIS_URL}")
+        return client
+    except Exception as e:
+        logger.warning(f"[Redis] 不可用({e})，回退内存实现")
+        return None
 
 
 # ==================== 限流器（Redis/内存 双模式） ====================
@@ -171,14 +173,20 @@ class SessionStore:
             self._memory_store.pop(session_id, None)
 
 
-# 全局实例
-_limiter = RateLimiter()
-_session_store = SessionStore()
+# V9.1: 全局实例通过 Container 管理（惰性初始化 + 线程安全）
+# 保留兼容层函数供外部调用
+
+def get_limiter() -> "RateLimiter":
+    return Container.resolve("rate_limiter")
 
 
-def get_limiter() -> RateLimiter:
-    return _limiter
+def get_session_store() -> "SessionStore":
+    return Container.resolve("session_store")
 
 
-def get_session_store() -> SessionStore:
-    return _session_store
+def _create_rate_limiter() -> "RateLimiter":
+    return RateLimiter()
+
+
+def _create_session_store() -> "SessionStore":
+    return SessionStore()
