@@ -586,3 +586,11 @@ def run_agent_sync(
                       report=report, chart_count=chart_count,
                       processing_time=processing_time)
     return result
+
+
+# ==================== V9.1: 模块自注册（文件末尾 — 所有函数已定义） ====================
+Container.register("tool_registry", _create_tool_registry)
+Container.register("planner", _create_planner)
+Container.register("executor", _create_executor)
+Container.register("reporter", _create_reporter)
+Container.register("agent_graph", _create_agent_graph)

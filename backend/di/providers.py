@@ -1,66 +1,53 @@
 """
-依赖注册中心 — 所有应用级组件的工厂注册。
+依赖注册中心 — 确保所有自注册模块被导入。
 
-在应用启动时调用 register_all() 一次，之后所有组件通过
-Container.resolve(key) 获取，享受线程安全的惰性初始化。
+V9.1 设计原则：每个模块通过 `Container.register(key, factory)` 自注册。
+此文件只负责触发模块导入（触发 import 即触发注册），不集中管理注册逻辑。
 
-面试台词："14 个全局单例的注册全部集中在这个文件里。
-  一眼就能看清整个应用的依赖关系图。"
+面试台词："Container 的去中心化设计是 V9.1 的关键决策——
+  每个模块自己声明依赖，Container 不知道有哪些模块，
+  但知道任何被 import 的模块都已经自注册了。"
 """
 
+import logging
 from di.container import Container
+
+logger = logging.getLogger(__name__)
 
 
 def register_all() -> None:
-    """注册所有应用级单例（幂等，重复调用覆盖而非重复创建）"""
+    """
+    触发所有模块导入，激活各模块的 Container.register() 自注册。
+
+    幂等：重复调用不会重复注册（Container.register 覆盖同一 key）。
+
+    CI 兼容：重依赖不可用的模块在 import 时会因 ImportError 被跳过，
+    不影响轻量测试的运行——这就是自注册相比中心化注册的核心优势。
+    """
 
     # ── RAG 组件 ─────────────────────
-    from rag.embedder import _create_embedding_model
-    from rag.vector_store import _create_chroma_store
-
-    Container.register("embedding_model", _create_embedding_model)
-    Container.register("chroma_store", _create_chroma_store)
+    _try_import("rag.embedder")
+    _try_import("rag.vector_store")
 
     # ── LLM 组件 ─────────────────────
-    from rag.model_router import _create_llm_client
+    _try_import("rag.model_router")
 
-    Container.register("llm_client", _create_llm_client)
+    # ── Hybrid Search ────────────────
+    _try_import("rag.hybrid_search")
 
-    # ── Hybrid Search 组件 ───────────
-    from rag.hybrid_search import _create_reranker
-
-    Container.register("reranker", _create_reranker)
-
-    # ── Agent 核心组件 ───────────────
-    from agent.graph import (
-        _create_tool_registry,
-        _create_planner,
-        _create_executor,
-        _create_reporter,
-        _create_agent_graph,
-    )
-
-    Container.register("tool_registry", _create_tool_registry)
-    Container.register("planner", _create_planner)
-    Container.register("executor", _create_executor)
-    Container.register("reporter", _create_reporter)
-    Container.register("agent_graph", _create_agent_graph)
+    # ── Agent 核心 ───────────────────
+    _try_import("agent.graph")
 
     # ── 参数注入器 ───────────────────
-    from agent.tools.param_injection import _create_param_injector
-
-    Container.register("param_injector", _create_param_injector)
+    _try_import("agent.tools.param_injection")
 
     # ── 基础设施 ─────────────────────
-    from utils.redis_client import (
-        _create_redis_client,
-        _create_rate_limiter,
-        _create_session_store,
-    )
+    _try_import("utils.redis_client")
 
-    Container.register("redis_client", _create_redis_client)
-    Container.register("rate_limiter", _create_rate_limiter)
-    Container.register("session_store", _create_session_store)
 
-    # ── 重排序器降级缓存（可变容器，非单例对象）──
-    Container.register("bm25_cache", dict)
+def _try_import(module_name: str) -> None:
+    """尝试导入模块，失败时记录警告但不阻断"""
+    try:
+        __import__(module_name)
+    except ImportError as e:
+        logger.debug(f"[DI] 跳过 {module_name}（缺少依赖: {e}）")

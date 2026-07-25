@@ -117,6 +117,11 @@ def _create_llm_client() -> OpenAI:
     )
 
 
+# V9.1: 模块自注册
+from di.container import Container
+Container.register("llm_client", _create_llm_client)
+
+
 def classify(query: str) -> TaskType:
     """自动判断任务复杂度（为后续多模型路由预留）"""
     for kw in COMPLEX_KEYWORDS:

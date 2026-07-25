@@ -504,6 +504,10 @@ def _create_param_injector() -> ParamInjector:
     return ParamInjector()
 
 
+# V9.1: 模块自注册
+Container.register("param_injector", _create_param_injector)
+
+
 def reset_injector():
     """重置全局注入器（测试用）"""
     Container.override("param_injector", ParamInjector())

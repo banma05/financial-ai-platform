@@ -321,6 +321,12 @@ def _create_reranker():
     return reranker
 
 
+# V9.1: 模块自注册
+from di.container import Container
+Container.register("reranker", _create_reranker)
+Container.register("bm25_cache", dict)
+
+
 # V9.1: 保留 _get_lambda_mart 作为兼容层（处理熔断器状态）
 # 新增 _create_reranker 供 Container 直接加载模型，不处理熔断逻辑
 # TODO: 阶段四将熔断逻辑移到 hybrid_search 调用侧，统一使用 Container
