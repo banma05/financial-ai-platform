@@ -237,8 +237,10 @@ class ChartTool:
             if dim_count > 3:  # P2: 5→3, 复杂问题自动多图互补
                 multi = self.generate_multi(data, title)
                 if len(multi) > 1:
+                    chart_options_list = [m.get("chart_option") for m in multi]
                     return {
-                        "chart_options": [m.get("chart_option") for m in multi],
+                        "chart_option": chart_options_list[0] if chart_options_list else None,  # V9.1: 向后兼容
+                        "chart_options": chart_options_list,
                         "chart_descriptions": [m.get("chart_description", "") for m in multi],
                         "chart_count": len(multi),
                     }
