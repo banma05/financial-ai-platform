@@ -273,7 +273,7 @@ class TestFinancialCalcTool:
             assert len(info["params"]) >= 1, f"{name} 缺少参数定义"
 
     def test_dupont_via_tool(self):
-        """通过 Tool 入口调用杜邦分析"""
+        """通过 Tool 入口调用杜邦分析（V9.1: 自动展开为子指标列表）"""
         tool = FinancialCalcTool()
         result = tool.run("dupont",
             net_profit=862.28,
@@ -282,5 +282,8 @@ class TestFinancialCalcTool:
             equity=2687.45,
         )
         assert result["success"] is True
-        assert isinstance(result["result"], dict)
-        assert "roe" in result["result"]
+        assert result.get("is_batch") is True  # V9.1: DuPont 自动展开为批量结果
+        assert "results" in result
+        assert len(result["results"]) == 4  # ROE, 净利率, 资产周转率, 权益乘数
+        for item in result["results"]:
+            assert isinstance(item["result"], (int, float)), f"{item['display_name']} 应是标量"
