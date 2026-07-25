@@ -1,17 +1,15 @@
 """
-数据库连接管理 — SQLite（MVP）→ MySQL（生产切换：改连接串即可）
+数据库连接管理 — 环境变量驱动，SQLite(默认) → MySQL(设置 DATABASE_URL 即可)
 """
+import os
 from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from loguru import logger
 
-# 数据库文件路径：data/platform.db
+# V9.1: 环境变量驱动，SQLite → MySQL 无需改代码
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "platform.db"
-DB_URL = f"sqlite:///{DB_PATH}"
-
-# MySQL 切换方式（生产环境取消注释）：
-# DB_URL = "mysql+pymysql://user:password@localhost:3306/financial_platform"
+DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
 
 engine = create_engine(
     DB_URL,
