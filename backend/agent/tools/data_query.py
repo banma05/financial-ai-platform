@@ -9,6 +9,8 @@
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
+from security import InputSanitizer  # V9.1: 输入净化层
+
 from rag.hybrid_search import hybrid_search
 from rag.query_processor import process_query
 from rag.model_router import chat, TaskType
@@ -92,6 +94,9 @@ class DataQueryTool:
 
         这个方法的核心价值：将自然语言文档内容转为机器可计算的结构化数据。
         """
+        # V9.1: 安全入口 — 净化查询并建立 XML 硬隔离
+        query = InputSanitizer.wrap(query)
+
         # 构建上下文
         context_parts = []
         for i, s in enumerate(sources, 1):
