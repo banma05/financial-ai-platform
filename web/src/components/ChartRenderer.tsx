@@ -67,16 +67,24 @@ export default function ChartRenderer({
       // 触屏设备增大 toolbox 图标
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-      chart.setOption(
-        {
-          ...(option as Record<string, unknown>),
-          toolbox: {
-            ...(option.toolbox as Record<string, unknown> || {}),
-            iconStyle: isTouchDevice ? { borderWidth: 2 } : {},
-          },
+      // 注入前端侧 valueFormatter（JSON 无法序列化函数，后端只负责静态配置）
+      const tooltipConfig = (option.tooltip || {}) as Record<string, unknown>;
+      const finalOption = {
+        ...(option as Record<string, unknown>),
+        toolbox: {
+          ...(option.toolbox as Record<string, unknown> || {}),
+          iconStyle: isTouchDevice ? { borderWidth: 2 } : {},
         },
-        true,
-      );
+        tooltip: {
+          ...tooltipConfig,
+          valueFormatter: (value: unknown) =>
+            typeof value === 'number'
+              ? value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+              : String(value ?? ''),
+        },
+      };
+
+      chart.setOption(finalOption, true);
 
       chartRef.current = chart;
       setReady(true);
@@ -97,41 +105,35 @@ export default function ChartRenderer({
     }
   }, [option]);
 
-  // 错误状态
-  if (error) {
-    return (
-      <div
-        className={`w-full flex items-center justify-center border border-red-200 rounded-xl bg-red-50/50 ${className}`}
-        style={{ height: dynamicHeight }}
-      >
-        <div className="text-center px-4">
-          <div className="text-red-500 text-sm font-medium mb-1">图表渲染失败</div>
-          <div className="text-red-400 text-xs">{error}</div>
-        </div>
-      </div>
-    );
-  }
-
-  // 加载骨架屏
-  if (!ready) {
-    return (
-      <div
-        className={`w-full flex items-center justify-center border border-slate-200 rounded-xl bg-gradient-to-b from-slate-50 to-white ${className}`}
-        style={{ height: dynamicHeight }}
-      >
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" />
-          <div className="text-slate-400 text-xs font-medium">图表加载中...</div>
-        </div>
-      </div>
-    );
-  }
-
+  // 始终渲染容器 div（挂 ref），避免 useEffect 中 containerRef.current 为 null 的死锁
+  // 错误/加载/图表三种状态作为内容层叠在容器内部
   return (
     <div
       ref={containerRef}
-      className={`w-full ${className}`}
+      className={`w-full relative ${className}`}
       style={{ height: dynamicHeight }}
-    />
+    >
+      {/* 错误状态 */}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center border border-red-200 rounded-xl bg-red-50/50">
+          <div className="text-center px-4">
+            <div className="text-red-500 text-sm font-medium mb-1">图表渲染失败</div>
+            <div className="text-red-400 text-xs">{error}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 加载骨架屏 */}
+      {!ready && !error && (
+        <div className="absolute inset-0 flex items-center justify-center border border-slate-200 rounded-xl bg-gradient-to-b from-slate-50 to-white">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" />
+            <div className="text-slate-400 text-xs font-medium">图表加载中...</div>
+          </div>
+        </div>
+      )}
+
+      {/* ECharts 图表将被渲染到此容器（echarts.init 使用 containerRef） */}
+    </div>
   );
 }
