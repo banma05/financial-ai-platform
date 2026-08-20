@@ -424,6 +424,13 @@ def _query_one_company(db, symbol: str, years: List[int], metrics: List[str],
                     result = _safe_eval(formula, safe_vars)
                     out_key = f"{key_prefix}{metric_name}{year_suffix}"
                     data[out_key] = round(result, 2)
+                    # V9.1: 自由现金流 — 额外返回资本支出(investing_cf_out)原始值，
+                    # 供 financial_calc 公式层做 capital_expenditure 参数兜底
+                    if metric_name == "自由现金流" and "investing_cf_out" in values:
+                        capex_out_key = f"{key_prefix}资本支出{year_suffix}"
+                        if capex_out_key not in data:
+                            data[capex_out_key] = values["investing_cf_out"]
+                            sources[capex_out_key] = key_sources.get("investing_cf_out", "sql")
                     all_direct = all(key_sources.get(k, "") == "sql" for k in keys)
                     sources[out_key] = "sql" if all_direct else "sql:formula:partial_fallback"
                 except (ValueError, ZeroDivisionError, TypeError) as e:

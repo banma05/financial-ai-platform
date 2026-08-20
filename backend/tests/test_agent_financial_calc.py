@@ -287,3 +287,27 @@ class TestFinancialCalcTool:
         assert len(result["results"]) == 4  # ROE, 净利率, 资产周转率, 权益乘数
         for item in result["results"]:
             assert isinstance(item["result"], (int, float)), f"{item['display_name']} 应是标量"
+
+    def test_free_cash_flow_capex_auto_fill_from_investing_cf_out(self):
+        """V9.1: 自由现金流缺 capital_expenditure 时，用 investing_cf_out 策略8兜底"""
+        tool = FinancialCalcTool()
+        # 模拟 DataQuery 返回 investing_cf_out（英文键 + 年份后缀），无资本支出键
+        result = tool.run("free_cash_flow",
+            operating_cf_2024=133453873000.0,
+            investing_cf_out_2024=144482455000.0,
+        )
+        assert result["success"] is True
+        assert result["result"] == -11028582000.0
+
+    def test_free_cash_flow_batch_with_capex(self):
+        """V9.1: 批量计算 FCF + cf_to_net_profit 全部成功（修复缺少参数 capital_expend）"""
+        tool = FinancialCalcTool()
+        # 模拟 financial_query 返回 资本支出_2024 → param_injection 注入 capital_expenditure_2024
+        result = tool.run("free_cash_flow,cf_to_net_profit",
+            capital_expenditure_2024=144482455000.0,
+            operating_cf_2024=133453873000.0,
+            net_profit_2024=86228000000.0,
+        )
+        assert result["success"] is True
+        for item in result["results"]:
+            assert item["success"] is True, f"{item['formula']} 应成功: {item.get('error')}"

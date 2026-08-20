@@ -787,6 +787,28 @@ class FinancialCalcTool:
                 params["revenue_per_share"] = round(revenue / total_shares, 2)
                 fill_sources["revenue_per_share"] = "auto_fill:revenue_div_shares"
 
+        # ── 策略8: 自由现金流 — 资本支出用 investing_cf_out 近似 ──
+        # financial_query 的"自由现金流"指标已按 investing_cf_out 计算（V8.5 设计），
+        # 但 free_cash_flow 公式需要 capital_expenditure 参数；此处兜底对齐键名，
+        # 覆盖 DataQuery 只返回 investing_cf_out / 投资活动现金流出 的场景。
+        if formula == "free_cash_flow" and "capital_expenditure" not in params:
+            capex = None
+            for k in ("investing_cf_out", "投资活动现金流出", "资本支出"):
+                v = params.get(k)
+                if isinstance(v, (int, float)):
+                    capex = v
+                    break
+            # 年份后缀键（策略0 已回退，保险起见再兜一次）
+            if capex is None:
+                import re as _re_capex
+                for k, v in params.items():
+                    if isinstance(v, (int, float)) and _re_capex.match(r'^(investing_cf_out|资本支出)_\d{4}$', str(k)):
+                        capex = v
+                        break
+            if capex is not None:
+                params["capital_expenditure"] = capex
+                fill_sources["capital_expenditure"] = "auto_fill:capex_approx_investing_cf_out"
+
         return params, fill_sources
 
     @staticmethod
