@@ -74,6 +74,17 @@ export default function AnalysisProgress({ progress, onCancel }: AnalysisProgres
             </span>
           </div>
 
+          {/* LLM 拆解阶段提示 — 自由模式 planner 用 LLM 拆解, total=0 且无任务时告知用户 */}
+          {progress.phase === 'executing' && progress.total === 0 && (
+            <div className="flex items-center gap-2.5 mt-4 px-3 py-2.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
+              <span className="animate-pulse text-lg">🧠</span>
+              <div>
+                <p className="text-sm text-indigo-200">正在拆解分析任务（LLM 规划中）</p>
+                <p className="text-xs text-indigo-300/70 mt-0.5">首次自由分析约需 30-60 秒，请稍候...</p>
+              </div>
+            </div>
+          )}
+
           {/* 任务列表 */}
           {progress.tasks.length > 0 && (
             <div className="space-y-1.5">

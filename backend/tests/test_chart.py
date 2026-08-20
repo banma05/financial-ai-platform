@@ -43,3 +43,25 @@ class TestChartNoneDefense:
             "values": [91.18, 48.76],
         })
         assert r.get("chart_option") or r.get("chart_options")
+
+
+class TestChartRecommendation:
+    """图表自动选型 — V9.1: 正负混杂降级柱状图"""
+
+    def test_positive_negative_uses_bar(self):
+        """现金流正负混杂（流入/流出）→ 柱状图, 雷达图不适合负数"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["经营现金流", "投资现金流", "筹资现金流", "资本支出"],
+            "values": [133453873000, -129082282000, -10267547000, 14448245500],
+        })
+        assert r["chart_type"] == "bar"
+
+    def test_all_positive_multi_dim_keeps_radar(self):
+        """全正多指标（打分维度）→ 保持雷达图"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["毛利率", "净利率", "ROE", "ROA"],
+            "values": [91.18, 48.76, 33.65, 28.9],
+        })
+        assert r["chart_type"] == "radar"

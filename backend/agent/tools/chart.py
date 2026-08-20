@@ -370,6 +370,15 @@ class ChartTool:
 
         dim_count = len(base_metrics)
 
+        # 3.0 V9.1: 正负混杂（资金流入/流出）→ 雷达图不适合负数，降级柱状图
+        # 现金流场景: 经营现金流(正) vs 投资/筹资现金流(负)，雷达图无负方向，
+        # 负数被放到独立轴端点，丢失"流入/流出"经济含义；柱状图正负柱可清晰表达。
+        if values and any(v > 0 for v in values) and any(v < 0 for v in values):
+            if not has_years:
+                return {"chart_type": "bar",
+                        "reason": "正负值混杂（资金流入/流出），柱状图更清晰",
+                        "confidence": 0.85}
+
         # 3. 检测值域差异（量纲不一致 → 雷达图更合适）
         # V8.5: 财务数据天生不同量纲（营收千亿 vs 增长率%），
         # 若半数以上值为 0-100 范围（百分比/比率类），说明是混合量纲的财务指标集，
