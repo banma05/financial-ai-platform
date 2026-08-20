@@ -302,7 +302,6 @@ class ChartTool:
             option["tooltip"] = {**option.get("tooltip", {}),
                 "trigger": "axis",
                 "axisPointer": {"type": "cross", "crossStyle": {"color": "#999"}},
-                "valueFormatter": "(value) => typeof value === 'number' ? value.toLocaleString('zh-CN', {maximumFractionDigits: 2}) : value",
             }
             # 时间序列图表加底部缩放滑块
             if option.get("xAxis") and isinstance(option["xAxis"], dict):

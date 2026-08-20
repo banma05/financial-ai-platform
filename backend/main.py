@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+import config
 from db import init_db
 from api.rag import router as rag_router
 from api.agent import router as agent_router
