@@ -14,6 +14,11 @@ import * as echarts from 'echarts';
  * - ResizeObserver 自适应容器
  * - 动态高度: 柱图360/雷达图500/饼图400
  * - 加载骨架屏 + 错误兜底
+ *
+ * V9.1 修复: echarts 画布挂载到独立子 div, 避免 React removeChild 崩溃白屏。
+ * 根因: 旧实现 echarts.init 直接在 React 管理的容器内插 canvas, 与 React DOM
+ * reconciliation 冲突 — 移除骨架屏/错误层时 removeChild 报
+ * "The node to be removed is not a child of this node", 整个 React 树崩溃。
  */
 export default function ChartRenderer({
   option,
@@ -24,7 +29,7 @@ export default function ChartRenderer({
   className?: string;
   height?: number;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const chartMountRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -47,13 +52,14 @@ export default function ChartRenderer({
   })();
 
   useEffect(() => {
-    if (!containerRef.current) return;
-
     if (!option) {
       setReady(false);
       setError(null);
       return;
     }
+
+    const mountEl = chartMountRef.current;
+    if (!mountEl) return;
 
     // 销毁旧实例
     if (chartRef.current) {
@@ -62,7 +68,7 @@ export default function ChartRenderer({
     }
 
     try {
-      const chart = echarts.init(containerRef.current, null, { renderer: 'canvas' });
+      const chart = echarts.init(mountEl, null, { renderer: 'canvas' });
 
       // 触屏设备增大 toolbox 图标
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -91,7 +97,7 @@ export default function ChartRenderer({
       setError(null);
 
       const ro = new ResizeObserver(() => chart.resize());
-      ro.observe(containerRef.current);
+      ro.observe(mountEl);
 
       return () => {
         ro.disconnect();
@@ -105,14 +111,11 @@ export default function ChartRenderer({
     }
   }, [option]);
 
-  // 始终渲染容器 div（挂 ref），避免 useEffect 中 containerRef.current 为 null 的死锁
-  // 错误/加载/图表三种状态作为内容层叠在容器内部
   return (
-    <div
-      ref={containerRef}
-      className={`w-full relative ${className}`}
-      style={{ height: dynamicHeight }}
-    >
+    <div className={`w-full relative ${className}`} style={{ height: dynamicHeight }}>
+      {/* ECharts 画布挂载点 — 独立子 div，React 不管理其内部（避免 removeChild 崩溃） */}
+      <div ref={chartMountRef} className="absolute inset-0" />
+
       {/* 错误状态 */}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center border border-red-200 rounded-xl bg-red-50/50">
@@ -132,8 +135,6 @@ export default function ChartRenderer({
           </div>
         </div>
       )}
-
-      {/* ECharts 图表将被渲染到此容器（echarts.init 使用 containerRef） */}
     </div>
   );
 }
