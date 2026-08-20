@@ -94,7 +94,7 @@ export default function Layout() {
             <span className="text-xs text-gray-500">系统运行中</span>
           </div>
           <p className="mt-1.5 text-xs text-gray-400">
-            V8.3 · 智能财务分析平台
+            V9.1 · 智能财务分析平台
           </p>
         </div>
       </aside>
