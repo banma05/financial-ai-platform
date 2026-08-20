@@ -65,3 +65,48 @@ class TestChartRecommendation:
             "values": [91.18, 48.76, 33.65, 28.9],
         })
         assert r["chart_type"] == "radar"
+
+    def test_amount_metrics_uses_bar(self):
+        """金额类指标（营收/成本/净利）→ 柱状图, 不被量纲差异误导成雷达"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["营业收入", "营业成本", "净利润"],
+            "values": [1688, 148, 823],
+        })
+        assert r["chart_type"] == "bar"
+
+    def test_amount_metrics_multi_company_uses_bar(self):
+        """跨公司金额对比（茅台/五粮液/洋河营收）→ 柱状图"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["茅台营收", "五粮液营收", "洋河营收"],
+            "values": [1688, 832, 331],
+        })
+        assert r["chart_type"] == "bar"
+
+    def test_time_series_uses_line(self):
+        """多年趋势（营收_2022..2024）→ 折线图"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["营业收入_2022", "营业收入_2023", "营业收入_2024"],
+            "values": [1241, 1477, 1688],
+        })
+        assert r["chart_type"] == "line"
+
+    def test_time_series_not_pie_when_sum_100(self):
+        """多年趋势 sum≈100 不误判饼图（ROE 三年趋势回归）"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["ROE_2022", "ROE_2023", "ROE_2024"],
+            "values": [28.9, 31.2, 33.65],
+        })
+        assert r["chart_type"] == "line"
+
+    def test_ratio_assessment_uses_radar(self):
+        """比率类评估维度（杜邦分解三因子）→ 雷达图"""
+        tool = ChartTool()
+        r = tool.recommend({
+            "labels": ["净利率", "总资产周转率", "权益乘数"],
+            "values": [48.76, 0.55, 2.4],
+        })
+        assert r["chart_type"] == "radar"

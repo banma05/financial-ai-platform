@@ -354,8 +354,10 @@ class ChartTool:
             return {"chart_type": "bar", "reason": "无特征数据，默认柱状图", "confidence": 0.3}
 
         # 1. 检测年份后缀 → 时间序列 → 折线图
+        # V9.1: 同时检查 labels（chart.run 传的 labels 可能是 ['营业收入_2022', ...]）
         year_keys = [k for k in numeric_keys if re.search(r'_\d{4}$', str(k))]
-        has_years = len(year_keys) >= 2
+        label_years = [l for l in labels if re.search(r'_\d{4}$', str(l))]
+        has_years = len(year_keys) >= 2 or len(label_years) >= 2
 
         # 2. 提取基础指标名（去年份后缀去重）
         base_metrics = set()
@@ -379,6 +381,30 @@ class ChartTool:
                         "reason": "正负值混杂（资金流入/流出），柱状图更清晰",
                         "confidence": 0.85}
 
+        # 3.1 V9.1: 金额类指标（营收/成本/现金流/资产等）→ 柱状图
+        # 金额比较关心大小，雷达图是"均衡度评估"工具，不适用；
+        # 避免量纲差异（营收千亿 vs 成本百亿）误选雷达图。
+        _AMOUNT_KEYWORDS = (
+            "营收", "收入", "成本", "净利", "利润", "现金流", "资产", "负债",
+            "权益", "资本", "投入", "费用", "支出", "毛利", "存货", "应收",
+            "应付", "借款", "投资", "筹资",
+        )
+        # V9.1: 比率类指标排除 — "净利率"含"净利"但它是比率, 不算金额
+        _RATIO_KEYWORDS = ("率", "增速", "占比", "倍数", "周转", "ROE", "ROA")
+
+        def _is_amount_label(l: str) -> bool:
+            if any(k in l for k in _RATIO_KEYWORDS):
+                return False
+            return any(k in l for k in _AMOUNT_KEYWORDS)
+
+        if labels:
+            amount_count = sum(1 for l in labels if _is_amount_label(str(l)))
+            if amount_count >= max(1, len(labels) * 0.6):
+                if not has_years:
+                    return {"chart_type": "bar",
+                            "reason": "金额类指标对比，柱状图更清晰",
+                            "confidence": 0.9}
+
         # 3. 检测值域差异（量纲不一致 → 雷达图更合适）
         # V8.5: 财务数据天生不同量纲（营收千亿 vs 增长率%），
         # 若半数以上值为 0-100 范围（百分比/比率类），说明是混合量纲的财务指标集，
@@ -394,7 +420,8 @@ class ChartTool:
                 # 否则：混合百分比+大量纲，不适合雷达图，继续往下走到 bar
 
         # 4. 检测结构占比（values 全正 + sum ≈ 100 → 饼图）
-        if values and len(values) <= 6 and all(v > 0 for v in values):
+        # V9.1: 排除时间序列（多年趋势 sum 恰好 80-120 会被误判饼图，如 ROE 三年趋势）
+        if values and len(values) <= 6 and all(v > 0 for v in values) and not has_years:
             total = sum(values)
             if 80 < total < 120:
                 return {"chart_type": "pie", "reason": "数据呈结构分布特征", "confidence": 0.85}
@@ -404,7 +431,9 @@ class ChartTool:
             return {"chart_type": "line", "reason": "单指标多年趋势", "confidence": 0.95}
         if has_years and dim_count >= 2:
             return {"chart_type": "dual_axis", "reason": "多指标多年趋势，双轴更清晰", "confidence": 0.85}
-        if 4 <= dim_count <= 6 and not has_years:
+        # V9.1: 3 维也走雷达（杜邦分解/偿债能力等"打分维度"评估），
+        # 到此处已排除金额类(3.1)和正负混杂(3.0)，剩余为比率类评估维度。
+        if 3 <= dim_count <= 6 and not has_years:
             return {"chart_type": "radar", "reason": f"{dim_count}维度综合评估，雷达图最优", "confidence": 0.90}
         if dim_count > 6 and not has_years:
             return {"chart_type": "bar", "reason": f"{dim_count}维度较多，柱状图更清晰", "confidence": 0.85}
