@@ -1099,6 +1099,8 @@ def main():
                         help="评测集: v9 (50题) 或 v8 (15题)")
     parser.add_argument("--quick", action="store_true",
                         help="快速模式：只跑前5题")
+    parser.add_argument("--start-index", type=int, default=0,
+                        help="续跑模式：从第 N 题开始（跳过前 N 题，断网/中断后续跑）")
     parser.add_argument("--dry-run", action="store_true",
                         help="空跑模式：只加载题目不执行")
     args = parser.parse_args()
@@ -1108,6 +1110,9 @@ def main():
     if args.quick:
         questions = questions[:5]
         logger.info(f"快速模式: 只评测前 {len(questions)} 题")
+    elif args.start_index > 0:
+        questions = questions[args.start_index:]
+        logger.info(f"续跑模式: 从第 {args.start_index + 1} 题开始，共 {len(questions)} 题")
 
     if args.dry_run:
         logger.info("空跑模式 — 只验证题目加载")
