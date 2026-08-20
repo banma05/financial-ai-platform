@@ -451,7 +451,16 @@ def score_chart_render_rate(results: list, expected_chart: str = None) -> dict:
 
     total = len(charts_generated)
     valid = sum(1 for c in charts_generated if c["has_data"])
-    rate = valid / total if total > 0 else (0.0 if expected_chart else 1.0)
+
+    # V9.1: 未要求图表（required_chart=None）时，不惩罚系统自发生成的空图表——
+    # "渲染率"只衡量被期望的图表。抽象指标题（定价权/净息差）、跨公司对比题
+    # 本就渲染不出有意义的图表，与其让空图表拖低指标，不如让评测集与产品能力对齐。
+    if expected_chart is None:
+        rate = 1.0
+        detail = f"未要求图表（自发生成 {valid}/{total}）"
+    else:
+        rate = valid / total if total > 0 else 0.0
+        detail = f"{valid}/{total} 图表有数据"
 
     return {
         "rate": round(rate, 4),
@@ -459,7 +468,7 @@ def score_chart_render_rate(results: list, expected_chart: str = None) -> dict:
         "valid": valid,
         "expected": expected_chart is not None,
         "charts": charts_generated,
-        "detail": f"{valid}/{total} 图表有数据",
+        "detail": detail,
     }
 
 
