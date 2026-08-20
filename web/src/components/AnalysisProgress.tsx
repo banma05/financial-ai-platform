@@ -3,7 +3,7 @@ interface TaskItem { id: string; desc: string; success?: boolean; summary?: stri
 interface StreamProgress {
   phase: string; completed: number; total: number;
   currentTask?: string; tasks: TaskItem[];
-  processingTime?: number; error?: string;
+  processingTime?: number | null; error?: string | null;
 }
 
 interface AnalysisProgressProps {
