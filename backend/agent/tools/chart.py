@@ -227,6 +227,23 @@ class ChartTool:
                 "skip_reason": "empty_data",
             }
 
+        # ── V9.1: 清洗 values 中的 None（数据缺失 → 选型/渲染崩溃）──
+        # 例: 雷达图 recommend 的 all(v>0 for v in values) 遇 None 抛
+        # "'>' not supported between 'NoneType' and 'float'"(V9-F15 实测)。
+        if data.get("values"):
+            keep = [v is not None for v in data["values"]]
+            if not all(keep):
+                data["labels"] = [l for l, ok in zip(data.get("labels", []), keep) if ok]
+                data["values"] = [v for v, ok in zip(data["values"], keep) if ok]
+        # 清洗后全空 → 仍走 empty_data 防线
+        if not data.get("values"):
+            return {
+                "chart_option": None,
+                "chart_description": "数据不足，无法生成图表。请确认查询参数是否正确。",
+                "skip": True,
+                "skip_reason": "empty_data",
+            }
+
         # ── 标签中文化（剥离年份后缀 + 去重）──
         self._ensure_chinese_labels(data)
 
