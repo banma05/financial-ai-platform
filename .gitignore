@@ -1,13 +1,15 @@
 .env
 CLAUDE.md
-data/chroma_db/
-data/documents/*
-*.tar
-!data/documents/.gitkeep
-data/charts/*
+# ---- data/ 兜底: 默认全忽略, 仅保留占位与元数据(防止数据文件混入仓库) ----
+data/*
+!data/corpus_metadata.json
+!data/charts/
 !data/charts/.gitkeep
-data/models/
-data/*.db
+!data/documents/
+data/documents/*
+!data/documents/.gitkeep
+*.tar
+*.db
 backend/data/
 web/dist/
 __pycache__/
