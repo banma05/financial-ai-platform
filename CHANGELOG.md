@@ -32,7 +32,7 @@
 
 ## [8.3] - 2026-07-18
 
-- RAG 三指标达标：SEM-R@5 **96.0%**、Faithfulness 94.8%、Answer Relevancy 86.8%
+- RAG 达标：SEM-R@5 **96.0%**、Faithfulness 94.8%、Answer Relevancy 86.8%、Context Recall 94.1%
 - Agent 数字准确率 **100%**（负号提取缺陷修复）；检索延迟 31.9s → ~4s
 - SSE 真正流式（节点边界 → 逐任务 yield）；CrossEncoder 熔断器
 
