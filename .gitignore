@@ -1,13 +1,7 @@
 .env
 CLAUDE.md
-# ---- data/ 兜底: 默认全忽略, 仅保留占位与元数据(防止数据文件混入仓库) ----
-data/*
-!data/corpus_metadata.json
-!data/charts/
-!data/charts/.gitkeep
-!data/documents/
-data/documents/*
-!data/documents/.gitkeep
+# ---- 数据目录: 运行时自动创建, 一律不提交(防止仓库变大) ----
+data/
 *.tar
 *.db
 backend/data/
