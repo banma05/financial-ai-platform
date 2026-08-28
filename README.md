@@ -7,8 +7,8 @@
 [![React](https://img.shields.io/badge/Frontend-React_19-blue)](https://react.dev/)
 [![LangGraph](https://img.shields.io/badge/Agent-LangGraph-purple)](https://langchain-ai.github.io/langgraph/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek_v4-purple)](https://www.deepseek.com/)
-[![Version](https://img.shields.io/badge/Version-V9.0--beta-orange)]()
-[![Tests](https://img.shields.io/badge/Tests-96_backend-green)]()
+[![Version](https://img.shields.io/badge/Version-V9.2-blue)]()
+[![Tests](https://img.shields.io/badge/Tests-461_backend-green)]()
 
 ---
 
@@ -18,7 +18,7 @@
 
 ---
 
-## 🏗️ 架构 (V9.0-beta)
+## 🏗️ 架构 (V9.2)
 
 ```
 用户自然语言输入
@@ -43,58 +43,71 @@
 
 ---
 
-## 📊 评测基线 (V9.0-beta)
+## 📊 评测基线 (V9.2 · 2026-08-28 实测)
 
-### Agent 端到端
+### Agent 端到端（50 题全量 · 7 维评分）
 
-| 指标 | 值 | 目标 | 说明 |
-|------|:--:|:--:|------|
-| 综合评分 (V9 50题) | ⏳ 待跑 | ≥85% | 7维加权评分 |
-| 锚点准确率 (独立验证) | ⏳ | ≥95% | 打破循环论证的核心指标 |
-| 数据溯源率 (SQL直查) | — | ≥80% | 每个数字可追溯到来源 |
-| 图表渲染率 | — | ≥90% | 期望图表中实际生成比例 |
-| 幻觉检测 | — | ≥90% | 方向性断言与数据吻合度 |
+| 指标 | 值 | 目标 | 状态 |
+|------|:--:|:--:|:--:|
+| 锚点准确率（独立验证） | **96.0%** | ≥95% | ✅ 首次达标 |
+| 数值准确率 | **95.0%** | ≥85% | ✅ |
+| 幻觉检测 | **96.5%** | ≥90% | ✅ |
+| 溯源率 | **91.1%** | ≥80% | ✅ |
+| 图表渲染率 | **96.0%** | ≥90% | ✅ |
+| 结构覆盖 | 79.2% | ≥80% | ⚠️ 差 0.8pp |
+| 综合评分 | 79.7% | ≥85% | ⚠️ 差 5.3pp |
 
-### 基础验证
+> 50/50 完成、0 崩溃；单题成本 ≈ ¥0.06（DeepSeek 官方价格记账）。锚点验证以 15 个独立核实的数字为"地面真相"，打破循环论证。
+
+### RAG 评测（RAGAS 三指标）
+
+| 指标 | 值 | 目标 | 状态 |
+|------|:--:|:--:|:--:|
+| SEM-R@5（检索） | **96.0%** | ≥90% | ✅ |
+| Faithfulness | **94.1%** | ≥90% | ✅ |
+| Answer Relevancy | 47.3% | ≥85% | ⚠️ |
+| Context Recall | 50.0% | ≥85% | ⚠️ |
+
+### 关键验证
 
 | 维度 | 指标 |
 |------|------|
-| 贵州茅台 profitability | 毛利率91.18% 净利率48.76% ROE33.65% ✅ |
-| Chart 零空白 | 3数据点柱状图, skip=None ✅ |
+| 贵州茅台 profitability | 毛利率 91.18% 净利率 48.76% ROE 33.65% ✅ |
+| Chart 零空白 | 3 数据点柱状图, skip=None ✅ |
 | 报告可审查 | 数据可靠度章节 + 溯源信息 + 置信度 ✅ |
-| planner 测试 | 15/15 ✅ |
-| param_injection 测试 | 41/41 ✅ |
-| financial_calc 测试 | 40/40 ✅ |
+| 后端单元测试 | **461/461** ✅ |
+| 前端单元测试 | **20/20** ✅ + TypeScript 0 错误 |
 
 ### 已知限制（诚实透明）
 
-| # | 限制 | 影响范围 | 计划 |
-|:--:|------|:--:|------|
-| 1 | RAG知识库仅覆盖4/20家公司 | 非茅台/比亚迪/宁德/五粮液的分析缺年报原文解读 | P3-11: 优先补金融+大市值 |
-| 2 | 跨公司对比仅取第一家公司 | "对比茅台和五粮液"只返回茅台数据 | P1-5: parse_query多公司 |
-| 3 | 仅支持A股(20家公司) | 不含港股/美股 | P3-10: PostgreSQL→5000家 |
-| 4 | 金融企业指标覆盖不全 | 银行/保险的部分特殊指标可能缺失 | P0-1已修复核心数据 |
-| 5 | 响应时间31-67s | LLM调用是主要瓶颈 | P2-7: 模板场景<5s |
+| # | 限制 | 影响 |
+|:--:|------|------|
+| 1 | 综合评分 79.7% 未达 85% | 自由拆解 20 题中 9 题 LLM 拆解空响应回退，综合 30-50% 拉低平均 |
+| 2 | RAG Answer Relevancy / Context Recall 偏低 | 数值类问题的评测集与抽取逻辑待优化 |
+| 3 | Agent 高并发下接近串行 | LLM API 外部瓶颈 + 模型资源锁 |
+| 4 | 仅覆盖 20 家 A 股公司 + 14 份年报 | 扩展至 5000 家需迁移 PostgreSQL |
+| 5 | 跨公司对比仅取第一家公司 | "对比茅台和五粮液"只返回茅台数据 |
 
 ---
 
 ## 🚀 快速启动
 
 ```bash
-cd D:\实战项目\financial-ai-platform
+# 环境准备：复制 .env.example 为 .env 并填入 DeepSeek API Key
+cp .env.example .env
 
-# 后端 :8001
-source ../.venv/Scripts/activate
+# 后端 :8001（Python 3.12 虚拟环境）
+pip install -r requirements.txt
 python -m backend.main
 
 # 前端 :5173（开发模式，自动代理 /api → :8001）
-cd web && npx vite
+cd web && npm install && npm run dev
 ```
 
 ## 🧪 测试
 
 ```bash
-# 后端 96 单元测试
+# 后端 461 单元测试
 python scripts/run_tests.py
 
 # Agent 评测（V9 50题 或 V8 15题）
@@ -110,41 +123,40 @@ python evaluation/rag/quick_eval.py
 
 ```
 financial-ai-platform/
-├── backend/
-│   ├── agent/              # LangGraph Agent (Planner→Executor→Reporter + 4工具)
+├── backend/                # FastAPI 后端 (:8001)
+│   ├── agent/              # LangGraph Agent (Planner→Executor→Reporter)
 │   │   ├── planner.py      # 模板加载 + LLM 自由拆解
 │   │   ├── executor.py     # 依赖注入分两路(图表直注+公式ParamInjector)
 │   │   ├── reporter.py     # 6章研报 + 数据可靠度 + 幻觉检测
-│   │   └── tools/          # data_query / financial_calc / chart / param_injection
-│   ├── rag/                # RAG引擎 (BM25+语义+ChromaDB+重排序)
-│   ├── db/                 # SQLite + 财务数据模型 + 金融查询引擎(_KEY_FALLBACK)
+│   │   └── tools/          # data_query / financial_calc / chart / param_injection / rag_context
+│   ├── rag/                # RAG 引擎 (BM25+语义+ChromaDB+重排序+模型路由)
+│   ├── db/                 # SQLite + 财务数据模型 + 金融查询引擎
 │   ├── mcp/                # MCP 6工具 (AKShare数据源)
 │   ├── api/                # FastAPI 路由 (agent + rag)
 │   ├── models/             # Pydantic 数据模型
+│   ├── di/                 # 应用级 DI 容器 (Container + Repository)
+│   ├── security/           # InputSanitizer 输入清洗
+│   ├── middleware/         # 鉴权 + 限流
 │   ├── utils/              # 重试/日志/监控/Redis
-│   └── tests/              # 96 单元测试 (planner + param_injection + financial_calc)
+│   └── tests/              # 461 单元测试
 ├── web/                    # React 前端 (Vite + TypeScript + Zustand + ECharts)
 │   ├── src/pages/          # 预设分析/文档上传/报告展示
 │   ├── src/components/     # ChartRenderer (骨架屏+错误UI+ResizeObserver)
 │   └── src/stores/         # Zustand 状态管理
-├── evaluation/             # 评测体系 (V9: 50题7维评分)
+├── evaluation/             # 评测体系 (50题7维评分 + RAGAS)
 │   ├── agent/              # bench_agent_v9.py + bench_agent.py
-│   ├── data/               # agent_questions_v9.json (50题) + V8 (15题)
-│   ├── rag/                # RAG 评测
-│   └── reports/            # 评测报告 + 趋势追踪
-├── data/                   # 文档/ChromaDB/模型缓存
-├── docs/                   # 设计文档 (V9.0产品重构计划/BRD/架构图)
+│   ├── data/               # agent_questions_v9.json (50题)
+│   └── rag/                # RAG 评测
+├── data/                   # 文档/ChromaDB/模型缓存 (gitignore)
 ├── scripts/                # 运维脚本 (backfill/rebuild/import)
-└── PROGRESS.md             # 详细进度记录
+├── CHANGELOG.md            # 版本演进记录
+└── ARCHITECTURE.md         # 架构文档
 ```
 
 ## 📝 文档
 
-- [V9.0 产品重构计划](docs/V9.0-产品重构计划.md) — 13项任务 / 4级优先级
-- [V8.0 实施计划](docs/V8-实施计划.md)
-- [BRD 业务需求说明书](docs/BRD-业务需求说明书.md)
-- [系统架构图](docs/架构图.md)
-- [项目进度详情](PROGRESS.md)
+- [架构文档](ARCHITECTURE.md) — 整体架构 + 核心设计决策
+- [版本演进](CHANGELOG.md) — 各版本核心成果与评测数据
 
 ## 🔑 技术栈速查
 

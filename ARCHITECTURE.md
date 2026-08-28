@@ -1,6 +1,6 @@
 # 智能财务分析平台 — 架构文档
 
-> V9.1 | 2026-07-25 | 面试演示版
+> 当前版本 V9.2 | 架构说明
 
 ---
 
@@ -66,8 +66,7 @@ Planner(LLM) ──→ Executor(线性) ──→ Reporter(LLM)
 60 行 `threading.RLock` + 惰性工厂 = 解决全部需求。
 引入 3000 行的 `dependency-injector` 是过度设计。
 
-**面试台词**："FastAPI Depends 是请求级 DI，我这个 Container 是应用级 DI。
-两者互补而不是替代。"
+> FastAPI `Depends` 是请求级 DI，`Container` 是应用级 DI，两者互补而非替代。
 
 ### 4. 为什么 ChromaDB 而不是 Pinecone/Weaviate？
 
@@ -78,34 +77,16 @@ Planner(LLM) ──→ Executor(线性) ──→ Reporter(LLM)
 
 ---
 
-## 三、V9.1 重构：对抗式审查驱动的架构修复
+## 三、架构原则（V9.1 演进）
 
-### 审查方法
+经历多轮迭代后，沉淀为四条必须强制执行的架构约束：
 
-用 5 个独立 Agent 从安全、正确性、性能、架构四个维度并行审查代码库，
-发现 **75 个问题**（12 CRITICAL / 17 HIGH / 31 MEDIUM / 15 LOW）。
-
-### 根本原因：四个缺失的架构约束
-
-经过第一性原理分析，75 个问题的根因不是某个文件写错了，
-而是四个架构约束从未被强制执行：
-
-| 约束 | 后果 | V9.1 修复 |
+| 约束 | 目的 | 落地 |
 |:---|:---|:---|
-| 信任边界缺失 | Prompt 注入 ×3、错误泄露 ×8 | `InputSanitizer` + XML 硬隔离 |
-| 依赖方向未强制 | 10 处 SessionLocal() 散落 | `Repository` 层 + DI Container |
-| 并发模型未定义 | TOCTOU ×2、14 全局单例 | `Container` + RLock |
-| 配置无单一可信源 | 公司注册表 3 处不同步 | `config.py` 统一入口 |
-
-### 关键修复
-
-| 阶段 | 变更 | 效果 |
-|:---|:---|:---|
-| 〇 地基 | 毛利润/置信度/inf/年份/错误 | 8 项 Bug 修复 |
-| 一 安全 | InputSanitizer + Prompt 铁律 | 3 注入点硬隔离 |
-| 二 DI | Container + 14 单例 → 自注册 | TOCTOU 消除 |
-| 三 数据 | Repository + batch query | SQL 200+ → 1 次 |
-| 四 性能 | BM25 硬上限 + LRU 淘汰 | OOM 防护 |
+| 信任边界 | 抵御 Prompt 注入、隔离错误信息 | `InputSanitizer` + XML 硬隔离 |
+| 依赖方向 | 统一数据访问，杜绝散落的 DB 连接 | `Repository` 层 + DI Container |
+| 并发模型 | 线程安全、单例生命周期可控 | `Container` + RLock |
+| 配置单一可信源 | 公司注册表等配置只维护一处 | `config.py` 统一入口 |
 
 ---
 
@@ -128,6 +109,6 @@ Planner(LLM) ──→ Executor(线性) ──→ Reporter(LLM)
 ## 五、已知限制与未来方向
 
 - **数据规模**：当前 20 家 A 股公司 + 14 份年报，扩展到 5000 家需迁移 PostgreSQL
-- **LLM 延迟**：15-20s 硬瓶颈（DeepSeek API），未来可换本地模型或缓存模板
-- **多轮对话**：Plan 中（P3），需要会话上下文管理器
+- **LLM 延迟**：端到端平均约 25s（DeepSeek API 为主），未来可换本地模型或模板缓存
+- **多轮对话**：规划中，需要会话上下文管理器
 - **Agent 验证节点**：Executor 后加 verify_node，数据不足时回退重规划
