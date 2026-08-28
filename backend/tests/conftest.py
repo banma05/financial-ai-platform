@@ -30,7 +30,10 @@ except ImportError:
 def _ensure_container_registered():
     """每个测试前确保 Container 工厂已注册（幂等，重依赖不可用时跳过）"""
     if _container_available and not Container.list_all():
-        register_all()
+        # 容器为空说明被 reset() 清空过（如 test_container 的隔离测试）。
+        # 此时模块已在 sys.modules 缓存，register_all() 默认 __import__ 不会
+        # 重新触发模块顶层自注册，必须 force=True 强制 reload 已加载模块。
+        register_all(force=True)
     yield
 
 

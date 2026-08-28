@@ -54,7 +54,7 @@ from loguru import logger
 from agent.planner import Planner
 from agent.schemas import AnalysisPlan
 from agent.graph import run_agent_sync
-from rag.model_router import init_usage, get_usage
+from rag.model_router import init_usage, get_usage, PRICES
 
 # ════════════════════════════════════════════════════════════════
 # 配置
@@ -760,9 +760,12 @@ def run_benchmark(questions: List[dict], meta: dict) -> dict:
             agent_result = run_agent_sync(query, plan=plan)
             usage = get_usage()
             question_tokens = usage.get("total_tokens", 0)
+            # V9.2: 按官方价格（输入/输出分别计价，区分 flash/pro）估算，真实扣费以平台为准
+            _model = usage.get("model", "deepseek-v4-flash")
+            _p = PRICES.get(_model, {"input": 2.0, "output": 2.0})
             question_cost = round(
-                (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0))
-                / 1_000_000 * 2.0, 6,
+                usage.get("prompt_tokens", 0) / 1_000_000 * _p["input"]
+                + usage.get("completion_tokens", 0) / 1_000_000 * _p["output"], 6,
             )
         except Exception as e:
             logger.error(f"  Agent 执行失败: {e}")

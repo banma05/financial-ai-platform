@@ -39,11 +39,11 @@ def save_token_usage(session_id: str, endpoint: str = "rag_chat"):
     usage = _usage_ctx.get()
     if not usage or not usage.get("total_tokens"):
         return
-    # DeepSeek 官方定价（元/百万 tokens）：flash ~1元, pro ~4元
-    cost_per_million = {"deepseek-v4-flash": 1.0, "deepseek-v4-pro": 4.0}
+    # 按官方价格估算（输入/输出分别计价），真实扣费以平台为准
     model = usage.get("model", "deepseek-v4-flash")
-    rate = cost_per_million.get(model, 2.0)
-    cost = (usage["prompt_tokens"] + usage["completion_tokens"]) / 1_000_000 * rate
+    p = PRICES.get(model, {"input": 2.0, "output": 2.0})
+    cost = (usage["prompt_tokens"] / 1_000_000 * p["input"]
+            + usage["completion_tokens"] / 1_000_000 * p["output"])
 
     from db import SessionLocal, TokenUsageLog
     db = SessionLocal()
@@ -84,6 +84,14 @@ MODEL_CONFIG = {
         "temperature": 0.3,
         "max_tokens": 4000,
     },
+}
+
+# DeepSeek 官方定价（元/百万 tokens，2026-08-17 生效正式版高峰价）
+# flash: 输入 1.5 输出 4.5 | pro: 输入 9 输出 27
+# 闲时价格更低、缓存命中价格低至 0.02。此处为估算值，真实扣费以平台为准。
+PRICES = {
+    "deepseek-v4-flash": {"input": 1.5, "output": 4.5},
+    "deepseek-v4-pro": {"input": 9.0, "output": 27.0},
 }
 
 COMPLEX_KEYWORDS = [
@@ -164,7 +172,13 @@ def _chat_impl(
     )
     # ── V6.0: 捕获用量 ──
     _capture_usage(response, cfg["model"])
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    # ── V9.2: API 偶发返回空响应 ──
+    # 空内容静默返回会传导到下游 JSON 解析失败（"Expecting value: line 1 column 1 (char 0)"），
+    # 浪费一次调用并导致自由拆解回退单任务（综合分骤降）。显式抛异常触发 llm_retry 重试。
+    if not content or not content.strip():
+        raise ValueError(f"LLM 返回空响应 (model={cfg['model']})")
+    return content
 
 
 # V8.2: 熔断器包裹（外层：5次连续失败→熔断，30s冷却）
